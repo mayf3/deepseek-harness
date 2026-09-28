@@ -193,13 +193,10 @@
   cursor: pointer;
 }
 
-.searchClear:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
+.searchClear:hover,
 .searchClear:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .search input {
@@ -323,9 +320,11 @@
   line-height: 20px;
   cursor: pointer;
   text-align: left;
+  outline: none;
 }
 
-.cell:hover {
+.cell:hover,
+.cell:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 

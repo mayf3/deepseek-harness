@@ -95,10 +95,26 @@ describe('web e2e: the composer model switch is the default for later sessions',
   it('keeps command popup search borders transparent in both palettes', async () => {
     const composer = page.locator('[data-composer-input]').first()
     await page.getByRole('button', { name: '添加文件或调用指令', exact: true }).click()
+    const commandMenuBounds = await page.locator('[data-trigger-menu]').boundingBox()
     await page.getByRole('option', { name: /^模型/ }).click()
     const search = page.getByRole('textbox', { name: '筛选选项', exact: true })
     await search.waitFor()
     try {
+      const popupBounds = await page.locator('[aria-label="/model 选项"]').boundingBox()
+      expect(popupBounds).not.toBeNull()
+      expect(commandMenuBounds).not.toBeNull()
+      expect(popupBounds!.width).toBeCloseTo(commandMenuBounds!.width)
+      expect(popupBounds!.x).toBeCloseTo(commandMenuBounds!.x)
+      expect(await search.getAttribute('placeholder')).toBe('搜索模型…')
+      await page.getByRole('option').first().waitFor()
+      await compareOrRefreshGolden(
+        fileURLToPath(new URL('./expected/default-model/command-picker.expected.md', import.meta.url)),
+        await captureStableAria(page, '[aria-label="/model 选项"]', scaffold.workspaceCwd),
+        webSnapshotMode(),
+      )
+      await search.fill('no-model-matches')
+      await page.getByText('没有匹配的模型。', { exact: true }).waitFor()
+      await search.fill('')
       const borders = await search.evaluate((input) => {
         const body = input.ownerDocument.body
         const previousTheme = body.getAttribute('data-ds-dark-theme')
@@ -210,7 +226,18 @@ describe('web e2e: the composer model switch is the default for later sessions',
     await trigger.waitFor({ timeout: 15_000 })
     expect(await trigger.evaluate(element => getComputedStyle(element).fontWeight)).toBe('400')
     await trigger.click()
-    await page.getByRole('menuitem', { name: /模型/ }).click()
+    const modelMenuBounds = await page.getByRole('menu', { name: '模型与推理等级', exact: true }).boundingBox()
+    const composerBounds = await page.locator('[data-composer-card]').first().boundingBox()
+    expect(modelMenuBounds!.width).toBeLessThan(composerBounds!.width)
+    const modelCell = page.getByRole('menuitem', { name: /模型/ })
+    await trigger.press('ArrowDown')
+    expect(await modelCell.evaluate(element => element.matches(':focus-visible'))).toBe(true)
+    expect(await modelCell.evaluate(element => getComputedStyle(element).outlineStyle)).toBe('none')
+    const focusedBackground = await modelCell.evaluate(element => getComputedStyle(element).backgroundColor)
+    await trigger.focus()
+    await modelCell.hover()
+    expect(await modelCell.evaluate(element => getComputedStyle(element).backgroundColor)).toBe(focusedBackground)
+    await modelCell.click()
     const search = page.getByRole('searchbox', { name: '搜索模型…' })
     const rowIds = await page.getByRole('menuitemradio').evaluateAll(rows => rows.map(row => row.id))
     const initialHighlight = rowIds.indexOf(await search.getAttribute('aria-activedescendant') ?? '')

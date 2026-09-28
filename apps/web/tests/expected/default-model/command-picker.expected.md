@@ -1,0 +1,7 @@
+- textbox "筛选选项":
+  - /placeholder: 搜索模型…
+- listbox "/model 匹配项":
+  - option "DeepSeek-V4-Flash DeepSeek"
+  - option "DeepSeek-V4-Flash-Vision-Exp DeepSeek"
+  - option "Origin Large Origin Gateway" [selected]
+  - option "Acme Large Acme Gateway"

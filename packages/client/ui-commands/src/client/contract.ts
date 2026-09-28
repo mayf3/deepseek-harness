@@ -35,6 +35,15 @@ export interface SelectOption {
   readonly confirmation?: SelectConfirmation
 }
 
+/** Command-owned search copy, resolved when its popup opens. */
+export interface PopupSearchLabels {
+  readonly placeholder: string
+  /** Empty catalog, before filtering. */
+  readonly empty: string
+  /** Nonempty catalog with no matching rows. */
+  readonly noResults: string
+}
+
 /**
  * Business registration for the popupSelect command kind. Data is
  * self-served: options/onSelect use the business package's own protocol.
@@ -43,6 +52,11 @@ export interface SelectOption {
  */
 export interface PopupSelectSpec {
   readonly kind: 'popupSelect'
+  /**
+   * Supply localized search copy for this opening; omitted uses the shell's generic copy.
+   * @returns search placeholder and empty-state labels.
+   */
+  searchLabels?(): PopupSearchLabels
   options(session: ClientSessionContext, signal: AbortSignal): Promise<readonly SelectOption[]>
   onSelect(option: SelectOption, session: ClientSessionContext): void | Promise<void>
 }

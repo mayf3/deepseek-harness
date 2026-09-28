@@ -225,7 +225,9 @@ describe('ModelSelect reasoning effort', () => {
     const trigger = screen.getByRole('button', { name: /选择模型|当前/ })
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
+    const rejected = screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ })
+    fireEvent.mouseMove(rejected)
+    fireEvent.click(rejected)
     const toast = await screen.findByRole('alert')
     expect(document.activeElement).toBe(trigger)
     expect(toast.textContent).toBe(sessionInUse
@@ -233,6 +235,11 @@ describe('ModelSelect reasoning effort', () => {
       : '模型操作失败：session/model-unavailable: session already contains images')
     // The selection failure does not render the in-menu load strip (no Retry).
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    fireEvent.keyDown(trigger, { key: 'Tab' })
+    const search = screen.getByRole('searchbox')
+    expect(document.activeElement).toBe(search)
+    expect(search.getAttribute('aria-activedescendant'))
+      .toBe(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' }).id)
   })
 
   it('spins on the trigger and the chosen model row until the selection settles, across pane changes', async () => {

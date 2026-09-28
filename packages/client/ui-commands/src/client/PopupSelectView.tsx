@@ -80,6 +80,9 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
 
   const rows = filterOptions(state.options, state.search)
   const confirmation = state.confirming?.confirmation
+  const emptyLabel = state.searchLabels === null
+    ? t('status.empty')
+    : state.options.length === 0 ? state.searchLabels.empty : state.searchLabels.noResults
 
   const onKeyDown = (ev: React.KeyboardEvent<HTMLDivElement>): void => {
     // ArrowLeft/ArrowRight fall through on purpose: the search input keeps
@@ -132,7 +135,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
             ref={searchRef}
             className={css.search}
             type="text"
-            placeholder={t('search.placeholder')}
+            placeholder={state.searchLabels?.placeholder ?? t('search.placeholder')}
             aria-label={t('search.aria')}
             value={state.search}
             readOnly={state.submitting}
@@ -148,7 +151,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
           )}
           {state.status === 'pending' && <div className={css.status}>{t('status.loading')}</div>}
           {state.submitting && <div className={css.status}>{t('status.applying')}</div>}
-          {state.status === 'ready' && rows.length === 0 && <div className={css.status}>{t('status.empty')}</div>}
+          {state.status === 'ready' && rows.length === 0 && <div className={css.status}>{emptyLabel}</div>}
           {state.status === 'ready' && (
             <div role="listbox" aria-label={t('listbox.aria', { command: String(state.command) })} className={css.viewport}>
               {rows.map((option, index) => (

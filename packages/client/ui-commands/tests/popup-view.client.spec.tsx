@@ -78,6 +78,31 @@ function rowLabels(): string[] {
 }
 
 describe('PopupSelectView', () => {
+  it('uses command-owned search copy and resets to generic copy for the next popup', async () => {
+    const labels = { placeholder: '搜索模型…', empty: '没有可用的模型。', noResults: '没有匹配的模型。' }
+    const searchLabels = vi.fn(() => labels)
+    const { popup, search } = await mountOpen({ searchLabels })
+    expect(search.getAttribute('placeholder')).toBe(labels.placeholder)
+    fireEvent.change(search, { target: { value: 'no-match' } })
+    expect(screen.getByText(labels.noResults)).toBeTruthy()
+    expect(screen.queryByText(labels.empty)).toBeNull()
+    expect(searchLabels).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      popup.open('empty-models', spec({ searchLabels, options: () => Promise.resolve([]) }), 'ctx-A', SEGMENT)
+      await Promise.resolve()
+    })
+    expect(screen.getByText(labels.empty)).toBeTruthy()
+    expect(screen.queryByText(labels.noResults)).toBeNull()
+    await act(async () => {
+      popup.open('theme', spec(), 'ctx-A', SEGMENT)
+      await Promise.resolve()
+    })
+    expect(search.getAttribute('placeholder')).toBe(zh['search.placeholder'])
+    fireEvent.change(search, { target: { value: 'no-match' } })
+    expect(screen.getByText(zh['status.empty'])).toBeTruthy()
+    expect(popup.state.getSnapshot().searchLabels).toBeNull()
+  })
+
   it('renders null while closed, opens with focus in the search input', async () => {
     const popup = new PopupSelectController<string>({ consume: () => true, focusComposer: () => {} })
     const view = render(<PopupSelectView popup={popup} t={t} />)

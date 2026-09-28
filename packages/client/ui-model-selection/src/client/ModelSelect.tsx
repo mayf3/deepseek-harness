@@ -346,6 +346,11 @@ export function ModelSelect(
       }
       if (focused !== triggerRef.current) return
       event.preventDefault()
+      if (pane === 'model') {
+        setHighlightedIndex(null)
+        menuRef.current?.querySelector('input')?.focus()
+        return
+      }
       const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
       ;(checked ?? rows.find(item => !item.disabled))?.focus()
       return

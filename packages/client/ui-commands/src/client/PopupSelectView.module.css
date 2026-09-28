@@ -6,6 +6,8 @@
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
+  right: 0;
+  box-sizing: border-box;
   z-index: 100;
   padding: 3px;
   display: flex;

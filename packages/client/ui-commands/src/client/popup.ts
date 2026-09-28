@@ -12,7 +12,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { TokenSpan } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
-import type { SelectOption } from './contract.ts'
+import type { PopupSearchLabels, PopupSelectSpec, SelectOption } from './contract.ts'
 
 /**
  * The command token segment snapshotted at shell-open time, replayed to the
@@ -31,7 +31,7 @@ export type TokenSegment =
  * session wiring passes its session projection; the controller only carries
  * it from open() to the callbacks).
  */
-export interface PopupSpec<TCtx> {
+export interface PopupSpec<TCtx> extends Pick<PopupSelectSpec, 'searchLabels'> {
   /** Load the option rows once per open (retry after failure reuses the same signal). */
   options(context: TCtx, signal: AbortSignal): Promise<readonly SelectOption[]>
   /** Settle the picked option against the open-time context. */
@@ -63,6 +63,8 @@ export interface PopupState {
   readonly options: readonly SelectOption[]
   /** Local filter text over the loaded options. */
   readonly search: string
+  /** Command-owned copy for this opening; null uses generic shell labels. */
+  readonly searchLabels: PopupSearchLabels | null
   /**
    * Highlight index into the filtered row list: 0 until options land; afterwards
    * the row the loaded list marks as the current value
@@ -81,7 +83,7 @@ export interface PopupState {
 }
 
 const CLOSED: PopupState = {
-  open: false, command: null, status: 'pending', options: [], search: '', active: 0,
+  open: false, command: null, status: 'pending', options: [], search: '', searchLabels: null, active: 0,
   submitting: false, confirming: null, acknowledged: false, error: null,
 }
 
@@ -152,10 +154,11 @@ export class PopupSelectController<TCtx = unknown> {
    * @param segment - open-time token segment snapshot for post-select consumption.
    */
   open(command: string, spec: PopupSpec<TCtx>, context: TCtx, segment: TokenSegment): void {
+    const searchLabels = spec.searchLabels?.() ?? null
     this.binding?.abort.abort()
     const binding: OpenBinding<TCtx> = { command, spec, context, segment, abort: new AbortController() }
     this.binding = binding
-    this.state.set({ ...CLOSED, open: true, command })
+    this.state.set({ ...CLOSED, open: true, command, searchLabels })
     this.load(binding)
   }
 
