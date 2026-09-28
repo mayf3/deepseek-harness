@@ -4,12 +4,6 @@ Read `templates/decoration/` with the file-read tool and write its files into yo
 
 `index.js` exports `export function apply() {}`; the patch inserts one row named after the package. For a simple drawing, prefer a slot with allocated space, such as `conversation.composer.dock` when available. Keep the first version within that slot's flow; do not plan a motion path around host controls. Use `shell.overlay` only when the request needs an overlay and its placement is known.
 
-## Visual design
-
-- Show status with semantic tokens such as `--dsw-alias-state-error-primary`. Check text contrast against its background in light and dark themes.
-- Match background and border tokens to the component's container and nesting depth; choose hover tokens for the actual control rather than treating every slot as the same background.
-- In settings and management views, lead with configurable items and avoid repeated structure and unnecessary decoration. Expand details on demand, but keep an error summary visible.
-
 ## Client module
 
 The browser artifact registers a lazy factory whose id equals the package name. React comes from the browser module table; no duplicate React installation, CDN script, or UMD search is needed. For compiled sources, use the deployment's Client build tooling to emit this format; declare non-baseline runtime imports in `dsh.client.external`.
