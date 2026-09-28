@@ -69,7 +69,7 @@ function renderSeat(
     t: translate,
   } as AgentPresetSeatProps
   render(<AgentPresetSeat {...props} />)
-  return { ...actions, developerTools, store }
+  return { ...actions, developerTools }
 }
 
 function renderLabel(
@@ -93,10 +93,25 @@ function renderLabel(
 }
 
 describe('the new-session chip', () => {
-  it('renders nothing while Developer tools are off', () => {
-    renderSeat({}, undefined, undefined, false)
+  it.each([false, true])('offers Standard, Creator and custom presets with Developer tools %s', (enabled) => {
+    const actions = renderSeat({ options: [
+      { id: 'standard' }, { id: 'ptc' }, { id: 'minimal' }, { id: 'cordis' }, { id: 'mine' },
+    ] }, undefined, undefined, enabled)
 
-    expect(screen.queryByRole('button')).toBeNull()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getAllByRole('menuitem')).toHaveLength(enabled ? 5 : 3)
+    expect(screen.getByRole('menuitem', { name: /^Standard mode/ })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: /^mine/ })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: /^PTC mode/ }) !== null).toBe(enabled)
+    expect(screen.queryByRole('menuitem', { name: /^Minimal mode/ }) !== null).toBe(enabled)
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Creator mode/ }))
+    expect(actions.select).toHaveBeenCalledWith('cordis')
+  })
+
+  it('keeps a named custom preset that overrides a development preset id', () => {
+    renderSeat({ options: [{ id: 'ptc', name: 'My workflow' }] }, undefined, undefined, false)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('menuitem', { name: /^My workflow/ })).toBeTruthy()
   })
 
   it('renders only for a Session retained by the main view', () => {
@@ -137,7 +152,7 @@ describe('the new-session chip', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
     act(() => { actions.developerTools.set(false) })
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText(en.presetStandardDescription)).toBeNull()
     expect(actions.select).not.toHaveBeenCalled()
     act(() => { actions.developerTools.set(true) })
@@ -199,68 +214,6 @@ describe('the new-session chip', () => {
   })
 })
 
-describe('Creator with Coding Tools off', () => {
-  it('opens read-only help from the label without offering a preset switch or changing preferences', () => {
-    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }] }, undefined, undefined, false)
-    const label = screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetCordisName}` })
-    expect(label.getAttribute('aria-haspopup')).toBe('dialog')
-    expect(document.querySelector('[aria-haspopup="menu"]')).toBeNull()
-    label.focus()
-    fireEvent.click(label)
-    expect(screen.getByRole('dialog', { name: en.presetCordisName })).toBeTruthy()
-    fireEvent.keyDown(screen.getByRole('tab', { name: en.modeExplanation }), { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(label)
-    expect(actions.select).not.toHaveBeenCalled()
-    expect(actions.developerTools.getSnapshot()).toBe(false)
-
-    act(() => { actions.store.set({ ...SEAT_READY }) })
-    expect(screen.queryByRole('button')).toBeNull()
-  })
-
-  it('replaces an open picker with the read-only label and clears help when Coding Tools return', () => {
-    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }] })
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.getByRole('menu')).toBeTruthy()
-    act(() => { actions.developerTools.set(false) })
-    expect(screen.queryByRole('menu')).toBeNull()
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    act(() => { actions.developerTools.set(true) })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('button').getAttribute('aria-haspopup')).toBe('menu')
-    act(() => { actions.developerTools.set(false) })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(actions.select).not.toHaveBeenCalled()
-  })
-
-  it.each<{ description?: string; expected: string }>([
-    { description: 'My own plugin authoring setup', expected: 'My own plugin authoring setup' },
-    { expected: en.noDescription },
-  ])('shows only declared help for a custom Creator preset: $expected', (copy) => {
-    const option = { id: 'cordis', name: 'My creator', ...(copy.description === undefined ? {} : { description: copy.description }) }
-    renderSeat({ current: 'cordis', options: [option] }, undefined, undefined, false)
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.getByRole('dialog', { name: 'My creator' }).textContent).toContain(copy.expected)
-    expect(screen.queryByRole('tab')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.close }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('closes help when the preset disappears and does not reopen it when the roster recovers', () => {
-    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }] }, undefined, undefined, false)
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options: [{ id: 'standard' }], error: 'Unavailable' }) })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('button')).toHaveProperty('disabled', true)
-    expect(screen.getByRole('button').getAttribute('title')).toBe('Unavailable')
-    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options: [{ id: 'cordis' }], error: null }) })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('button')).toHaveProperty('disabled', false)
-  })
-})
-
 describe('a refused switch', () => {
   it('announces the reason instead of letting the label snap back in silence', async () => {
     // The banner's own timer has to be a fake one from the start, or the
@@ -310,20 +263,6 @@ describe('the chip introduce cue', () => {
   function delayedChars(): HTMLElement[] {
     return Array.from(screen.getByRole('button').querySelectorAll<HTMLElement>('[style]'))
   }
-
-  it('announces Creator on its read-only label while Coding Tools remain off', () => {
-    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
-    vi.useFakeTimers()
-    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }], introduce: true }, undefined, undefined, false)
-    expect(delayedChars().map(span => span.textContent).join('')).toBe(en.presetCordisName)
-    expect(screen.getByRole('button').getAttribute('aria-haspopup')).toBe('dialog')
-    expect(actions.introduced).not.toHaveBeenCalled()
-    act(() => { vi.advanceTimersByTime(750) })
-    expect(actions.introduced).toHaveBeenCalledTimes(1)
-    expect(delayedChars()).toHaveLength(0)
-    expect(actions.developerTools.getSnapshot()).toBe(false)
-    expect(actions.select).not.toHaveBeenCalled()
-  })
 
   it('reveals a long Latin name inside the shared window, then acknowledges', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))

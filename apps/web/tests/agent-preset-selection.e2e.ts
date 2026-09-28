@@ -343,7 +343,7 @@ describe('web e2e: agent-preset selection', () => {
     await writeComposerDraft(page, composer, '')
   }, 90_000)
 
-  it('keeps the saved default composing sessions while Developer tools only gate the choice', async () => {
+  it('resets the hidden default and blank session to Standard without restoring them when Coding Tools return', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-disabled'))
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
@@ -359,21 +359,31 @@ describe('web e2e: agent-preset selection', () => {
     await expect.poll(() => developerTools.getAttribute('aria-checked')).toBe('false')
     await dialog.getByRole('button', { name: 'Close' }).last().click()
 
-    // The gate hides the choice; the blank task keeps its saved composition.
-    await expect.poll(() => page.getByRole('button', { name: / mode$/ }).count()).toBe(0)
-    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await page.getByRole('menu').waitFor()
+    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
+    expect(await page.getByRole('menuitem', { name: /^Standard mode|^Creator mode/ }).count()).toBe(2)
+    await page.keyboard.press('Escape')
+    await expect.poll(async () => (await scaffold.ctx.agentPresets.remoteExportList()).presets.find(preset => preset.isDefault)?.id).toBe('standard')
+
+    await page.reload()
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
     await openSettings(page, 'en')
     const reopened = page.getByRole('dialog', { name: 'Settings' })
     await reopened.getByRole('button', { name: 'General', exact: true }).click()
     const reopenedDeveloperTools = reopened.getByRole('switch', { name: 'Coding Tools' })
+    await expect.poll(() => reopenedDeveloperTools.getAttribute('aria-checked')).toBe('false')
     await reopenedDeveloperTools.click()
     await expect.poll(() => reopenedDeveloperTools.getAttribute('aria-checked')).toBe('true')
     await reopened.getByRole('button', { name: 'Agent presets' }).click()
-    await reopened.getByRole('button', { name: 'New task default: Minimal mode' }).waitFor({ timeout: 10_000 })
+    await reopened.getByRole('button', { name: 'New task default: Standard mode' }).waitFor({ timeout: 10_000 })
+    await reopened.getByRole('button', { name: 'Set as new task default: Minimal mode' }).waitFor({ timeout: 10_000 })
     await reopened.getByRole('button', { name: 'Close' }).last().click()
-    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
-    await page.getByRole('button', { name: 'Minimal mode' }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
+    await page.getByRole('button', { name: 'Standard mode' }).waitFor({ timeout: 10_000 })
   })
 
   it('labels a resumed session with the preset it was created under', async () => {
@@ -415,7 +425,7 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     const creator = scaffold.ctx.agents.list()[0]
     if (creator === undefined) throw new Error('Connecting the workspace did not create a Session')
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('standard')
-    expect(await page.getByRole('button', { name: 'Standard mode', exact: true }).count()).toBe(0)
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor()
 
     await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
     await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
@@ -423,9 +433,9 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
       page.waitForResponse('**/api/agentPresets/select'),
       page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
     ])
-    const label = page.getByRole('button', { name: 'Mode details: Creator mode', exact: true })
-    await label.waitFor()
-    expect(await label.getAttribute('aria-haspopup')).toBe('dialog')
+    const picker = page.getByTitle('Choose the agent preset for your new task', { exact: true }).filter({ hasText: 'Creator mode' })
+    await picker.waitFor()
+    expect(await picker.getAttribute('aria-haspopup')).toBe('menu')
     expect(await page.getByRole('dialog', { name: 'Add plugin', exact: true }).count()).toBe(0)
     expect(scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('cordis')
@@ -437,12 +447,14 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: false })
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
 
-    await label.click()
-    await page.getByRole('dialog', { name: 'Creator mode', exact: true }).waitFor()
+    await picker.click()
+    await page.getByRole('menu').waitFor()
+    expect(await page.getByRole('menuitem', { name: /^Standard mode|^Creator mode/ }).count()).toBe(2)
+    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
     await page.keyboard.press('Escape')
     const newSession = page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' })
     await Promise.all([page.waitForResponse('**/api/session/create'), newSession.click()])
-    await label.waitFor()
+    await picker.waitFor()
     // New Session deliberately reuses the unstarted draft; it is not proof of a new default.
     expect(scaffold.ctx.agents.list().map(agent => agent.id)).toEqual([creator.id])
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('cordis')
@@ -464,7 +476,7 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     expect(scaffold.ctx.sessionProjections.stateOf(next.session, 'agentPreset')).toBe('standard')
     expect(scaffold.ctx.agentPresets.composedPreset(next.ctx)).toBe('standard')
     expect(scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
-    await label.waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor()
     await openSettings(page, 'en')
     const settings = page.getByRole('dialog', { name: 'Settings' })
     await settings.getByRole('button', { name: 'General', exact: true }).click()

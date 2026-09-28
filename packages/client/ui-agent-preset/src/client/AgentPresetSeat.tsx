@@ -16,19 +16,19 @@ import { useEffect, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Modal, Toast,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AgentPresetSeatState } from './seat-store.ts'
-import { isBuiltInPreset, presetDisplayText } from './locales.ts'
-import { PresetGuideDialog, presetGuide } from './PresetGuideDialog.tsx'
+import { presetDisplayText } from './locales.ts'
+import { requiresCodingTools } from './settings-store.ts'
 import css from './AgentPresetSeat.module.css'
 
 /** Registration-side business face for the hero chip. */
 export interface AgentPresetSeatInjected {
   hooks: {
-    /** Shared Developer tools preference; off hides ordinary preset selection. */
+    /** Shared Developer tools preference; off hides the PTC and Minimal menu choices. */
     developerTools: ObservableSnapshot<boolean>
     /** Seat snapshot bound by the renderer as useAgentPresetSeat. */
     agentPresetSeat: SnapshotStore<AgentPresetSeatState>
@@ -74,8 +74,7 @@ export type AgentPresetSeatProps =
 /**
  * Render the new-session agent-preset chip.
  * @param props - composed slot props.
- * @returns the picker, read-only Creator details with Coding Tools off, or null
- * outside the main view and before a preset choice is available.
+ * @returns The chip, or null outside the main view or before the roster provides a preset choice.
  */
 export function AgentPresetSeat({
   sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useDeveloperTools, t,
@@ -85,34 +84,26 @@ export function AgentPresetSeat({
   const main = useSessionRetainInfo(info => sessionId === undefined
     || (info?.retainedBy.mainView ?? 0) > 0)
   const [open, setOpen] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
   // The seq keys the banner, so picking the same broken preset twice replays
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
-  const pickerVisible = useRef(developerTools)
-  pickerVisible.current = developerTools
 
   useEffect(() => {
     void load()
   }, [load])
 
-  // The component stays registered while hidden, so clear local disclosure
-  // state explicitly; otherwise an external off/on edit can revive an old
-  // menu or refusal banner.
+  // Close a menu whose available choices just changed.
   useEffect(() => {
-    if (developerTools) return
     setOpen(false)
-    setToast(null)
   }, [developerTools])
 
-  const chosen = state.options.find(option => option.id === state.current)
-  useEffect(() => { setDetailsOpen(false) }, [developerTools, state.current, chosen?.id])
+  const options = state.options.filter(option => developerTools || !requiresCodingTools(option))
 
+  const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
   const label = chosenText?.name ?? state.current
   const ready = state.options.length > 0 && state.current !== ''
-  const guide = chosen === undefined ? undefined : presetGuide(chosen.id, isBuiltInPreset(chosen) ? 'system' : 'user')
 
   // The introduce cue: the pick was staged from another screen (the settings
   // creator entry), so the chip announces it — the icon eases in and each
@@ -136,7 +127,7 @@ export function AgentPresetSeat({
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!main || !ready || (!developerTools && state.current !== 'cordis')) return null
+  if (!main || !ready) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.
@@ -160,10 +151,10 @@ export function AgentPresetSeat({
 
   return (
     <>
-      {developerTools ? <Menu
+      <Menu
         open={open}
         onClose={() => { setOpen(false) }}
-        items={state.options.map((option) => {
+        items={options.map((option) => {
           const text = presetDisplayText(option, t)
           return {
             id: option.id,
@@ -180,16 +171,16 @@ export function AgentPresetSeat({
         selectedId={state.current}
         onSelect={(id) => {
           setOpen(false)
-          const picked = state.options.find(option => option.id === id)
+          const picked = options.find(option => option.id === id)
           // The fallback is for the row shape `find` cannot promise; the menu's
-          // items ARE `state.options`, so an emitted id is always one of them.
+          // items ARE `options`, so an emitted id is always one of them.
           /* v8 ignore next */
           const name = picked === undefined ? id : presetDisplayText(picked, t).name
           void select(id).then((refusal) => {
             // Announced only for a pick a person just made: `apply()` also runs
             // when a session becomes current, and a banner over that would
             // report a refusal nobody asked for.
-            if (refusal === undefined || !pickerVisible.current) return
+            if (refusal === undefined) return
             toastSeq.current += 1
             setToast({ seq: toastSeq.current, text: t('switchRefused', { name, reason: refusal }) })
           })
@@ -212,20 +203,7 @@ export function AgentPresetSeat({
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
         )}
-      /> : (
-        <button type="button" className={css.seat} title={state.error ?? chosenText?.description}
-          aria-label={`${t('modeExplanation')}: ${label}`} aria-haspopup="dialog" disabled={chosen === undefined}
-          onClick={() => { setDetailsOpen(true) }}>
-          <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
-          <span className={css.seatLabel}>{shownLabel}</span>
-        </button>
-      )}
-      {!detailsOpen || developerTools || chosen === undefined ? null : guide === undefined ? (
-        <Modal open title={label} description={chosen.description ?? t('noDescription')}
-          closeLabel={t('close')} onClose={() => { setDetailsOpen(false) }} />
-      ) : (
-        <PresetGuideDialog guide={guide} initialPage="explanation" t={t} onClose={() => { setDetailsOpen(false) }} />
-      )}
+      />
       {toast !== null && (
         <Toast
           key={toast.seq}

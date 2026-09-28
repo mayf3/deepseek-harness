@@ -1,4 +1,4 @@
-/** Shared read-only help never changes the selected preset. */
+/** Read-only help stays local to Settings and never changes the selected preset. */
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
