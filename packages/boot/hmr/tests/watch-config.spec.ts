@@ -48,13 +48,19 @@ async function bootHmr(dir: string, root: string[] = [], usePolling?: boolean): 
 /**
  * Block until this process's native directory watches deliver events. Chokidar
  * reports `ready` once `fs.watch()` returns, but libuv on darwin builds the
- * per-process FSEvents stream later on its CoreFoundation thread, and a write
- * that lands before then is never reported. Closing a second directory handle
- * waits for that thread to rebuild the stream with the remaining handles, so a
- * watcher registered before this call observes the next write. Per-file handles
- * use kqueue and leave the stream alone, so one call after registration covers
- * the later change and unlink steps. Linux and Windows deliver from `fs.watch()`
- * on; there this is an immediate open and close.
+ * per-process FSEvents stream later on its CoreFoundation thread
+ * (`uv__fsevents_init` only signals that thread), and a write that lands before
+ * then is never reported. Closing any directory handle runs `uv__fsevents_close`,
+ * whose `uv_sem_wait` returns only after `uv__fsevents_reschedule` has rebuilt
+ * and started the stream with the remaining handles (libuv `src/unix/fsevents.c`,
+ * unchanged across the libuv 1.x releases bundled by Node 22–24), so a watcher
+ * registered before this call observes the next write. Any existing directory
+ * works because the stream is per process. Per-file handles use kqueue and leave
+ * the stream alone, so one call after registration covers the later change and
+ * unlink steps. Linux inotify and Windows `ReadDirectoryChangesW` are armed
+ * inside `fs.watch()`, so there this is an immediate open and close. Should a
+ * libuv release drop the close-time wait, these cases regain the darwin loss
+ * rate this call removes rather than failing deterministically.
  */
 function ensureNativeWatchLive(dir: string): void {
   fs.watch(dir).close()
@@ -125,12 +131,14 @@ describe('HMR exact config paths', () => {
     }
   })
 
-  it('observes add, change, and unlink outside its module roots', { timeout: 20_000 }, async ({ task }) => {
+  it('observes add, change, and unlink outside its module roots', { timeout: 20_000 }, async ({ task, onTestFailed }) => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     hmrRoots.push(dir)
     const filename = join(dir, 'plugins.yml')
     const ctx = await bootHmr(dir)
     const observed: string[] = []
+    // The case budget fires before eventually() can name the pending step.
+    onTestFailed(() => { console.error(`refresh observed ${JSON.stringify(observed)}`) })
     try {
       await watchConfig(ctx, filename, {}, () => {
         try {
@@ -153,13 +161,15 @@ describe('HMR exact config paths', () => {
     }
   })
 
-  it('observes creation when the config parent did not exist at registration', { timeout: 20_000 }, async ({ task }) => {
+  it('observes creation when the config parent did not exist at registration', { timeout: 20_000 }, async ({ task, onTestFailed }) => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     hmrRoots.push(root)
     const dir = join(root, 'later')
     const filename = join(dir, 'plugins.yml')
     const ctx = await bootHmr(root)
     const observed: string[] = []
+    // The case budget fires before eventually() can name the pending step.
+    onTestFailed(() => { console.error(`refresh observed ${JSON.stringify(observed)}`) })
     try {
       await watchConfig(ctx, filename, {}, () => {
         observed.push(readFileSync(filename, 'utf8'))
@@ -173,7 +183,7 @@ describe('HMR exact config paths', () => {
     }
   })
 
-  it('processes native events for a watcher registered during a transaction', async () => {
+  it('processes native events for a watcher registered during a transaction', { timeout: 20_000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-transaction-watch-'))
     const filename = join(dir, 'plugins.yml')
     onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
