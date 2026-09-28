@@ -613,6 +613,17 @@ describe('CI workflow', () => {
     expect(config).not.toContain("pool: process.platform === 'win32' ? 'threads' : 'forks'")
     expect(config.match(/pool: 'forks'/g)).toHaveLength(2)
   })
+
+  it('applies the lane test budget inside every Vitest project', () => {
+    // The coverage and serial lanes grant DSH_COVERAGE_TEST_TIMEOUT_MS; Vitest
+    // forwards only --testTimeout of the three budgets into inline projects,
+    // so each project reads the budget from the config (behavior pinned by
+    // scripts/lane-test-budget.spec.ts).
+    const config = readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')
+
+    expect(config).toContain('const laneTestBudget = coverageTestTimeoutOptions(process.env[COVERAGE_TEST_TIMEOUT_ENV])')
+    expect(config.match(/^ {10}\.\.\.laneTestBudget,$/gm)).toHaveLength(2)
+  })
 })
 
 describe('Runtime and LLM e2e Blacksmith routing', () => {

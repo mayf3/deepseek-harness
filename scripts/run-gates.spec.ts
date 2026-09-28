@@ -518,34 +518,21 @@ describe('gate graph validation', () => {
     expect(results.some(result => result.status === 'skipped')).toBe(false)
   })
 
-  it('applies one configured test, polling, and hook timeout to both coverage gates', () => {
-    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
-
-    for (const id of ['coverage', 'coverage-exempt-heavy']) {
-      expect(gates.find(subject => subject.id === id)?.args).toEqual(expect.arrayContaining([
-        '--testTimeout=15000',
-        '--expect.poll.timeout=15000',
-        '--hookTimeout=15000',
-      ]))
+  it('leaves the lane test budget to the inherited environment on both coverage gates', () => {
+    // vitest.config.ts reads DSH_COVERAGE_TEST_TIMEOUT_MS per inline project;
+    // a CLI flag here would reach only the per-test default and split the
+    // budget between two owners.
+    for (const budget of ['15000', undefined]) {
+      const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', budget, () =>
+        withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
+      for (const id of ['coverage', 'coverage-exempt-heavy']) {
+        const gate = gates.find(subject => subject.id === id)
+        expect(gate?.args).not.toEqual(expect.arrayContaining([
+          expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
+        ]))
+        expect(gate?.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
+      }
     }
-  })
-
-  it('keeps Vitest timeout defaults when the coverage override is absent', () => {
-    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', undefined, () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
-
-    for (const id of ['coverage', 'coverage-exempt-heavy']) {
-      expect(gates.find(subject => subject.id === id)?.args).not.toEqual(expect.arrayContaining([
-        expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
-      ]))
-    }
-  })
-
-  it('rejects an invalid coverage timeout before starting a gate', () => {
-    expect(() => withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '0', () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
-      .toThrow('DSH_COVERAGE_TEST_TIMEOUT_MS must be a positive integer')
   })
 
   it('selects partitioned coverage only when explicitly configured', () => {

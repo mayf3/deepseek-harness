@@ -12,7 +12,7 @@ export const COVERAGE_PARTITIONS_ENV = 'DSH_COVERAGE_PARTITIONS'
 /** Internal marker that suppresses reports and thresholds inside a partition process. */
 export const COVERAGE_PARTITION_MODE_ENV = 'DSH_COVERAGE_PARTITION_MODE'
 
-/** Environment variable overriding instrumented test, polling, and hook timeouts. */
+/** Environment variable carrying a lane's per-test, hook, and `expect.poll` budget in milliseconds. */
 export const COVERAGE_TEST_TIMEOUT_ENV = 'DSH_COVERAGE_TEST_TIMEOUT_MS'
 
 /**
@@ -85,22 +85,46 @@ export function parseCoveragePartitionCount(raw: string | undefined): number | u
 }
 
 /**
- * Resolve the paired Vitest timeout arguments used by coverage partitions.
- * `--hookTimeout` travels with the test budget because setup and teardown pay
- * the same host contention the raised test budget accounts for: fixtures that
- * await child exit or retry Windows handle release spend that cost in
- * `afterEach`, where Vitest's separate 10 s default would otherwise fail a
- * suite whose cases all passed.
+ * Parse the lane test budget carried by `DSH_COVERAGE_TEST_TIMEOUT_MS`.
  * @param raw - the configured millisecond budget, or undefined to keep Vitest's defaults.
- * @returns the Vitest arguments applying that budget, empty when unset.
+ * @returns the budget in milliseconds, or undefined when unset.
+ * @throws when the value is set and is not a positive integer.
  */
-export function coverageTestTimeoutArgs(raw: string | undefined): string[] {
-  if (raw === undefined || raw === '') return []
+export function parseCoverageTestTimeout(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw === '') return undefined
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== raw) {
     throw new Error(`${COVERAGE_TEST_TIMEOUT_ENV} must be a positive integer, got ${JSON.stringify(raw)}.`)
   }
-  return [`--testTimeout=${raw}`, `--expect.poll.timeout=${raw}`, `--hookTimeout=${raw}`]
+  return parsed
+}
+
+/** The Vitest `test` options one lane budget sets in each inline project. */
+export interface CoverageTestTimeoutOptions {
+  testTimeout?: number
+  hookTimeout?: number
+  expect?: { poll: { timeout: number } }
+}
+
+/**
+ * Resolve the Vitest test options that apply one lane budget to the per-test,
+ * hook, and `expect.poll` defaults together. The hook budget travels with the
+ * test budget because setup and teardown pay the same host contention the
+ * raised test budget accounts for: fixtures that await child exit or retry
+ * Windows handle release spend that cost in `afterEach`, where Vitest's
+ * separate 10 s default would otherwise fail a suite whose cases all passed.
+ * The root config spreads these into each inline project: Vitest forwards
+ * only a fixed list of CLI overrides into projects, and `--hookTimeout` and
+ * `--expect.poll.timeout` are not on it, so a flag-based budget reaches only
+ * the per-test default. Explicit `describe`, case, and fixture timeouts remain
+ * authoritative.
+ * @param raw - the configured millisecond budget, or undefined to keep Vitest's defaults.
+ * @returns the options to spread into a project's `test` block, empty when unset.
+ */
+export function coverageTestTimeoutOptions(raw: string | undefined): CoverageTestTimeoutOptions {
+  const timeout = parseCoverageTestTimeout(raw)
+  if (timeout === undefined) return {}
+  return { testTimeout: timeout, hookTimeout: timeout, expect: { poll: { timeout } } }
 }
 
 /** Remove pnpm's package-script separator before forwarding Vitest arguments. */
