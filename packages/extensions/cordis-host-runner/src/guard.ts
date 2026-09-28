@@ -38,7 +38,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
       && hasIntrinsicConstructor(prototype, 'Object')
 }
 
-/* jscpd:ignore-start -- Node/V8 VM containers use native constructor text and intrinsic-prototype checks */
+/* jscpd:ignore-start -- this VM boundary mirrors the session-owned realm-safe intrinsic test */
 /** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
