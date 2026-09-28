@@ -64,6 +64,9 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
     await trigger.click()
     const dialog = page.getByRole('dialog', { name: '设置' })
+    onTestFinished(async () => {
+      if (await dialog.isVisible()) await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    })
     await dialog.waitFor({ timeout: 10_000 })
     expect(await trigger.getAttribute('aria-expanded')).toBe('true')
     // General is active by default; Permission, Language and Appearance are functional.
@@ -128,6 +131,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await globalToggle.click()
     const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
     await pluginRow.waitFor({ timeout: 10_000 })
+    expect(await pluginRow.getByText('Model-facing subagent delegation tool over the ctx.subagents seam', { exact: true }).count()).toBe(0)
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
       .length
