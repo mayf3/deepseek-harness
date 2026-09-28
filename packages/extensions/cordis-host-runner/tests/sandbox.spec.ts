@@ -1,4 +1,3 @@
-import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { sandboxDefineTool } from '../src/guard.ts'
 import { syntaxErrorContext } from '../src/sandbox.ts'
@@ -13,35 +12,6 @@ import { AGENT_A, call, CONTENT_OUTPUT_CODE, mount, setup, text, running } from 
  */
 
 describe('dynamic tool declaration boundary', () => {
-  it('accepts dynamic schemas and renderer values with WebKit native constructor formatting', () => {
-    const foreign = runInNewContext(`({ Object, Array, options: {
-      name: 'sample', description: 'sample',
-      parameters: { value: { type: 'string', enum: ['x'] } },
-      output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'ok' }] },
-      execute: async () => 'ok',
-    } })`) as { Object: ObjectConstructor; Array: ArrayConstructor; options: Record<string, unknown> }
-    const originalDescriptor = Object.getOwnPropertyDescriptor(Function.prototype, 'toString')!
-    const originalToString = originalDescriptor.value as (this: unknown) => string
-    const toString = vi.spyOn(Function.prototype, 'toString').mockImplementation(function (this: unknown) {
-      if (this === Object || this === foreign.Object) return 'function Object() {\n    [native code]\n}'
-      if (this === Array || this === foreign.Array) return 'function Array() {\n    [native code]\n}'
-      return originalToString.call(this)
-    })
-    try {
-      for (const options of [foreign.options, { ...foreign.options }]) {
-        const definition = sandboxDefineTool(options)
-        expect(definition.parameters.properties).toEqual({ value: { type: 'string', enum: ['x'] } })
-        const rendered = definition.output.render({ value: 'x' }, 'ok')
-        expect(rendered).toEqual([{ type: 'text', text: 'ok' }])
-        expect(Object.getPrototypeOf(rendered)).toBe(Array.prototype)
-      }
-      expect(() => sandboxDefineTool(new Date(0))).toThrow('options must be an object')
-    } finally {
-      toString.mockRestore()
-    }
-    expect(Object.getOwnPropertyDescriptor(Function.prototype, 'toString')).toEqual(originalDescriptor)
-  })
-
   it.each([
     [42, 'options must be an object'],
     [{ parameters: {} }, 'output must declare { schema, render, presentationMeta? }'],

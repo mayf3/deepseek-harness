@@ -45,8 +45,6 @@ kind: "package-reference"
 
 程序调用方使用 `define`、`run`、`stop` 和 `undefine`；浏览器面板操作已有定义。仅含 Host 的包在本进程激活。带浏览器部分的包等待审批或取消，批准后先加载 Host 再加载 Client。`mode: "run"` 启动当前版本，`mode: "update"` 替换版本。Stop 释放运行中的 effect 并保留定义；undefine 还会移除定义。
 
-动态工具的 schema 与 JSON 返回值使用当前引擎的原生构造器表示识别跨 realm 的内建容器；返回值会复制到 Host realm，类实例与伪造原型会被拒绝。
-
 ### 定义的去向
 
 定义按会话隔离且仅在进程内存在：其他会话无法读取，重启会清空。历史日志保留工具参数和回执，但不会恢复注册表。浏览器页面重载后，需要再次显式运行才能加载 Client 部分。
