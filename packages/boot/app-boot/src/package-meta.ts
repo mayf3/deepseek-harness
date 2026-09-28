@@ -1,7 +1,7 @@
 /** Read plugin display text and icons through exported resources without evaluating plugin code. */
 
 import { readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { dirname, extname, isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import type { LocalizedText, PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
@@ -18,22 +18,34 @@ const ICON_MEDIA_TYPES = new Map([
   ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
 ])
 
-function iconOf(specifier: string, parentURL: string, bundleDirectory: string): string | undefined {
-  if (readObject(join(bundleDirectory, 'package.json')).exports == null) return undefined
+function iconOf(
+  specifier: string, parentURL: string, bundleDirectory: string, manifestPath: string | undefined, value: unknown,
+): string | undefined {
+  const icon = manifestPath === undefined ? undefined : textOf(value, `${manifestPath}: icon`)
   let target: string
-  try {
-    target = resolvePluginResource(`${specifier}/icon`, parentURL)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | null)?.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return undefined
-    throw error
+  let directory = bundleDirectory
+  if (manifestPath !== undefined && icon !== undefined) {
+    if (isAbsolute(icon) || win32.isAbsolute(icon) || /^[A-Za-z][A-Za-z\d+.-]*:/u.test(icon)) {
+      throw new Error(`${manifestPath}: icon must be a relative file path`)
+    }
+    directory = dirname(manifestPath)
+    target = resolve(directory, icon)
+  } else {
+    if (readObject(join(bundleDirectory, 'package.json')).exports == null) return undefined
+    try {
+      target = resolvePluginResource(`${specifier}/icon`, parentURL)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException | null)?.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return undefined
+      throw error
+    }
   }
   const mediaType = ICON_MEDIA_TYPES.get(extname(target).toLowerCase())
   if (mediaType === undefined) throw new Error(`${target}: icon must be SVG, PNG, JPEG, or WebP`)
-  const directory = realpathSync(bundleDirectory)
+  const root = realpathSync(directory)
   const file = realpathSync(target)
-  const local = relative(directory, file)
+  const local = relative(root, file)
   if (local === '..' || local.startsWith(`..${sep}`) || isAbsolute(local)) {
-    throw new Error(`${target}: icon must remain inside its bundle directory`)
+    throw new Error(`${target}: icon must remain inside its ${icon === undefined ? 'bundle' : 'manifest'} directory`)
   }
   const stat = statSync(file)
   if (!stat.isFile()) throw new Error(`${target}: icon must be a regular file`)
@@ -137,9 +149,10 @@ function localizedText(
 
 /**
  * Read plugin locale JSON display text without evaluating JavaScript entries.
- * Bundle options enable exported package.json text fallback and an independent ./icon resource.
- * Bundle icons are SVG, PNG, JPEG, or WebP files of at most 256 KiB, contained in
- * the supplied bundle directory after realpath resolution. Icon failures retain display text.
+ * Bundle options enable exported package.json text fallback and icons. A declared manifest icon
+ * takes priority; only omission permits the ./icon resource. Manifest icons remain inside their
+ * declaring directory; exported icons remain inside the supplied bundle root after realpath resolution.
+ * Both accept SVG, PNG, JPEG, or WebP up to 256 KiB. Icon failures retain display text without falling back.
  * Non-package specifiers are skipped without invoking the resource resolver.
  * Language files share the directory containing the resolved English resource;
  * each file is resolved through the complete plugin specifier before reading.
@@ -167,7 +180,7 @@ export function readPluginMeta(
     }
     let icon: string | undefined
     try {
-      icon = options === undefined ? undefined : iconOf(specifier, parentURL, options.bundleDirectory)
+      icon = options === undefined ? undefined : iconOf(specifier, parentURL, options.bundleDirectory, manifestPath, manifest?.icon)
     } catch (error) {
       return { ...text, error: `Plugin metadata for ${specifier}: ${String(error)}` }
     }

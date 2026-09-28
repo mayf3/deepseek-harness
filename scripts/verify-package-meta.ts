@@ -9,6 +9,7 @@ interface Manifest {
   name: string
   exports?: unknown
   files?: string[]
+  icon?: unknown
   dsh?: { bundle?: { patch?: string } }
 }
 
@@ -16,6 +17,7 @@ interface SourceJson {
   file: string
   metadata: boolean
   invalid: boolean
+  icon?: unknown
 }
 
 function sourceJsonFiles(dir: string): SourceJson[] {
@@ -30,7 +32,7 @@ function sourceJsonFiles(dir: string): SourceJson[] {
     if (typeof contents !== 'object' || contents === null || Array.isArray(contents)) {
       return { file, metadata: false, invalid: true }
     }
-    return { file, metadata: Object.hasOwn(contents, 'meta'), invalid: false }
+    return { file, metadata: Object.hasOwn(contents, 'meta'), invalid: false, icon: 'icon' in contents ? contents.icon : undefined }
   })
 }
 
@@ -125,8 +127,16 @@ function packageProblems(manifestPath: string): string[] {
       if (resources.every(({ file }) => byPath.has(file))) {
         const meta = readPluginMeta(specifier, parentURL, { bundleDirectory: dir })
         if (meta?.error !== undefined) problems.push(meta.error)
-        for (const resource of ['package.json', 'icon']) {
-          const target = lookup(`${specifier}/${resource}`)
+        const displayManifest = lookup(`${specifier}/package.json`)
+        const iconDocument = displayManifest === undefined ? undefined : byPath.get(displayManifest)
+        if (pkg.icon !== undefined && displayManifest !== join(dir, 'package.json')) {
+          problems.push(`${manifestPath}: exports must expose its icon declaration through ${pkg.name}/package.json`)
+        }
+        const iconTarget = meta?.icon === undefined ? undefined
+          : displayManifest !== undefined && typeof iconDocument?.icon === 'string'
+            ? resolve(dirname(displayManifest), iconDocument.icon)
+            : lookup(`${specifier}/icon`)
+        for (const target of [displayManifest, iconTarget]) {
           if (target === undefined) continue
           const file = relative(dir, target).replaceAll('\\', '/')
           if (file !== 'package.json' && pkg.files !== undefined && !published(file, pkg.files)) {

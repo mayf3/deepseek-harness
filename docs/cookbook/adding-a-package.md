@@ -139,20 +139,22 @@ Keep language files together, with `locale/en.json` as the exported discovery en
 
 Ordinary plugins read only these locale resources. Fields fall back independently through the existing locale language chain, then use the complete Cordis plugin name for a missing title and no description for a missing description. No JavaScript `meta` export is needed.
 
-Only bundles additionally use `name` and `description` from an accessible `<bundle name>/package.json` as text fallback. Export `./package.json` when the bundle needs that fallback; ordinary plugin display reads never probe it.
+Only bundles additionally read `name`, `description`, and legacy `icon` from an accessible `<bundle name>/package.json`. Export `./package.json` if the package exports map otherwise hides those fields; ordinary plugin display reads never probe it.
 
-Only bundles can customize artwork. Export an `./icon` resource and include its target in `files`, retaining existing entries:
+Only bundles can customize artwork. Existing manifest `icon` paths remain supported and take priority. An optional `./icon` export supplies the image only when that field is omitted. Merge these entries with existing runtime exports and publication files:
 
 ```json
 {
+  "icon": "./icon.svg",
   "exports": {
+    "./package.json": "./package.json",
     "./icon": "./assets/logo.webp"
   },
-  "files": ["assets/logo.webp"]
+  "files": ["icon.svg", "assets/logo.webp"]
 }
 ```
 
-The icon uses Node exports resolution just like locale resources; no top-level `icon` field or `./package.json` export is required. SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP files are supported up to 256 KiB. Node rejects invalid export targets; the Host also rejects paths and symlinks resolving outside the bundle directory. Images must be self-contained; SVG is rendered as an image, not inline HTML. The Host returns a data URL without activating the bundle. Invalid targets or unreadable files produce a metadata diagnostic while retaining valid text; absent exports or undecodable images use default artwork. Ordinary plugin rows and details always use generic artwork.
+Manifest icon paths are relative to the declaring manifest, even when its export is remapped, and must remain inside that directory after realpath resolution. Absolute paths and URLs are invalid. The `./icon` fallback uses Node exports resolution like locale resources, needs no manifest export, and must remain inside the bundle root. Both paths accept SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP up to 256 KiB. Images must be self-contained; SVG is rendered as an image, not inline HTML. Invalid declarations or unreadable selected files produce a diagnostic while retaining valid text, without trying the other icon source. Absent or undecodable images use default artwork; ordinary plugin rows and details always use generic artwork.
 
 Installed bundle cards and details, component lists and configuration details, and Settings' plugin inventory display this metadata, including disabled and preset plugins. Reads do not activate plugins.
 

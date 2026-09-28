@@ -491,7 +491,7 @@ describe('web e2e: plugin manager', () => {
     await closeSettings()
   })
 
-  it('decodes exported icons for disabled bundles and keeps ordinary plugin artwork generic', async () => {
+  it('prefers manifest icons over exported fallbacks and keeps ordinary plugin artwork generic', async () => {
     const panel = await openPluginsPanel()
     onTestFinished(closeSettings)
     const fixtureIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/icon.svg'))).toString('base64')}`

@@ -230,7 +230,7 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
 }
 
 /**
- * Compute canonical publication patterns, including the exported bundle icon and exported locale JSON resources.
+ * Compute canonical publication patterns, including bundle icon paths and exported locale JSON resources.
  * @param manifest - workspace package manifest.
  * @returns the icon and deduplicated locale targets followed by runtime and declaration payloads.
  */
@@ -249,9 +249,12 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
   ]
   const targets = (value: unknown): string[] => typeof value === 'string' ? [value]
     : typeof value === 'object' && value !== null ? Object.values(value).flatMap(targets) : []
-  const icons = bundle === undefined ? [] : targets(manifest.exports?.['./icon'])
+  const icons = bundle === undefined ? [] : [
+    ...typeof manifest.icon === 'string' ? [manifest.icon.replace(/^\.\//u, '')] : [],
+    ...targets(manifest.exports?.['./icon']).filter(icon => icon.startsWith('./')).map(icon => icon.slice(2)),
+  ]
   return [
-    ...new Set(icons.filter(icon => icon.startsWith('./')).map(icon => icon.slice(2))),
+    ...new Set(icons),
     ...[...localeFiles].sort(),
     'lib/index.js',
     // Packages with an invariant export publish its runtime as a separate

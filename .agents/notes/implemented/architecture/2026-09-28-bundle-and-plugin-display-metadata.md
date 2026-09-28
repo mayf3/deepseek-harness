@@ -12,9 +12,9 @@ One package can export several plugins. Its npm introduction and image identify 
 
 Ordinary plugins reuse `meta.title` and `meta.description` in their exported locale JSON. They do not read package manifests for display text or custom images. The [localized metadata decision](2026-09-18-localized-package-metadata.md) retains ownership of locale resource identity, English discovery, per-field language fallback, diagnostics, and non-activation; this decision supersedes its ordinary-plugin package fallback.
 
-Bundles use the same locale resources and can additionally read exported package-manifest text and an independent `./icon` resource. Node exports select both locale and icon paths, so authors can relocate assets without changing public resource addresses. An icon needs neither a top-level manifest field nor an exported `package.json`. The [package cookbook](../../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) owns the authoring format and image restrictions.
+Bundles use the same locale resources and can additionally read exported package-manifest text and icons. The manifest `icon` field retains its existing relative-path meaning and takes priority; only omission enables the independent `./icon` resource. Node exports select locale and fallback icon paths, so authors can relocate assets without changing public resource addresses. An exported fallback icon needs no manifest export. The [package cookbook](../../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) owns the authoring format and image restrictions.
 
-The manager passes the bundle directory it already resolved. Confinement uses that real package root, not the icon's directory or the locale directory: sibling asset directories are valid, while symlinks outside the package are not. A missing icon export is optional; an invalid target or unreadable selected file reports a diagnostic without discarding valid text. Ordinary plugin rows and their details use generic artwork.
+The manager passes the bundle directory it already resolved. Manifest icons stay inside the declaring manifest's directory, including for remapped manifests. Exported fallback icons stay inside the real bundle root, allowing sibling asset directories while rejecting symlinks outside the package. Invalid declared icons report a diagnostic without discarding valid text or trying the lower-priority export. Ordinary plugin rows and their details use generic artwork.
 
 No metadata lookup evaluates a plugin entry. Disabled and failed plugins retain locale text, and each full plugin specifier and resolution parent keeps its own resource identity. Publication checks validate ordinary plugin locales as well as bundle locales, selected image resources, and publication coverage.
 
@@ -24,14 +24,14 @@ No metadata lookup evaluates a plugin entry. Disabled and failed plugins retain 
 
 **Use package metadata for every plugin.** A package-wide introduction or image need not describe each plugin it exports. Ordinary plugins own their locale text; bundles own package-level display resources.
 
-**Keep a top-level `icon` path.** It adds a separate path declaration outside the existing resource-export mechanism. The fixed `./icon` address allows the same Node resolution and remapping as locale resources.
+**Use only an icon export.** Replacing the manifest field would invalidate existing bundle declarations. The exported resource is additive and has lower priority, preserving those declarations and their relative paths.
 
-**Require a manifest export for icons.** Text fallback and image publication are independent. The already-resolved bundle root provides confinement without exposing another resource.
+**Require a manifest export for the fallback image.** Text fallback and exported image publication are independent. The already-resolved bundle root confines exported images without exposing another resource.
 
 ## Verification
 
-Focused reader and publication tests cover remapped and conditional targets, absent exports, invalid resources, size limits, confinement, and locale-only ordinary reads. Consumer and browser tests cover localized disabled rows, bundle images, generic ordinary artwork, and retained diagnostics.
+Focused reader and publication tests cover manifest-first precedence, remapped legacy manifests, exported fallback targets, absent exports, invalid resources, size limits, confinement, and locale-only ordinary reads. Consumer and browser tests cover localized disabled rows, distinct manifest and export images, generic ordinary artwork, and retained diagnostics.
 
 ## Consequences
 
-Bundle authors replace top-level `icon` declarations with `exports["./icon"]` and include the target in `files`. Ordinary authors who want package-description text on their plugin rows publish it in locale `meta.description`; otherwise the description is absent. The Host reads no extra JavaScript and needs no Cordis or Loader metadata API. Session logs and management-tool display exclusions remain unchanged.
+Existing bundle icon declarations need no migration. Authors may add `exports["./icon"]` as a lower-priority alternative and include its target in `files`. Ordinary authors who want package-description text on their plugin rows publish it in locale `meta.description`; otherwise the description is absent. The Host reads no extra JavaScript and needs no Cordis or Loader metadata API. Session logs and management-tool display exclusions remain unchanged.

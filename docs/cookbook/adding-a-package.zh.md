@@ -139,20 +139,22 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 
 普通插件只读取这些 locale 资源。各字段先按现有 locale 语言链独立回退；标题仍缺失时使用完整 Cordis 插件名，描述仍缺失时不显示描述。无需 JavaScript `meta` 导出。
 
-只有组合包还会使用可访问的 `<组合包名>/package.json` 中的 `name` 和 `description` 作为文本回退。组合包需要该回退时导出 `./package.json`；普通插件的展示读取不会探查它。
+只有组合包还会读取可访问的 `<组合包名>/package.json` 中的 `name`、`description` 和既有的 `icon`。若包的 exports 映射隐藏了这些字段，应导出 `./package.json`；普通插件的展示读取不会探查它。
 
-只有组合包可以定制插画。导出 `./icon` 资源并将目标加入 `files`，保留已有条目：
+只有组合包可以定制插画。现有的清单 `icon` 路径继续受支持且优先使用。只有省略该字段时，才使用可选的 `./icon` 导出提供图片。将以下条目与已有运行时 exports 和发布文件合并：
 
 ```json
 {
+  "icon": "./icon.svg",
   "exports": {
+    "./package.json": "./package.json",
     "./icon": "./assets/logo.webp"
   },
-  "files": ["assets/logo.webp"]
+  "files": ["icon.svg", "assets/logo.webp"]
 }
 ```
 
-图标与 locale 资源一样使用 Node exports 解析；不需要顶层 `icon` 字段或 `./package.json` 导出。支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP 文件。Node 拒绝无效的导出目标；Host 还会拒绝解析到组合包目录外的路径与符号链接。图片必须自包含；SVG 作为图片渲染，不作为内联 HTML。Host 返回 data URL，不激活组合包。目标无效或文件不可读时，显示元信息诊断并保留有效文本；导出缺失或图片无法解码时使用默认插画。普通插件行及其详情始终使用通用插画。
+清单图标路径相对于声明清单，即使其导出被重定向也一样，并且经 realpath 解析后必须留在该目录内。绝对路径和 URL 无效。`./icon` 后备资源与 locale 一样使用 Node exports 解析，无需导出清单，但必须留在组合包根目录内。两种路径均支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP。图片必须自包含；SVG 作为图片渲染，不作为内联 HTML。声明无效或选中的文件不可读时，返回诊断并保留有效文本，不尝试另一种图标来源。图片缺失或无法解码时使用默认插画；普通插件行及其详情始终使用通用插画。
 
 已安装 bundle 的卡片和详情、组件列表与配置详情、设置中的插件清单都展示这些元信息，包括禁用插件和预设内插件。读取时不激活插件。
 

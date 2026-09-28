@@ -175,6 +175,66 @@ describe('plugin locale display metadata', () => {
     expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error).toContain('meta.title must be a non-empty string')
   })
 
+  it.each([undefined, './fallback.svg', '../invalid.svg'])('prefers the manifest icon to export %j', (fallback) => {
+    manifest({ './package.json': './package.json', './icon': fallback }, { icon: './legacy.svg' })
+    file(join(dir, 'legacy.svg'), 'legacy')
+    file(join(dir, 'fallback.svg'), 'fallback')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
+      title: 'localized', icon: `data:image/svg+xml;base64,${Buffer.from('legacy').toString('base64')}`,
+    })
+    expect(readPluginMeta('localized', parentURL)).toBeUndefined()
+  })
+
+  it('reads a legacy icon without an exports map', () => {
+    file(join(dir, 'package.json'), JSON.stringify({ name: 'localized', type: 'module', icon: 'legacy.svg' }))
+    file(join(dir, 'legacy.svg'), 'legacy')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.icon)
+      .toBe(`data:image/svg+xml;base64,${Buffer.from('legacy').toString('base64')}`)
+  })
+
+  it('resolves a legacy icon relative to its remapped exported manifest', () => {
+    manifest({ './package.json': './display/manifest.json', './icon': './fallback.svg' })
+    file(join(dir, 'display', 'manifest.json'), JSON.stringify({ icon: './logo.svg' }))
+    file(join(dir, 'display', 'logo.svg'), 'remapped')
+    file(join(dir, 'fallback.svg'), 'fallback')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
+      icon: `data:image/svg+xml;base64,${Buffer.from('remapped').toString('base64')}`,
+    })
+  })
+
+  it('keeps legacy icons confined to the declaring manifest directory', () => {
+    manifest({ './package.json': './display/manifest.json', './icon': './fallback.svg' })
+    file(join(dir, 'display', 'manifest.json'), JSON.stringify({ icon: '../outside.svg' }))
+    file(join(dir, 'outside.svg'), 'outside')
+    file(join(dir, 'fallback.svg'), 'fallback')
+    const meta = readPluginMeta('localized', parentURL, { bundleDirectory: dir })
+    expect(meta?.error).toContain('icon must remain inside its manifest directory')
+    expect(meta?.icon).toBeUndefined()
+  })
+
+  it.each([null, false, 1, '', ' ', '/tmp/icon.svg', 'C:/icons/icon.svg', 'https://example.test/icon.svg'])
+  ('does not fall through an invalid manifest icon %j', (icon) => {
+    manifest({ './package.json': './package.json', './icon': './fallback.svg' }, { icon })
+    file(join(dir, 'fallback.svg'), 'fallback')
+    const meta = readPluginMeta('localized', parentURL, { bundleDirectory: dir })
+    expect(meta?.title).toBe('localized')
+    expect(meta?.error).toBeDefined()
+    expect(meta?.icon).toBeUndefined()
+  })
+
+  it.each(['missing.svg', 'directory.svg', 'oversized.svg', 'unsupported.gif'])
+  ('does not replace an unreadable or invalid legacy image %s with the export', (icon) => {
+    manifest({ './package.json': './package.json', './icon': './fallback.svg' }, { icon })
+    file(join(dir, 'fallback.svg'), 'fallback')
+    mkdirSync(join(dir, 'directory.svg'))
+    file(join(dir, 'oversized.svg'), 'x'.repeat(256 * 1024 + 1))
+    file(join(dir, 'unsupported.gif'), 'gif')
+    const meta = readPluginMeta('localized', parentURL, { bundleDirectory: dir })
+    expect(meta?.title).toBe('localized')
+    expect(meta?.error).toBeDefined()
+    expect(meta?.icon).toBeUndefined()
+  })
+
   it('reads the exported bundle icon even when both English fields are supplied', () => {
     manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json', './icon': './art/team.svg' })
     file(join(dir, 'art', 'team.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')

@@ -34,16 +34,17 @@ Plugin Manager and Settings read `meta.title` and `meta.description` from export
 { "meta": { "title": "My Decoration", "description": "Draws a badge under the composer." } }
 ```
 
-Only bundles can customize icons. Merge these resource exports and publication files into the bundle manifest, retaining its runtime exports:
+Only bundles can customize icons. Keep existing manifest `icon` paths; they take priority. The optional `./icon` export is used only when that field is omitted. Merge resource exports and publication files while retaining runtime exports:
 
 ```json
 {
-  "exports": { "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
-  "files": ["locale/*.json", "icon.svg"]
+  "icon": "./icon.svg",
+  "exports": { "./package.json": "./package.json", "./locale/*.json": "./locale/*.json", "./icon": "./fallback-icon.svg" },
+  "files": ["locale/*.json", "icon.svg", "fallback-icon.svg"]
 }
 ```
 
-Both resource addresses support Node exports remapping. Do not add a JavaScript `meta` export or a top-level manifest `icon` field. The icon target can be SVG, PNG, JPEG, or WebP up to 256 KiB and must stay inside the real bundle directory, including through symlinks. Icon errors retain valid text. To enable optional bundle `name`/`description` fallback, also export `./package.json`; icons do not require it, and ordinary plugin display reads never use it. Missing ordinary titles use module names, missing descriptions are omitted, and absent or undecodable bundle images use default artwork.
+Locale and fallback icon resources support Node exports remapping. No JavaScript `meta` export is needed. A manifest icon stays relative to and inside its declaring manifest directory, including when that manifest is remapped; an exported icon stays inside the real bundle root. Both accept SVG, PNG, JPEG, or WebP up to 256 KiB. Invalid declared icons retain valid text with a diagnostic, without trying the export. An accessible `package.json` also provides optional bundle `name`/`description` fallback; export it if the exports map otherwise hides it. Export-only icons do not require a manifest export. Ordinary plugin display reads never use manifests: missing titles use module names, missing descriptions are omitted, and artwork stays generic.
 
 ## Host plugin export forms
 

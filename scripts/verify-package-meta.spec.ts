@@ -44,6 +44,44 @@ it('does not require locale resources for exported package name and description'
   expect(packageMetaProblems(root)).toEqual([])
 })
 
+it.each(['legacy.svg', './legacy.svg'])('preserves manifest-only bundle icon %s', (icon) => {
+  manifest({ icon, dsh: { bundle: { patch: './cordis.patch.yml' } }, files: ['legacy.svg'] })
+  file('legacy.svg', 'legacy')
+  expect(packageMetaProblems(root)).toEqual([])
+})
+
+it('checks the legacy image instead of a lower-priority invalid export', () => {
+  manifest({ icon: './legacy.svg', dsh: { bundle: { patch: './cordis.patch.yml' } }, files: ['legacy.svg'],
+    exports: { './package.json': './package.json', './icon': '../invalid.svg' } })
+  file('legacy.svg', 'legacy')
+  expect(packageMetaProblems(root)).toEqual([])
+})
+
+it.each([['display'], ['display/manifest.json'], ['display/logo.svg']])
+('checks publication of remapped legacy manifests and their images: %j', (...files) => {
+  manifest({ dsh: { bundle: { patch: './cordis.patch.yml' } }, files,
+    exports: { './package.json': './display/manifest.json', './icon': './missing.svg' } })
+  json('display/manifest.json', { icon: './logo.svg' })
+  file('display/logo.svg', 'legacy')
+  const problems = packageMetaProblems(root).join('\n')
+  if (files.includes('display')) expect(problems).toBe('')
+  else expect(problems).toContain(`files must include ${files.includes('display/manifest.json') ? 'display/logo.svg' : 'display/manifest.json'}`)
+})
+
+it('requires the root manifest icon declaration to remain accessible', () => {
+  manifest({ icon: './legacy.svg', dsh: { bundle: { patch: './cordis.patch.yml' } }, files: ['legacy.svg'],
+    exports: { './icon': './legacy.svg' } })
+  file('legacy.svg', 'legacy')
+  expect(packageMetaProblems(root).join('\n')).toContain('exports must expose its icon declaration')
+})
+
+it.each([null, false, '', './missing.svg'])('diagnoses legacy icon %j despite a valid fallback export', (icon) => {
+  manifest({ icon, dsh: { bundle: { patch: './cordis.patch.yml' } }, files: ['fallback.svg'],
+    exports: { './package.json': './package.json', './icon': './fallback.svg' } })
+  file('fallback.svg', 'fallback')
+  expect(packageMetaProblems(root).join('\n')).toContain('Plugin metadata for @test/plugin:')
+})
+
 it.each([undefined, ['art'], ['art/*.webp'], ['./art/icon.webp']])('accepts an exported bundle icon without other resources: %j', (files) => {
   manifest({ dsh: { bundle: { patch: './cordis.patch.yml' } }, exports: { './icon': './art/icon.webp' }, files })
   file('art/icon.webp', 'image')
