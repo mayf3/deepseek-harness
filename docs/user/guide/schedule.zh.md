@@ -17,7 +17,7 @@
 <a id="create-reminders"></a>
 ## 创建提醒
 
-发布的 Web profile 把 `time-context`、`schedule` 与 `ui-schedule` 三行保持禁用。打开插件管理页，在 Official 分组中启用“定时与时间上下文”；可选实验性 bundle `@deepseek-ai/dsh-experimental-schedule-bundle` 会打开 Host 的 Schedule 服务与自动化任务入口。在请求模型创建提醒前，先配置模型 provider。
+发布的 Web profile 不含 Schedule。打开插件管理页，在“官方”分组中启用“自动化任务”；可选实验性 bundle `@deepseek-ai/dsh-experimental-schedule-bundle` 随即加入 Host 的 Schedule 服务与自动化任务页面。在请求模型创建提醒前，先配置模型 provider。
 
 `standard`、`cordis` 和 `ptc` preset 声明四个提醒工具与把当前时间和浏览器时区交给模型的时钟上下文，因此启用 bundle 后这些 preset 会提供 `schedule_create`、`schedule_list`、`schedule_update` 和 `schedule_delete`；`minimal` preset 两者都不声明。
 

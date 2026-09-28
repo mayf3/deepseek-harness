@@ -1,5 +1,6 @@
 - heading "插件" [level=1]
-- paragraph: 添加和管理插件
+- text: 安装、启用和配置插件
+- button "插件说明"
 - button "刷新"
 - button "添加插件"
 - heading "官方" [level=3]
@@ -14,12 +15,12 @@
     - text: 实验性 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
     - switch "启用 自动授权审查"
   - listitem:
-    - button "查看 定时与时间上下文": 定时与时间上下文
-    - text: 实验性 启用持久提醒与自动化任务页面。
-    - switch "启用 定时与时间上下文"
+    - button "查看 自动化任务": 自动化任务
+    - text: 实验性 按设定的时间或周期，在会话中自动执行任务。
+    - switch "启用 自动化任务"
   - listitem:
     - button "查看 语音输入": 语音输入
-    - text: 实验性 在本机使用 SenseVoice 转写录音；首次使用需安装依赖
+    - text: 实验性 在本机使用 SenseVoice 转写录音，首次使用需安装依赖。
     - switch "启用 语音输入"
   - listitem:
     - button "查看 终端": 终端

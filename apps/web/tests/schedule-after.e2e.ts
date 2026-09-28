@@ -79,12 +79,11 @@ const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(W
 /**
  * Write the overlay that makes every step carry a fresh clock reading.
  *
- * The shipped Web layer disables its own `time-context` row and the `standard`
- * preset owns the clock, so a static overlay naming the Host row reaches a row
- * that never mounts. The overlay therefore restates the shipped `preset-standard`
- * row with its `preset-time-context` plugin configured to re-read on every step;
- * the scenario still turns the Host Schedule service on through the bundle layer
- * beside it.
+ * The shipped Web composition carries no `time-context` row and the `standard`
+ * preset owns the clock, so an overlay naming a Host row reaches nothing. The
+ * overlay therefore restates the shipped `preset-standard` row with its
+ * `preset-time-context` plugin configured to re-read on every step; the scenario
+ * inserts the Host Schedule service through the bundle layer beside it.
  * @param dir - Directory that receives the overlay file.
  * @returns Absolute path of the written overlay.
  */
@@ -510,9 +509,12 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     await row.waitFor({ timeout: 15_000 })
     expect(await row.getAttribute('data-chat-flow-kind')).toBe('assistant-step')
     expect(await row.textContent()).toContain(AFTER_REPLY)
+    const triggerTitle = '[data-turn-trigger] > button > span:nth-child(2)'
+    await page.locator(triggerTitle).waitFor()
+    expect(await page.locator(triggerTitle).textContent()).toBe('Automation task')
     await compareOrRefreshGolden(
       AFTER_EXPECTED,
-      await captureStableAria(page, selector, scaffold.workspaceCwd),
+      `${await captureStableAria(page, triggerTitle, scaffold.workspaceCwd)}\n\n${await captureStableAria(page, selector, scaffold.workspaceCwd)}`,
       MODE,
     )
     await expectNoReminderEntry(page)
@@ -893,22 +895,29 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
   it('reads stored tasks without a live Session and deletes them through the catalog', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog'))
-    const shipped = composeEntries([
+    const layers = [
       loadOverlayPatches('Schedule catalog shipped roster', BASE_PATCH),
       ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog shipped roster', file)),
-    ])
-    // The shipped Web layer declares the three reminder rows off; the optional
-    // Schedule bundle turns on the Host service and the catalog, but never the
-    // clock, which the presets own.
+    ]
+    const shipped = composeEntries(layers)
+    const withBundle = composeEntries([...layers, loadOverlayPatches('Schedule catalog bundle', SCHEDULE_BUNDLE)])
     for (const row of [
       { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
       { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
       { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
     ]) {
-      const matches = shipped.filter(entry => entry.id === row.id && entry.name === row.name)
-      expect(matches).toHaveLength(1)
-      expect(matches[0]?.disabled).toBe(true)
+      expect(shipped.some(entry => entry.id === row.id)).toBe(false)
     }
+    // The bundle inserts the Schedule service and its task page; the clock stays
+    // preset-level, so the bundle never inserts it.
+    for (const row of [
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
+    ]) {
+      expect(withBundle.filter(entry => entry.id === row.id && entry.name === row.name && entry.disabled !== true))
+        .toHaveLength(1)
+    }
+    expect(withBundle.some(entry => entry.id === 'time-context')).toBe(false)
     // Each preset that offers reminders declares the clock and the tool package
     // in its own scope and ships them enabled; `minimal` declares neither.
     const presetPlugins = (id: string): Array<{ id?: string; name?: string; disabled?: boolean }> => {

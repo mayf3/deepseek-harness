@@ -17,7 +17,7 @@ Create reminders in a conversation, then inspect active and inactive tasks and e
 <a id="create-reminders"></a>
 ## Create reminders
 
-The shipped Web profile carries the `time-context`, `schedule`, and `ui-schedule` rows disabled. Open Plugins and enable `Scheduling and time context` in the Official group; the optional experimental bundle `@deepseek-ai/dsh-experimental-schedule-bundle` opens the Host Schedule service and the Automation tasks entry. Configure a model provider before asking it to create reminders.
+The shipped Web profile does not include Schedule. Open Plugins and enable Automation tasks in the Official group; the optional experimental bundle `@deepseek-ai/dsh-experimental-schedule-bundle` then adds the Host Schedule service and the Automation tasks page. Configure a model provider before asking it to create reminders.
 
 The `standard`, `cordis`, and `ptc` presets declare the four reminder tools and the clock context that gives the model the current time and the browser's zone, so enabling the bundle provides `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` in those presets; the `minimal` preset declares neither.
 

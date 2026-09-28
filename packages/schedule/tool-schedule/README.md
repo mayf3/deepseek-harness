@@ -44,7 +44,7 @@ Choose it for any preset whose agents need to schedule future work in their own 
 - name: '@deepseek-ai/dsh-tool-schedule'
 ```
 
-The package declares no `Config` fields. It injects `ctx.tools` and the Host `ctx.schedule` service, and each call acts on the Session of the Agent that dispatched it.
+The package declares no `Config` fields. It injects `ctx.tools` and registers the four tools once the scope resolves the Host `ctx.schedule` service, so a composition that keeps that service off mounts no reminder tool. Each call acts on the Session of the Agent that dispatched it.
 
 -----
 

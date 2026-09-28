@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-experimental-schedule-bundle",
-  "description": "Optional bundle that switches the shipped Schedule service and the reminder catalog on",
+  "description": "Optional bundle that adds the Schedule service and its task page to the Web composition",
   "version": "0.1.7-rc.2",
   "icon": "./icon.svg",
   "publishConfig": {
@@ -32,6 +32,10 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-schedule": "workspace:*",
+    "@deepseek-ai/dsh-schedule": "workspace:*"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"
   },

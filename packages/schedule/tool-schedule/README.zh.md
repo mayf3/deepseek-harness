@@ -44,7 +44,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-schedule'
 ```
 
-本包不声明任何 `Config` 字段。它注入 `ctx.tools` 与宿主 `ctx.schedule` 服务，每次调用都作用于派发该调用的 Agent 的 Session。
+本包不声明任何 `Config` 字段。它注入 `ctx.tools`，并在作用域解析到宿主 `ctx.schedule` 服务后注册这四个工具，因此保持该服务关闭的组合不会挂载任何提醒工具。每次调用都作用于派发该调用的 Agent 的 Session。
 
 -----
 

@@ -64,16 +64,17 @@ describe('optional bundles', () => {
     }
   })
 
-  it('composes the Schedule bundle over the shipped Web service and catalog rows', () => {
+  it('adds the Schedule service and task page the shipped Web composition leaves out', () => {
     const { patches } = bundle('@deepseek-ai/dsh-experimental-schedule-bundle')
-    const composed = composeEntries([...shipped, patches])
-    expect(composed.filter(entry => entry.id === 'time-context' || entry.id === 'schedule' || entry.id === 'ui-schedule'))
-      .toMatchObject([
-        // The clock stays off with the shipped layer: the presets own it.
-        { id: 'time-context', name: '@deepseek-ai/dsh-time-context', disabled: true },
-        { id: 'schedule', name: '@deepseek-ai/dsh-schedule', disabled: false },
-        { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule', disabled: false },
-      ])
+    const scheduleRows = (entries: ReturnType<typeof composeEntries>) =>
+      entries.filter(entry => ['time-context', 'schedule', 'ui-schedule'].includes(entry.id))
+    expect(scheduleRows(composeEntries(shipped))).toEqual([])
+    // The clock stays preset-level: the bundle inserts the service and its page,
+    // and `time-context` reaches only the presets that declare it.
+    expect(scheduleRows(composeEntries([...shipped, patches]))).toEqual([
+      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
+      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
+    ])
   })
 
   it.each(OPTIONAL_BUNDLES)('%s resolves a title, description, and icon in both shipped languages', (name) => {
