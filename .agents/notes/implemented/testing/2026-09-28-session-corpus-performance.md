@@ -60,7 +60,7 @@ Budgets use standard two-CPU hosted CI expectations (Linux x64, Node 24.21, PR #
 | Fork: p99 | 1,522.7 / 1,485.5 ms | 1,600 ms | 2,000 ms |
 | Fork: longest (one sample) | 18,871.9 / 20,326.7 ms | 20,400 ms | 25,500 ms |
 
-With seeding in one process, the complete file took 294.5 s on the EPYC 7763 runner (85 s seeding, 26 s listing, 149 s searching, 34 s forking) and 266.6 s on the 9V74. Parallel preparation cuts local seeding from 15.1 s to 9.8 s; the process holding the longest Session finishes last. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
+With seeding in one process, the complete file took 294.5 s on the EPYC 7763 runner (85 s seeding, 26 s listing, 149 s searching, 34 s forking) and 266.6 s on the 9V74. With parallel preparation it took 276.8 s on the 7763: the two preparation processes took 59 s and 65 s, because they share two CPUs with Zstandard and garbage-collection threads, and writing the corpora took 4.6 s. The other cases varied by less than 3% between runs on one runner model. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
 
 On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 ms first, list 5,000 at 1,364–1,603 ms first, search at 57 s first, and fork of the longest Session at 6.0–6.4 s. A 10,000-Session list took 3.2–5.4 s for the first call with 1.9 GB peak RSS.
 
