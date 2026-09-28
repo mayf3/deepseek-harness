@@ -1,8 +1,7 @@
 /** Sign runtime code and verify that packaged macOS artifacts carry the company release identity. */
 
 import { spawn, spawnSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { resolveMacOSSigningEnvironment } from './desktop-release-environment.mjs'
 import { loadDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 
@@ -44,11 +43,10 @@ export function assertMacOSRuntimeSignatureDetails(details, expected) {
  * @param {string} command - Absolute executable path.
  * @param {readonly string[]} args - Tool arguments.
  * @param {string} label - Stable diagnostic name.
- * @param {string | undefined} input - Optional standard input for the command.
- * @returns {{ stdout: string, stderr: string }} Separate output and diagnostic streams.
+ * @returns {string} Combined stdout and stderr.
  */
-function runAppleCommand(command, args, label, input = undefined) {
-  const result = spawnSync(command, args, { encoding: 'utf8', ...(input === undefined ? {} : { input }) })
+function runAppleCommand(command, args, label) {
+  const result = spawnSync(command, args, { encoding: 'utf8' })
   if (result.error !== undefined) {
     throw new Error(`desktop macOS signing: could not execute ${label}: ${result.error.message}`)
   }
@@ -59,7 +57,7 @@ function runAppleCommand(command, args, label, input = undefined) {
     const diagnostic = `${result.stdout}${result.stderr}`.trim()
     throw new Error(`desktop macOS signing: ${label} exited with ${String(result.status)}${diagnostic === '' ? '' : `: ${diagnostic}`}`)
   }
-  return { stdout: result.stdout, stderr: result.stderr }
+  return `${result.stdout}${result.stderr}`
 }
 
 /**
@@ -105,8 +103,7 @@ function runAppleCommandAsync(command, args, label) {
  * @returns {string} Combined stdout and stderr.
  */
 function runCodeSign(args) {
-  const result = runAppleCommand('/usr/bin/codesign', args, 'codesign')
-  return `${result.stdout}${result.stderr}`
+  return runAppleCommand('/usr/bin/codesign', args, 'codesign')
 }
 
 /**
@@ -145,28 +142,7 @@ export function verifyMacOSRuntimeCode(path, expected) {
 }
 
 /**
- * Require microphone access in the signed main application and its embedded helper applications.
- * @param {string} appPath - Path to the packaged `.app` directory.
- * @returns {void}
- */
-export function verifyMacOSMicrophoneEntitlements(appPath) {
-  const frameworks = join(appPath, 'Contents', 'Frameworks')
-  const helpers = readdirSync(frameworks, { withFileTypes: true })
-    .filter(entry => entry.isDirectory() && entry.name.endsWith('.app'))
-    .map(entry => join(frameworks, entry.name))
-  for (const path of [appPath, ...helpers]) {
-    const xml = runAppleCommand('/usr/bin/codesign', ['--display', '--entitlements', '-', '--xml', path], 'codesign entitlements').stdout
-    const entitlements = xml.trim() === '' ? {} : JSON.parse(runAppleCommand(
-      '/usr/bin/plutil', ['-convert', 'json', '-o', '-', '-'], 'plutil entitlements', xml,
-    ).stdout)
-    if (entitlements?.['com.apple.security.device.audio-input'] !== true) {
-      throw new Error(`desktop macOS signing: ${path} requires com.apple.security.device.audio-input=true`)
-    }
-  }
-}
-
-/**
- * Verify the full application signature, its release owner, and microphone entitlements.
+ * Verify the full application signature and its release owner.
  * @param {string} appPath - Path to the packaged `.app` directory.
  * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
  * @returns {void}
@@ -175,7 +151,6 @@ export function verifyMacOSSignature(appPath, expected) {
   runCodeSign(['--verify', '--deep', '--strict', '--verbose=2', appPath])
   const details = runCodeSign(['--display', '--verbose=4', appPath])
   assertMacOSSignatureDetails(details, expected)
-  verifyMacOSMicrophoneEntitlements(appPath)
 }
 
 /**

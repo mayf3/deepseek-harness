@@ -18,7 +18,7 @@ Desktop Host Platform API requests and update-policy requests identify the insta
 
 A server-expired account credential returns to Welcome when no official API key is configured; an available API key keeps the workspace open. Explicit sign-out follows the same rule. Both Welcome and the workspace display the localized expiry notice.
 
-Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization and a packaged usage description. Hardened-runtime releases sign the main application and its helpers with `com.apple.security.device.audio-input`; application signature verification rejects a missing or disabled entitlement. The ad-hoc development bundle does not exercise hardened-runtime permissions.
+Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization, a packaged usage description, and `com.apple.security.device.audio-input` in the main application and Helper signatures.
 
 Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
 

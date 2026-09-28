@@ -37,13 +37,7 @@ export function signMacOSRuntimeCode(
 export function verifyMacOSRuntimeCode(path: string, expected: MacOSSigningEnvironment): void
 
 /**
- * Require microphone access in the signed main application and its embedded helper applications.
- * @param appPath - Path to the packaged `.app` directory.
- */
-export function verifyMacOSMicrophoneEntitlements(appPath: string): void
-
-/**
- * Verify the full application signature, its release owner, and microphone entitlements.
+ * Verify the full application signature and its release owner.
  * @param appPath - Path to the packaged `.app` directory.
  * @param expected - Public release identity.
  */

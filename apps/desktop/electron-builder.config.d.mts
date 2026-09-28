@@ -24,7 +24,7 @@ export interface DesktopElectronBuilderConfig {
     ...{ readonly from: string, readonly to: 'tray.ico' }[],
   ]
   readonly mac: {
-    readonly extendInfo: { readonly CFBundleLocalizations: readonly string[]; readonly NSMicrophoneUsageDescription: string }
+    readonly extendInfo: { readonly NSMicrophoneUsageDescription: string }
     readonly entitlements: string
     readonly entitlementsInherit: string
     readonly identity: string | undefined
