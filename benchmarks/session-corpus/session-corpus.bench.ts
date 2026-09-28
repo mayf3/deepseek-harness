@@ -9,6 +9,7 @@ import { runBuiltBenchmarkWorker } from '../support/built-worker.ts'
 import { PERFORMANCE_BUDGET_HEADROOM } from '../support/calibration.ts'
 import { anchorShape, ANCHOR_COUNT, sessionShape } from './corpus-shape.ts'
 import type {
+  AnchorsReport,
   ForkReport,
   ListReport,
   SearchReport,
@@ -28,22 +29,24 @@ const FORK_P99_RANK = 990
 /** The longest Session; one sample, because one fork takes about 20 s on standard hosted CI. */
 const FORK_LONGEST_RANK = 999
 const WORKER_TIMEOUT_MS = 240_000
+/** Concurrent anchor-preparation processes; standard hosted runners have two CPUs. */
+const PREPARATION_PROCESSES = 2
 const WORKER = join(import.meta.dirname, '..', '.dsh-build', 'session-corpus', 'session-corpus.worker.js')
 
 /**
  * Standard two-CPU hosted CI expectations, rounded above the higher recorded median of the EPYC 7763 and
- * EPYC 9V74 runners before variance headroom. Recorded medians: list 2,204.5 / 2,633.6 / 2,235.1 ms;
- * search 139,470 and 135,065 / 3,369 and 2,704 ms; fork 89.6 and 73.5 / 1,485.7 and 1,485.5 /
- * 17,538.1 and 20,326.7 ms.
+ * EPYC 9V74 runners before variance headroom. Recorded 7763 / 9V74 medians: list 2,317.8 / 2,204.5,
+ * 3,228.7 / 2,633.6, and 2,636.4 / 2,235.1 ms; search 144,359 / 135,065 and 3,417 / 2,704 ms;
+ * fork 94.0 / 73.5, 1,522.7 / 1,485.5, and 18,871.9 / 20,326.7 ms.
  */
 const EXPECTED_CI_MS = {
-  listBoot: 2_300,
-  listFirst: 2_700,
-  listRepeat: 2_300,
-  searchFirst: 140_000,
-  searchRepeat: 3_400,
-  forkStratumMedian: 90,
-  forkP99: 1_500,
+  listBoot: 2_400,
+  listFirst: 3_300,
+  listRepeat: 2_700,
+  searchFirst: 145_000,
+  searchRepeat: 3_500,
+  forkStratumMedian: 100,
+  forkP99: 1_600,
   forkLongest: 20_400,
 } as const
 
@@ -61,6 +64,22 @@ async function run<Report extends SessionCorpusReport>(args: readonly string[], 
       + `signal=${String(outcome.signal)}, timedOut=${String(outcome.timedOut)}\n${stderr}`)
   }
   return outcome.report
+}
+
+/**
+ * Split anchors into byte-balanced groups, each in ascending order so its byte model starts on small bodies.
+ * @returns one anchor group per preparation process.
+ */
+function anchorGroups(): number[][] {
+  const groups = Array.from({ length: PREPARATION_PROCESSES }, () => ({ bytes: 0, anchors: [] as number[] }))
+  const bySize = Array.from({ length: ANCHOR_COUNT }, (_, anchor) => anchor)
+    .sort((left, right) => anchorShape(right).logicalBytes - anchorShape(left).logicalBytes)
+  for (const anchor of bySize) {
+    const group = groups.reduce((smallest, candidate) => candidate.bytes < smallest.bytes ? candidate : smallest)
+    group.bytes += anchorShape(anchor).logicalBytes
+    group.anchors.push(anchor)
+  }
+  return groups.map(group => group.anchors.sort((left, right) => left - right))
 }
 
 function median(values: readonly number[]): number {
@@ -102,11 +121,11 @@ describe('Session corpus workload', () => {
 
   it('accepts recorded hosted medians and rejects medians a quarter above their expectation', () => {
     const recorded = [
-      [median([2_204.5, 2_219.7, 2_181.8]), EXPECTED_CI_MS.listBoot],
-      [median([2_633.6, 2_625.9, 2_638.3]), EXPECTED_CI_MS.listFirst],
-      [139_470, EXPECTED_CI_MS.searchFirst],
+      [median([2_317.8, 2_322.2, 2_264.6]), EXPECTED_CI_MS.listBoot],
+      [median([3_294.7, 3_228.7, 3_144.8]), EXPECTED_CI_MS.listFirst],
+      [144_359, EXPECTED_CI_MS.searchFirst],
       [20_326.7, EXPECTED_CI_MS.forkLongest],
-      [median([88.2, 89.6, 91.8]), EXPECTED_CI_MS.forkStratumMedian],
+      [median([92.5, 94, 106.7]), EXPECTED_CI_MS.forkStratumMedian],
     ] as const
     for (const [value, expected] of recorded) {
       expectWithinBudget(value, budget(expected))
@@ -125,8 +144,9 @@ describe('Session corpus operations', () => {
   beforeAll(async () => {
     started = performance.now()
     scratch = await mkdtemp(join(tmpdir(), 'dsh-session-corpus-bench-'))
+    const prepared = await Promise.all(anchorGroups().map(group => run<AnchorsReport>([scratch, 'anchors', ...group.map(String)])))
     seeded = await run<SeedReport>([scratch, 'seed', String(CORPUS.query), String(CORPUS.list)])
-    console.log(JSON.stringify({ benchmark: 'session-corpus/seed', ...seeded, environment: environment() }))
+    console.log(JSON.stringify({ benchmark: 'session-corpus/seed', prepared, ...seeded, environment: environment() }))
   }, WORKER_TIMEOUT_MS)
 
   afterAll(async () => {

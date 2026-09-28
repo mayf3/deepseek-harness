@@ -1,6 +1,6 @@
 /** Isolated worker that seeds the synthetic corpus or measures one Session-controller operation over it. */
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -11,9 +11,9 @@ import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-r
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import { currentSessionMessageProjections } from '@deepseek-ai/dsh-session-format-catalog/message-projections'
 import { Session, SessionLogOffset } from '@deepseek-ai/dsh-session'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import SessionProjectionCache, { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
+import SessionProjectionCache, { checkpointRecord, projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
 import type { CheckpointRecord } from '@deepseek-ai/dsh-session-projection-cache'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import * as SessionStatsPlugin from '@deepseek-ai/dsh-session-stats'
@@ -26,13 +26,14 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { assertBuiltBenchmarkRuntime } from '../support/built-worker.ts'
 import { serializeRecord } from '../../packages/storage/storage-json/src/format.ts'
-import { sessionShape } from './corpus-shape.ts'
+import { ANCHOR_COUNT } from './corpus-shape.ts'
 import {
-  corpusHeader,
+  anchorHeader,
   corpusSessionId,
   forEachConcurrently,
   SEARCH_QUERIES,
   SyntheticCorpusWriter,
+  type AnchorBodyFacts,
   type SyntheticCorpusFacts,
   type WrittenSession,
 } from './synthetic-corpus.ts'
@@ -44,12 +45,17 @@ export interface CorpusMemory {
   readonly peakRssMb: number
 }
 
-/** Seeding report: facts of every corpus and the time spent building them. */
+/** Anchor preparation report: authoring, replay validation, and projection folding of one anchor group. */
+export interface AnchorsReport {
+  readonly mode: 'anchors'
+  readonly anchors: readonly number[]
+  readonly prepareMs: number
+}
+
+/** Seeding report: facts of every corpus written from prepared anchors, and the time spent writing them. */
 export interface SeedReport {
   readonly mode: 'seed'
   readonly corpora: readonly (SyntheticCorpusFacts & { readonly writeMs: number })[]
-  /** Authoring, replay validation, and projection folding of every distinct body. */
-  readonly authorMs: number
   readonly seedMs: number
 }
 
@@ -88,7 +94,7 @@ export interface ForkReport {
 }
 
 /** Any worker report. */
-export type SessionCorpusReport = SeedReport | ListReport | SearchReport | ForkReport
+export type SessionCorpusReport = AnchorsReport | SeedReport | ListReport | SearchReport | ForkReport
 
 const BENCH_MODEL = { provider: 'bench', model: 'bench' } as const
 /** Bound on waiting for fire-and-forget projection-cache write-backs after seeding. */
@@ -160,39 +166,71 @@ async function withCacheTable<Value>(
   }
 }
 
-async function seed(root: string, counts: readonly number[]): Promise<SeedReport> {
+function anchorFactsPath(root: string, anchor: number): string {
+  return join(root, 'bodies', `anchor-${String(anchor).padStart(2, '0')}.json`)
+}
+
+/** Author, validate, and fold one group of anchors, saving bodies and projection records for `seed`. */
+async function prepareAnchors(root: string, anchors: readonly number[]): Promise<AnchorsReport> {
   const started = performance.now()
   const writer = new SyntheticCorpusWriter()
-  const folded = new Map<number, SessionHeader>()
-  for (const count of counts) {
-    for (let rank = 0; rank < count; rank++) {
-      const { anchor } = sessionShape(rank, count)
-      if (!folded.has(anchor)) folded.set(anchor, corpusHeader(rank, count))
-    }
-  }
-  const foldRoot = join(root, 'fold')
+  const foldRoot = join(root, `fold-${anchors.join('-')}`)
+  const facts = new Map<number, AnchorBodyFacts>()
   const host = await mountHost(foldRoot)
   try {
-    for (const [anchor, header] of folded) {
-      // The production cold-read write-back folds each shared body once.
+    for (const anchor of anchors) {
+      const header = anchorHeader(anchor)
       const log = await writer.author(anchor)
       // Replay validation, as in `sessionQuery.readSession`, rejects an invalid authored body before any write.
       Session.create(header.id, log, header, SessionLogOffset(0), currentSessionMessageProjections)
+      // The production cold-read write-back folds each shared body once.
       host.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), log)
+      facts.set(anchor, await writer.saveBody(join(root, 'bodies'), anchor))
     }
     // Write-backs are fire-and-forget; the cache serves a record only after it is durable.
     const deadline = performance.now() + SEED_DRAIN_TIMEOUT_MS
-    while ([...folded.values()].some(header => host.ctx.sessionProjectionCache.cachedSnapshot(header) === undefined)) {
+    while (anchors.some(anchor => host.ctx.sessionProjectionCache.cachedSnapshot(anchorHeader(anchor)) === undefined)) {
       if (performance.now() > deadline) throw new Error('projection-cache write-back did not become durable')
       await scheduler.wait(20)
     }
   } finally {
     await host.ctx.fiber.dispose()
   }
-  const authorMs = performance.now() - started
-  const records = await withCacheTable(foldRoot, table => Promise.resolve(new Map(
-    [...folded].map(([anchor, header]) => [anchor, table.get(header.id) as CheckpointRecord]),
-  )))
+  await withCacheTable(foldRoot, async (table) => {
+    for (const anchor of anchors) {
+      const record = table.get(anchorHeader(anchor).id)
+      await writeFile(anchorFactsPath(root, anchor), JSON.stringify({ ...facts.get(anchor), record }))
+    }
+  })
+  return { mode: 'anchors', anchors, prepareMs: performance.now() - started }
+}
+
+/** Parse one prepared anchor file written by a sibling `anchors` process. */
+async function readPreparedAnchor(root: string, anchor: number): Promise<AnchorBodyFacts & { readonly record: CheckpointRecord }> {
+  const value: unknown = JSON.parse(await readFile(anchorFactsPath(root, anchor), 'utf8'))
+  if (typeof value !== 'object' || value === null) throw new Error(`prepared anchor ${String(anchor)} is not an object`)
+  const { frameCount, events, logicalBytes, record } = value as Record<string, unknown>
+  for (const count of [frameCount, events, logicalBytes]) {
+    if (!Number.isSafeInteger(count)) throw new Error(`prepared anchor ${String(anchor)} has invalid body facts`)
+  }
+  return {
+    frameCount: frameCount as number,
+    events: events as number,
+    logicalBytes: logicalBytes as number,
+    record: checkpointRecord.parse(record),
+  }
+}
+
+/** Write every corpus from prepared anchors, rebinding each projection record to its Session header. */
+async function seed(root: string, counts: readonly number[]): Promise<SeedReport> {
+  const started = performance.now()
+  const writer = new SyntheticCorpusWriter()
+  const records = new Map<number, CheckpointRecord>()
+  for (let anchor = 0; anchor < ANCHOR_COUNT; anchor++) {
+    const { record, ...facts } = await readPreparedAnchor(root, anchor)
+    await writer.loadBody(join(root, 'bodies'), anchor, facts)
+    records.set(anchor, record)
+  }
   const corpora: SeedReport['corpora'][number][] = []
   for (const count of counts) {
     const corpusRoot = join(root, `corpus-${String(count)}`)
@@ -213,7 +251,7 @@ async function seed(root: string, counts: readonly number[]): Promise<SeedReport
     })
     corpora.push({ ...written.facts, writeMs: performance.now() - writeStarted })
   }
-  return { mode: 'seed', corpora, authorMs, seedMs: performance.now() - started }
+  return { mode: 'seed', corpora, seedMs: performance.now() - started }
 }
 
 async function measureList(root: string, expected: number): Promise<ListReport> {
@@ -300,10 +338,13 @@ assertBuiltBenchmarkRuntime(import.meta.url, Object.fromEntries([
 const [root, mode, ...rest] = process.argv.slice(2)
 const numbers = rest.map(Number)
 if (root === undefined || numbers.some(value => !Number.isSafeInteger(value) || value < 0)) {
-  throw new Error('usage: session-corpus.worker.js <root> <seed counts...|list count|search|fork ranks...>')
+  throw new Error('usage: session-corpus.worker.js <root> <anchors anchors...|seed counts...|list count|search|fork ranks...>')
 }
 let report: SessionCorpusReport
 switch (mode) {
+  case 'anchors':
+    report = await prepareAnchors(root, numbers)
+    break
   case 'seed':
     report = await seed(root, numbers)
     break

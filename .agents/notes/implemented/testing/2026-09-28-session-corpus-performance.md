@@ -29,9 +29,9 @@ Other measured aggregates also set the fixture: 19 Sessions per project director
 
 ### Corpus construction
 
-The seed worker authors one event body per anchor, compresses it once, and writes each Session as its own header frame followed by the anchor's body. Frame compression and file writes run eight at a time: each pending compression holds a native Zstandard context, and unbounded compression peaked at 7.7 GB RSS, more than a standard hosted runner provides. Sessions sharing an anchor differ only in header identity, creation time, project directory, and parent link. Creation time is a fixed permutation of rank, so list order does not follow length. Events carry the fields that `Session.append` records, compact streams come from the production `AssistantStreamAccumulator`, and rows are encoded with the persistence package's `eventLines`. Before writing, the seed replays each authored body through `Session.create`, as `sessionQuery.readSession` does.
+Two preparation processes, one per CPU of a standard hosted runner, split the anchors into byte-balanced groups. Each authors one event body per anchor, compresses it once, and saves it with the anchor's projection record. A seed process then writes each Session as its own header frame followed by its anchor's body. Frame compression and file writes run eight at a time: each pending compression holds a native Zstandard context, and unbounded compression peaked at 7.7 GB RSS, more than a standard hosted runner provides. Sessions sharing an anchor differ only in header identity, creation time, project directory, and parent link. Creation time is a fixed permutation of rank, so list order does not follow length. Events carry the fields that `Session.append` records, compact streams come from the production `AssistantStreamAccumulator`, and rows are encoded with the persistence package's `eventLines`. Before saving, each preparation process replays its authored bodies through `Session.create`, as `sessionQuery.readSession` does.
 
-The projection cache is part of the list endpoint: each cold row carries cached projection values. The seed folds each anchor once through the public `sessionProjectionCache.coldSnapshot` write-back. It then writes per-record documents for every Session with `serializeRecord`, rebinding identity to each header. Writing through the domain API costs one fsync per record, which took 89 s for 10,000 Sessions. The list worker requires every returned row to carry projections, so a storage layout change fails the benchmark instead of silently removing that work.
+The projection cache is part of the list endpoint: each cold row carries cached projection values. Preparation folds each anchor once through the public `sessionProjectionCache.coldSnapshot` write-back. The seed then writes per-record documents for every Session with `serializeRecord`, rebinding identity to each header. Writing through the domain API costs one fsync per record, which took 89 s for 10,000 Sessions. The list worker requires every returned row to carry projections, so a storage layout change fails the benchmark instead of silently removing that work.
 
 ### Measured endpoints
 
@@ -49,15 +49,20 @@ The file must finish within five minutes on standard hosted CI, including seedin
 
 Budgets use standard two-CPU hosted CI expectations (Linux x64, Node 24.21, PR #5403), rounded above the higher recorded median across the AMD EPYC 7763 and EPYC 9V74 runners and multiplied by the shared 1.25 headroom. Samples varied by up to 15% within one run; the runner models differed by up to 25% per endpoint. The hosted-to-reference ratio is 2.4 to 3.4, above the shared reference scale of 2, so reference-machine scaling would reject ordinary hosted runs.
 
-| Endpoint | Hosted medians | Expectation | Budget |
+| Endpoint (7763 / 9V74) | Hosted medians | Expectation | Budget |
 |---|---|---:|---:|
-| List 3,000: boot / first / repeat (9V74) | 2,204.5 / 2,633.6 / 2,235.1 ms | 2,300 / 2,700 / 2,300 ms | 2,875 / 3,375 / 2,875 ms |
-| Search 1,000: first / repeat (one sample; 7763 and 9V74) | 139,470 and 135,065 / 3,369 and 2,704 ms | 140,000 / 3,400 ms | 175,000 / 4,250 ms |
-| Fork: strata median / p99 / longest (7763 and 9V74) | 89.6 and 73.5 / 1,485.7 and 1,485.5 / 17,538.1 and 20,326.7 ms | 90 / 1,500 / 20,400 ms | 113 / 1,875 / 25,500 ms |
+| List 3,000: boot | 2,317.8 / 2,204.5 ms | 2,400 ms | 3,000 ms |
+| List 3,000: first | 3,228.7 / 2,633.6 ms | 3,300 ms | 4,125 ms |
+| List 3,000: repeat | 2,636.4 / 2,235.1 ms | 2,700 ms | 3,375 ms |
+| Search 1,000: first (one sample) | 144,359 / 135,065 ms | 145,000 ms | 181,250 ms |
+| Search 1,000: repeat (one sample) | 3,417 / 2,704 ms | 3,500 ms | 4,375 ms |
+| Fork: strata median | 94.0 / 73.5 ms | 100 ms | 125 ms |
+| Fork: p99 | 1,522.7 / 1,485.5 ms | 1,600 ms | 2,000 ms |
+| Fork: longest (one sample) | 18,871.9 / 20,326.7 ms | 20,400 ms | 25,500 ms |
 
-The complete file took 266.6 s on the EPYC 9V74 runner: 70 s seeding, 22.6 s listing, 139 s searching, and 34.6 s forking. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
+With seeding in one process, the complete file took 294.5 s on the EPYC 7763 runner (85 s seeding, 26 s listing, 149 s searching, 34 s forking) and 266.6 s on the 9V74. Parallel preparation cuts local seeding from 15.1 s to 9.8 s; the process holding the longest Session finishes last. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
 
-On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 ms first, list 5,000 at 1,364–1,603 ms first, search at 57 s first, and fork of the longest Session at 6.0–6.4 s. A 10,000-Session list took 3.2–5.4 s for the first call with 1.9 GB peak RSS; the extreme list case uses 5,000 Sessions to bound seeding time and disk use.
+On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 ms first, list 5,000 at 1,364–1,603 ms first, search at 57 s first, and fork of the longest Session at 6.0–6.4 s. A 10,000-Session list took 3.2–5.4 s for the first call with 1.9 GB peak RSS.
 
 ## Alternatives considered
 

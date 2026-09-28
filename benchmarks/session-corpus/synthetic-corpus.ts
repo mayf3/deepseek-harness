@@ -1,7 +1,7 @@
 /** Deterministic current-generation Session corpus whose length distribution follows `corpus-shape.ts`. */
 
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -285,12 +285,16 @@ function headerLine(header: SessionHeader): string {
   return JSON.stringify(toHeaderLine(header)) + '\n'
 }
 
-/** One compressed event body shared by every Session of one measured anchor. */
-interface AnchorBody {
-  readonly frames: Buffer
+/** Size facts of one anchor body, saved beside its compressed frames. */
+export interface AnchorBodyFacts {
   readonly frameCount: number
   readonly events: number
   readonly logicalBytes: number
+}
+
+/** One compressed event body shared by every Session of one measured anchor. */
+interface AnchorBody extends AnchorBodyFacts {
+  readonly frames: Buffer
 }
 
 /** One corpus written from authored anchor bodies. */
@@ -325,6 +329,26 @@ export function corpusHeader(rank: number, count: number): SessionHeader {
 }
 
 /**
+ * Build the header under which one anchor's projections are folded before identity rebinding.
+ * @param anchor - measured anchor index.
+ * @returns a top-level header outside every corpus.
+ */
+export function anchorHeader(anchor: number): SessionHeader {
+  return {
+    version: SESSION_FORMAT_VERSION,
+    id: SessionId(`bench-anchor-${String(anchor).padStart(2, '0')}`),
+    createdAt: TIME_ZERO - 60_000,
+    cwd: '/bench/anchors',
+    isSeeded: false,
+    delegationDepth: 0,
+  }
+}
+
+function anchorBodyPath(directory: string, anchor: number): string {
+  return join(directory, `anchor-${String(anchor).padStart(2, '0')}.zst`)
+}
+
+/**
  * Run one asynchronous compression or file operation per index with bounded concurrency.
  * @param count - number of indexes, starting at zero.
  * @param operation - operation for one index.
@@ -337,9 +361,9 @@ export async function forEachConcurrently(count: number, operation: (index: numb
   await Promise.all(Array.from({ length: IO_CONCURRENCY }, () => worker()))
 }
 
-/** Authors each anchor body once and writes corpora that share those bodies. */
+/** Authors each anchor body once, exchanges bodies between seeding processes, and writes corpora that share them. */
 export class SyntheticCorpusWriter {
-  private readonly pool = new TextPool()
+  private pool: TextPool | undefined
   private readonly bodies = new Map<number, AnchorBody>()
   /** Stored-byte model from the previous anchor: fixed system prompt, bytes per event, and bytes per payload character. */
   private model = { bytesPerEvent: 0, bytesPerChar: 4 }
@@ -358,6 +382,7 @@ export class SyntheticCorpusWriter {
     ))
     let previous: { readonly payloadChars: number; readonly bytes: number } | undefined
     for (let attempt = 0; attempt < 8; attempt++) {
+      this.pool ??= new TextPool()
       const authored = authorEvents(shape, payloadChars, this.pool, anchor + 1)
       if (authored.events.length < shape.events) {
         throw new Error(`corpus anchor ${String(anchor)} authored ${String(authored.events.length)} of ${String(shape.events)} events`)
@@ -388,6 +413,30 @@ export class SyntheticCorpusWriter {
   }
 
   /**
+   * Save one authored body's compressed frames for another process.
+   * @param directory - body directory shared by the seeding processes.
+   * @param anchor - authored anchor index.
+   * @returns the body's size facts.
+   */
+  async saveBody(directory: string, anchor: number): Promise<AnchorBodyFacts> {
+    const body = this.bodies.get(anchor)
+    if (body === undefined) throw new Error(`corpus anchor ${String(anchor)} was not authored`)
+    await mkdir(directory, { recursive: true })
+    await writeFile(anchorBodyPath(directory, anchor), body.frames)
+    return { frameCount: body.frameCount, events: body.events, logicalBytes: body.logicalBytes }
+  }
+
+  /**
+   * Load one body saved by another process.
+   * @param directory - body directory shared by the seeding processes.
+   * @param anchor - anchor index.
+   * @param facts - size facts recorded with the body.
+   */
+  async loadBody(directory: string, anchor: number, facts: AnchorBodyFacts): Promise<void> {
+    this.bodies.set(anchor, { ...facts, frames: await readFile(anchorBodyPath(directory, anchor)) })
+  }
+
+  /**
    * Write every rank of one corpus from authored bodies.
    * @param root - JSONL persistence root.
    * @param count - corpus size; the length distribution is sampled at this many ranks.
@@ -397,20 +446,20 @@ export class SyntheticCorpusWriter {
     const totals = { events: 0, logicalBytes: 0, compressedBytes: 0, frames: 0 }
     const sessions: WrittenSession[] = []
     await forEachConcurrently(count, async (rank) => {
-        const { anchor } = sessionShape(rank, count)
-        const body = this.bodies.get(anchor)
-        if (body === undefined) throw new Error(`corpus anchor ${String(anchor)} was not authored`)
-        const header = corpusHeader(rank, count)
-        const line = headerLine(header)
-        const physical = Buffer.concat([await compressZstdFrame(line), body.frames])
-        const path = generationLogPath(root, header.cwd, header.id, SESSION_FORMAT_VERSION, 'zstd')
-        await mkdir(dirname(path), { recursive: true })
-        await writeFile(path, physical)
-        sessions[rank] = { header, anchor }
-        totals.events += body.events
-        totals.logicalBytes += Buffer.byteLength(line) + body.logicalBytes
-        totals.compressedBytes += physical.byteLength
-        totals.frames += body.frameCount + 1
+      const { anchor } = sessionShape(rank, count)
+      const body = this.bodies.get(anchor)
+      if (body === undefined) throw new Error(`corpus anchor ${String(anchor)} was not authored`)
+      const header = corpusHeader(rank, count)
+      const line = headerLine(header)
+      const physical = Buffer.concat([await compressZstdFrame(line), body.frames])
+      const path = generationLogPath(root, header.cwd, header.id, SESSION_FORMAT_VERSION, 'zstd')
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, physical)
+      sessions[rank] = { header, anchor }
+      totals.events += body.events
+      totals.logicalBytes += Buffer.byteLength(line) + body.logicalBytes
+      totals.compressedBytes += physical.byteLength
+      totals.frames += body.frameCount + 1
     })
     return {
       facts: {
