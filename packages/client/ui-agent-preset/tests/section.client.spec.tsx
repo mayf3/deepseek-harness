@@ -59,7 +59,7 @@ it.each([false, true])('offers Standard, Creator and custom defaults with Coding
   }
   expect(screen.getByRole<HTMLButtonElement>('button', { name: en.creatorDraft }).disabled).toBe(false)
 })
-it('updates the settings choices live without changing the saved default', () => {
+it('updates visible settings choices without writing defaults from the renderer', () => {
   const actions = view({ rows: [
     { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
     { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },

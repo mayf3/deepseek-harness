@@ -21,7 +21,8 @@ import {
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AgentPresetSeatState } from './seat-store.ts'
-import { isBuiltInPreset, presetDisplayText } from './locales.ts'
+import { presetDisplayText } from './locales.ts'
+import { requiresCodingTools } from './settings-store.ts'
 import css from './AgentPresetSeat.module.css'
 
 /** Registration-side business face for the hero chip. */
@@ -97,9 +98,7 @@ export function AgentPresetSeat({
     setOpen(false)
   }, [developerTools])
 
-  const options = state.options.filter(option => developerTools
-    || !isBuiltInPreset(option)
-    || (option.id !== 'ptc' && option.id !== 'minimal'))
+  const options = state.options.filter(option => developerTools || !requiresCodingTools(option))
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
