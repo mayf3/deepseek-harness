@@ -295,18 +295,19 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledTimes(1)
   })
 
-  it('re-arms a continued plan decision after the reply is queued', async () => {
+  it('hides a continued plan decision after its reply is queued', async () => {
     const carrier = new PendingQuestion(SID, questions(), 'continued-plan' as ToolCallId)
     const answer = vi.fn(async () => true)
+    const hide = vi.fn()
     carrier.attachRpc({ answer })
+    carrier.attachSeat({ hide })
     carrier.setState('continued')
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
-    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    await vi.waitFor(() => { expect(hide).toHaveBeenCalledOnce() })
     expect(screen.getByRole('button', { name: zh['plan.approve'] }).hasAttribute('disabled')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
-    expect(answer).toHaveBeenCalledTimes(2)
+    expect(answer).toHaveBeenCalledOnce()
   })
 
 

@@ -364,7 +364,8 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
         if (channel !== 'rpc') return
         sentVia.current = null
         setBusy(null)
-        setError({ key: 'status.queued' })
+        setError(null)
+        void pending.dismiss().catch(() => { setError({ key: 'status.queued' }) })
       })
       .catch((cause: unknown) => {
         sentVia.current = null

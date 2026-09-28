@@ -696,18 +696,21 @@ describe('timed card', () => {
     await vi.waitFor(() => { expect(answer).toHaveBeenCalledWith({ answers: [{ id: 'scope', selected: ['仅工具'] }] }) })
   })
 
-  it('reports an already queued RPC reply and allows retry after it is discarded', async () => {
+  it('queues an RPC reply, hides the panel, and allows retry after discard', async () => {
     const carrier = new PendingQuestion(SID, TIMED, ToolCallId('ask-retry'))
     const answer = vi.fn(async () => true)
+    const hide = vi.fn()
     answer.mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('a reply is already queued for this question'))
     carrier.attachRpc({ answer })
+    carrier.attachSeat({ hide })
     carrier.setState('continued')
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('radio', { name: '仅工具' }))
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
-    await vi.waitFor(() => { expect(screen.getByText('回答已排队等待处理；如未送达，可以再次提交。')).toBeTruthy() })
+    await vi.waitFor(() => { expect(hide).toHaveBeenCalledOnce() })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
+    expect(screen.queryByText(zh['status.queued'])).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
     expect(await screen.findByText('a reply is already queued for this question')).toBeTruthy()
@@ -721,7 +724,9 @@ describe('timed card', () => {
 
   it('unlocks an older reply when the rendered channel lags its continued state', async () => {
     const carrier = new PendingQuestion(SID, TIMED, ToolCallId('ask-stale-channel'))
+    const hide = vi.fn()
     carrier.attachRpc({ answer: vi.fn(async () => true) })
+    carrier.attachSeat({ hide })
     carrier.setState('continued')
     const rendered = { ...carrier.snapshot(), state: 'open' as const, channel: 'waterfall' as const }
     const useQuestionCard = ((_key: string, selector?: (value: QuestionCardSnapshot | undefined) => unknown) =>
@@ -731,7 +736,7 @@ describe('timed card', () => {
     fireEvent.click(screen.getByRole('radio', { name: '仅工具' }))
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
 
-    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    await vi.waitFor(() => { expect(hide).toHaveBeenCalledOnce() })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
   })
 

@@ -149,7 +149,7 @@ export class UserQuestionService extends TypertRemoteService {
   }
 
   /**
-   * Answer a continued question. The reply is steered into the agent as a
+   * Answer a continued question. The reply joins the agent's next-turn queue as a
    * user message whose source names the call; that message is also the
    * record that closes the question in the projection.
    * @param agent - Live root agent for the owning Session.
@@ -197,7 +197,7 @@ export class UserQuestionService extends TypertRemoteService {
     calls.set(callId, { messageId: message.id })
     this.queuedReplies.set(agent.session, calls)
     try {
-      agent.steer(message)
+      agent.followup(message)
     } catch (error: unknown) {
       this.releaseReply(agent.session, callId, message.id)
       throw error

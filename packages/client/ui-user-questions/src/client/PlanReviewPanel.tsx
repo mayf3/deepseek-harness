@@ -38,7 +38,7 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
       .then(() => {
         if (!queued) return
         setBusy(false)
-        setError(t('status.queued'))
+        void pending.dismiss().catch(() => { setError(t('status.queued')) })
       })
       .catch((cause: unknown) => {
         setBusy(false)

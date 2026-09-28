@@ -12,7 +12,7 @@ The foreground tool result and the eventual answer have different lifetimes. A `
 
 ## Decision
 
-Foreground answers use the existing Remote Event waterfall. A timeout ends that request and returns pending; a later answer uses a business RPC that steers a durable user message. The claim stream controls the foreground wait only. It neither transports answers nor replaces the Remote Event.
+Foreground answers use the existing Remote Event waterfall. A timeout ends that request and returns pending; a later answer uses a business RPC that queues a durable user message for the next turn. The claim stream controls the foreground wait only. It neither transports answers nor replaces the Remote Event.
 
 ### Modes and scope
 
@@ -26,7 +26,7 @@ Foreground answers use the existing Remote Event waterfall. A timeout ends that 
 | Owner | Responsibility |
 |---|---|
 | `tool-ask-user` | Model schema, timeout validation, service selection, and pending-result text. |
-| `UserQuestionService` | Foreground waits and Client claims, unattended deadlines, late-answer validation and steering, and the durable question projection. |
+| `UserQuestionService` | Foreground waits and Client claims, unattended deadlines, late-answer validation and next-turn queuing, and the durable question projection. |
 | Gateway and Remote runtime | Existing request delivery, settlement, cancellation, and Remote stream transport; no question-specific timer or event-name branch. |
 | `ui-user-questions` | One card per Session and call, answer-channel selection, local countdown and drafts, and the reply Definition and renderer. |
 | `ui-chat` | Message-id-based presentation aggregation and ordinary process/Turn folding. |
@@ -48,7 +48,7 @@ Client countdown expiry rejects the waterfall with `ASK_TIMED_OUT`. Unattended H
 
 The `userQuestions` projection reconstructs question state from existing Session events. For native calls, it recognises the timed schema by the `timeout` parameter recorded in `request/header`; legacy calls are not tracked. A valid `tool/call` opens a question. Its `tool/result` makes it continued for pending or `TOOL_OUTCOME_UNKNOWN`, settles it with a valid answer batch, or removes it for another result or failure. A PTC sub-call enters the projection when its `tool/ptc-dispatch` result is pending, since only `run_code` appears in the model request header.
 
-A continued question accepts `answer(agent, callId, answer)`. The method returns `false` for an unknown or non-continued call, throws `REPLY_QUEUED` while another reply awaits admission, and throws `BAD_ANSWER` unless the batch names each question exactly once. Accepted answers use `agent.steer(createUserMessage(...))`, source `{ kind: 'user-question-reply', callId, outcome: 'answered' }`, and JSON text containing `answer_to_pending_question`, the call id, original questions, and answers. Remote Agent resolution from the Session id resumes a root when needed; the `answer()` body does not own that resume operation.
+A continued question accepts `answer(agent, callId, answer)`. The method returns `false` for an unknown or non-continued call, throws `REPLY_QUEUED` while another reply awaits admission, and throws `BAD_ANSWER` unless the batch names each question exactly once. Accepted answers use `agent.followup(createUserMessage(...))`, source `{ kind: 'user-question-reply', callId, outcome: 'answered' }`, and JSON text containing `answer_to_pending_question`, the call id, original questions, and answers. Remote Agent resolution from the Session id resumes a root when needed; the `answer()` body does not own that resume operation.
 
 The inbox message is the durable queued reply. A per-Session reservation covers the interval from queuing through claim and admission; claiming a restored inbox reply creates the reservation again. Admission as `user/message` settles the question, while discard or a Turn that ends without admission releases the reservation for another answer. Settled answer batches remain in the projection so the original tool row can show late answers even though its own result remains pending. Unusable recorded reply text settles with an empty batch.
 
@@ -58,7 +58,7 @@ No new Session event type or wait-state log is needed. The message-source extens
 
 `QuestionCards` shares one `PendingQuestion` between the live request and the continued projection, keyed by Session and `callId`. A forwarded request keeps its card through the claim's first frame even before the projection lists it. A blocking request without a call id has its own per-request card with a reload-unique key, so an old persisted draft cannot attach to another request. An open card submits through its waterfall; without that channel it disables submission. A continued card uses the late-answer RPC.
 
-A waterfall submission has no delivery acknowledgement. The Gateway can discard an outcome that loses a settlement race. The card therefore retains its draft and stays busy until projection reconciliation. If the question becomes continued during submission, the controls re-arm with a resubmit hint; the user can submit the retained draft through RPC. An accepted RPC submission queues a reply but does not settle the question, so the controls re-arm with a queued notice; a discarded reply can be submitted again. This is not automatic retry or a guarantee that every local submission reaches the model.
+A waterfall submission has no delivery acknowledgement. The Gateway can discard an outcome that loses a settlement race. The card therefore retains its draft and stays busy until projection reconciliation. If the question becomes continued during submission, the controls re-arm with a resubmit hint; the user can submit the retained draft through RPC. An accepted RPC submission enters the ordinary next-turn queue and closes the panel. The queue displays the reply; removing it leaves the question answerable from its tool row. This is not automatic retry or a guarantee that every local submission reaches the model.
 
 A tool-call-keyed card is removed when its call is absent from the active projection and no forwarded request remains. Removal closes the card and clears its draft. Neither a local submission nor a transport cancel frame alone decides that the question is answered. An unkeyed blocking card ends with its waterfall; closing that blocking panel rejects with `ASK_CANCELLED`.
 
