@@ -183,6 +183,13 @@ describe('CI worker allocation', () => {
       .not.toHaveProperty('DSH_COVERAGE_PARTITIONS')
   })
 
+  it('leaves the plain unit inventory with the environment pnpm run test finds', () => {
+    // A 3-CPU host would otherwise receive DSH_COVERAGE_PARTITIONS=2, which
+    // the inventory's own coverage-gate tests read as a partitioned lane.
+    expect(ciWorkerEnvironment('ci-unit', {}, 3)).toEqual({})
+    expect(ciWorkerEnvironment('ci-unit', {}, 16)).toEqual({})
+  })
+
   it.each(['0', '-1', 'NaN', '2.5'])('rejects invalid worker budget %s', (raw) => {
     expect(() => ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_MAX_WORKERS: raw }, 16))
       .toThrow('DSH_COVERAGE_MAX_WORKERS must be a positive integer')
@@ -200,6 +207,7 @@ describe('gate graph validation', () => {
     'ci-static',
     'ci-lint-contracts-ready',
     'ci-coverage',
+    'ci-unit',
     'ci-bench',
     'ci-snapshot',
     'ci-artifacts',
@@ -546,6 +554,31 @@ describe('gate graph validation', () => {
     expect(() => withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '0', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
       .toThrow('DSH_COVERAGE_TEST_TIMEOUT_MS must be a positive integer')
+  })
+
+  it('runs the plain unit inventory after the native build under the same configured budget', () => {
+    const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(scripts['check:ci:unit']).toBe('tsx scripts/run-gates.ts ci-unit')
+
+    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-unit')))
+    expect(gates.map(gate => gate.id)).toEqual(['native-system', 'unit'])
+    expect(gates[0]).toMatchObject({ displayCommand: 'pnpm run build:native-system' })
+    expect(gates[1]).toMatchObject({
+      label: 'test',
+      needs: ['native-system'],
+      streamOutput: true,
+      args: ['/private/pnpm.cjs', 'exec', 'vitest', 'run', '--testTimeout=15000', '--expect.poll.timeout=15000', '--hookTimeout=15000'],
+    })
+    expect(gates[1]?.args).not.toContain('--coverage')
+  })
+
+  it('keeps Vitest timeout defaults for the plain unit inventory when the override is absent', () => {
+    const unit = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', undefined, () =>
+      withPnpmEntrypoint(() => gatesForMode('ci-unit').find(gate => gate.id === 'unit')))
+    expect(unit?.args).toEqual(['/private/pnpm.cjs', 'exec', 'vitest', 'run'])
   })
 
   it('selects partitioned coverage only when explicitly configured', () => {

@@ -27,6 +27,7 @@ export type Mode =
   | 'ci-static'
   | 'ci-lint-contracts-ready'
   | 'ci-coverage'
+  | 'ci-unit'
   | 'ci-bench'
   | 'ci-snapshot'
   | 'ci-artifacts'
@@ -141,6 +142,7 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-static':
     case 'ci-lint-contracts-ready':
     case 'ci-coverage':
+    case 'ci-unit':
     case 'ci-bench':
     case 'ci-snapshot':
     case 'ci-artifacts':
@@ -156,7 +158,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-unit | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -201,7 +203,11 @@ export function ciWorkerEnvironment(
   env: NodeJS.ProcessEnv,
   available = availableParallelism(),
 ): Record<string, string> {
-  if (!mode.startsWith('ci-')) return {}
+  // ci-unit runs the plain Vitest inventory and nothing that reads these
+  // settings; the inventory's own run-gates tests build coverage gates from
+  // the ambient coverage variables, so it inherits the environment exactly as
+  // `pnpm run test` finds it.
+  if (!mode.startsWith('ci-') || mode === 'ci-unit') return {}
   const additions: Record<string, string> = {}
   const setDefault = (name: string, value: number): void => {
     if (env[name] === undefined || env[name] === '') additions[name] = String(value)
@@ -281,6 +287,8 @@ export function gatesForMode(selected: Mode): Gate[] {
       ]
     case 'ci-coverage':
       return coverageGates()
+    case 'ci-unit':
+      return ciUnitGates()
     case 'ci-bench':
       return [pnpmScript('bench', 'test:bench', { label: 'performance benchmarks' })]
     case 'ci-snapshot':
@@ -654,8 +662,8 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
 // which keeps the gates from overlapping at all.
 // DSH_COVERAGE_TEST_TIMEOUT_MS raises Vitest's per-test, expect.poll, and hook
-// defaults together for instrumented lanes whose scheduling overhead exceeds
-// those defaults. Explicit fixture timeouts remain authoritative.
+// defaults together for lanes whose scheduling overhead exceeds those
+// defaults. Explicit fixture timeouts remain authoritative.
 function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   const [flag] = positiveIntArg('DSH_COVERAGE_MAX_WORKERS', '--maxWorkers')
   if (flag === undefined) return { instrumented: [], exempt: [] }
@@ -701,6 +709,27 @@ function coverageGates(): Gate[] {
     ], {
       label: 'test:coverage-exempt-heavy',
       needs: ['native-system'],
+    }),
+  ]
+}
+
+// The uninstrumented unit inventory for a whole-inventory reference lane
+// (the Sandbox workflow's darwin parity job). It is `pnpm run test` with the
+// same DSH_COVERAGE_TEST_TIMEOUT_MS budget the coverage gates take: a shared
+// hosted runner delays cases that inherit Vitest's defaults past them. The
+// package script itself has no environment hook. Output streams so the job
+// log keeps per-file timestamps for a 15–30 minute run.
+function ciUnitGates(): Gate[] {
+  return [
+    pnpmScript('native-system', 'build:native-system'),
+    pnpmExec('unit', [
+      'vitest',
+      'run',
+      ...coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV]),
+    ], {
+      label: 'test',
+      needs: ['native-system'],
+      streamOutput: true,
     }),
   ]
 }
