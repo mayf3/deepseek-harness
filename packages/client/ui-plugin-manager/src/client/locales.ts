@@ -87,7 +87,7 @@ export const zh = {
   installRun: '安装',
   installChecking: '正在检查…',
   installProblemInvalid: '无法识别这个包名或地址：{reason}',
-  installProblemInstalled: '该插件已安装',
+  installProblemInstalled: '该插件已安装。如需升级，请卸载后重新安装',
   installProblemNotFound: '未找到相关插件',
   installProblemNotPackage: '该路径不存在或不是有效的插件包',
   installProblemNotBundle: '这个包没有声明组合包，无法作为插件安装：{reason}',
@@ -194,8 +194,8 @@ export const zh = {
   reasonStopProfile: '这个 profile 没有启用 HMR，正在使用的包要停止后用 dsh plugin 卸载',
   reasonBundleInUse: '其他配置仍在使用这个组合包的组件，请先停用它们',
   reasonStaleApproval: '待允许的安装脚本列表已变化，请重新安装以刷新',
-  reasonIncompatibleVersion: '{plugin} 与 DSH {runtime} 不兼容（要求 {peers}），运行它可能导致崩溃或数据丢失。请安装与当前 DSH 兼容的插件版本。',
-  reasonIncompatibleVersionUnnamed: '这个插件与当前 DSH 版本不兼容，运行它可能导致崩溃或数据丢失',
+  reasonIncompatibleVersion: '{plugin} 与 DSH {runtime} 不兼容（要求 {peers}），运行它可能导致崩溃或数据丢失。请安装与当前 DSH 兼容的插件版本；已安装的插件如需升级，请卸载后重新安装。',
+  reasonIncompatibleVersionUnnamed: '这个插件与当前 DSH 版本不兼容，运行它可能导致崩溃或数据丢失。请安装与当前 DSH 兼容的插件版本；已安装的插件如需升级，请卸载后重新安装',
   reasonOperationError: 'Host 报告了一个错误',
 } satisfies Record<string, string>
 
@@ -284,7 +284,7 @@ export const en = {
   installRun: 'Install',
   installChecking: 'Checking…',
   installProblemInvalid: 'This is not a package name or address that can be installed: {reason}',
-  installProblemInstalled: 'This plugin is already installed',
+  installProblemInstalled: 'This plugin is already installed. To upgrade it, uninstall it and install it again',
   installProblemNotFound: 'No such plugin was found',
   installProblemNotPackage: 'The path does not exist or is not a valid plugin package',
   installProblemNotBundle: 'This package declares no bundle, so it cannot be installed as a plugin: {reason}',
@@ -391,7 +391,7 @@ export const en = {
   reasonStopProfile: 'This profile runs without HMR; stop it and uninstall the package with dsh plugin.',
   reasonBundleInUse: 'Other configuration still uses this bundle\'s components; switch them off first.',
   reasonStaleApproval: 'The pending script approvals changed; install again to refresh them.',
-  reasonIncompatibleVersion: '{plugin} is incompatible with DSH {runtime} (requires {peers}); running it may cause crashes or data loss. Install a plugin version compatible with this DSH.',
-  reasonIncompatibleVersionUnnamed: 'This plugin is incompatible with the running DSH version; running it may cause crashes or data loss.',
+  reasonIncompatibleVersion: '{plugin} is incompatible with DSH {runtime} (requires {peers}); running it may cause crashes or data loss. Install a plugin version compatible with this DSH; to upgrade an installed plugin, uninstall it and install it again.',
+  reasonIncompatibleVersionUnnamed: 'This plugin is incompatible with the running DSH version; running it may cause crashes or data loss. Install a plugin version compatible with this DSH; to upgrade an installed plugin, uninstall it and install it again.',
   reasonOperationError: 'The Host reported an error.',
 } satisfies Record<PluginManagerLocaleKey, string>
