@@ -31,7 +31,7 @@ export function contactUrl(config: ContactConfig, context: {
     url.searchParams.delete(`prefill_${name}`)
     if (value) url.searchParams.set(`prefill_${name}`, value)
   }
-  // A configured form URL may still carry fields this build renamed or removed.
+  // Exclude unsupported questionnaire fields from configured URLs.
   url.searchParams.delete('prefill_app_version')
   url.searchParams.delete('hide_app_version')
   url.searchParams.delete('prefill_device_model')

@@ -177,8 +177,7 @@ export function apply(ctx: Context): void {
         dshDesktop?: { deviceInfo?: () => Promise<string> }
       }).dshDesktop?.deviceInfo
       if (readDeviceInfo === undefined) {
-        // Without the optional Desktop reader the form opens synchronously, so the click
-        // still carries its user gesture.
+        // A Desktop bridge without the optional reader reports the renderer user agent.
         openForm(navigator.userAgent)
         return
       }
