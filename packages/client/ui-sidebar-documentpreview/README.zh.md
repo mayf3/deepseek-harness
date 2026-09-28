@@ -43,6 +43,8 @@ tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路�
 
 全部文本分页加载完成后，Markdown 图片通过已鉴权的 `/api/file` 路由读取绝对文件路径，以及相对于源文档所在目录的路径。相对图片等待 Host 返回文档绝对路径。URL 转义只解码一次；查询参数与片段后缀不计入文件名。HTTP(S) 图片保留原始 URL，加载失败的图片显示 alt 文本。本地图片要求应用基址为 HTTP(S) URL；图片文件不加入自动刷新依赖。
 
+文档开头的 YAML frontmatter（首行 `---` 开始，以 `---` 或 `...` 结束）在 Markdown 正文上方显示为键值列表。标量值显示解析后的文本，包括折叠与多行字符串；列表与映射显示为 YAML 源码。无效 YAML 或非映射文档原样显示整个块。未闭合的块仍按 Markdown 渲染。YAML 解析器位于包内 `client.frontmatter-fields.js` 分块，仅在文档含 frontmatter 时加载。源文件不会被修改。
+
 <a id="how-it-reads"></a>
 ## 怎么读
 

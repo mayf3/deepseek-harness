@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Markdown preview uses one accumulated document across page arrivals and EOF. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { MarkdownBody, type MarkdownBodyProps } from '../src/client/markdown/MarkdownBody.tsx'
 import { en, zh } from '../src/client/markdown/locales.ts'
@@ -127,6 +127,43 @@ describe('MarkdownBody', () => {
     view.rerender(<MarkdownBody {...props(value, t)} />)
     expect(view.getByRole('button', { name: '复制' })).toBeDefined()
     expect(view.getByRole('heading', { name: '脚注' })).toBeDefined()
+  })
+
+  it('renders leading YAML frontmatter as fields instead of a heading', async () => {
+    const text = [
+      '---', 'name: pdf', 'description: >-', '  Extract text', '  from PDF files.',
+      'metadata:', '  tags: [docs, pdf]', 'license:', 'version: 2', 'beta: true', '---', '', '# Body',
+    ].join('\n')
+    const view = render(<MarkdownBody {...props(content([text], true))} />)
+    const fields = await vi.waitUntil(() => view.container.querySelector('[data-document-frontmatter]'))
+    expect([...fields.querySelectorAll('dt')].map(node => node.textContent)).toEqual(['name', 'description', 'metadata', 'license', 'version', 'beta'])
+    expect([...fields.querySelectorAll('dd')].map(node => node.textContent))
+      .toEqual(['pdf', 'Extract text from PDF files.', 'tags:\n  - docs\n  - pdf', '', '2', 'true'])
+    expect(view.getAllByRole('heading').map(node => node.textContent)).toEqual(['Body'])
+  })
+
+  it.each([
+    ['invalid YAML', 'name: [unclosed'],
+    ['a non-mapping document', '- first\n- second'],
+    ['excessive aliases', 'a: &a [x]\nb: [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a]'],
+  ])('shows the verbatim frontmatter source for %s', async (_, source) => {
+    const view = render(<MarkdownBody {...props(content([`---\r\n${source}\r\n...\r\nBody.`], true))} />)
+    const block = await vi.waitUntil(() => view.container.querySelector('pre[data-document-frontmatter]'))
+    expect(block?.textContent).toBe(source)
+    expect(view.getByText('Body.')).toBeDefined()
+  })
+
+  it('hides empty frontmatter and keeps an unterminated opening rule as Markdown', async () => {
+    const view = render(<MarkdownBody {...props(content(['---\n# comment\n---\nBody.'], true))} />)
+    await act(async () => { await import('../src/client/markdown/frontmatter-fields.tsx') })
+    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
+    expect(view.getByText('Body.')).toBeDefined()
+    view.rerender(<MarkdownBody {...props(content(['---\n---\nNext.'], true))} />)
+    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
+    expect(view.getByText('Next.')).toBeDefined()
+    view.rerender(<MarkdownBody {...props(content(['---\nname: pdf'], false))} />)
+    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
+    expect(view.container.querySelector('hr')).not.toBeNull()
   })
 
   it('renders empty text and leaves non-text deliveries to their selected implementation', () => {

@@ -43,6 +43,8 @@ A tab uses the Session address built by `fileAddressFor`, carrying a relative or
 
 After all text pages load, Markdown images use the authenticated `/api/file` route for absolute file paths and paths relative to the source document's directory. Relative images wait for the Host's absolute document path. URL escapes are decoded once; query and fragment suffixes are excluded from the filename. HTTP(S) images retain their authored URLs, and failed image loads show alt text. Local images require an HTTP(S) application base URL; image files are not added to automatic-refresh dependencies.
 
+A leading YAML frontmatter block, opened by `---` on the first line and closed by `---` or `...`, renders above the Markdown body as a key/value list. Scalar values keep their resolved text, including folded and multiline strings; lists and mappings show as YAML source. Invalid YAML and non-mapping documents show the block verbatim. An unterminated block remains Markdown. The YAML parser loads in the package-local `client.frontmatter-fields.js` chunk only when a document has frontmatter. The source file is unchanged.
+
 <a id="how-it-reads"></a>
 ## How it reads
 
