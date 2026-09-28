@@ -19,8 +19,8 @@ import { anchorShape, sessionShape, type SessionShape } from './corpus-shape.ts'
 const TIME_ZERO = 1_700_000_000_000
 /** Prime stride that permutes creation order independently of length rank. */
 const CREATION_STRIDE = 7_919
-/** Concurrent Session file writes while materializing a corpus. */
-const WRITE_CONCURRENCY = 8
+/** Concurrent frame compressions and file writes while materializing a corpus. */
+const IO_CONCURRENCY = 8
 /** Measured local Sessions per project directory: 1,650 Sessions in 88 directories. */
 const SESSIONS_PER_PROJECT = 19
 /** Every sixth Session is a subagent child; the measured share is 288 of 1,650. */
@@ -325,7 +325,7 @@ export function corpusHeader(rank: number, count: number): SessionHeader {
 }
 
 /**
- * Run one asynchronous file operation per index with bounded concurrency.
+ * Run one asynchronous compression or file operation per index with bounded concurrency.
  * @param count - number of indexes, starting at zero.
  * @param operation - operation for one index.
  */
@@ -334,7 +334,7 @@ export async function forEachConcurrently(count: number, operation: (index: numb
   const worker = async (): Promise<void> => {
     for (let index = next++; index < count; index = next++) await operation(index)
   }
-  await Promise.all(Array.from({ length: WRITE_CONCURRENCY }, () => worker()))
+  await Promise.all(Array.from({ length: IO_CONCURRENCY }, () => worker()))
 }
 
 /** Authors each anchor body once and writes corpora that share those bodies. */
@@ -369,7 +369,11 @@ export class SyntheticCorpusWriter {
         payloadChars += Math.ceil((1.01 * (shape.logicalBytes - bytes)) / bytesPerChar) + shape.events
         continue
       }
-      const compressed = await Promise.all(frames.map(text => compressZstdFrame(text)))
+      // Each pending compression owns a native Zstandard context, so compression is bounded like writes.
+      const compressed: Buffer[] = []
+      await forEachConcurrently(frames.length, async (index) => {
+        compressed[index] = await compressZstdFrame(frames[index] as string)
+      })
       this.bodies.set(anchor, {
         frames: Buffer.concat(compressed), frameCount: frames.length, events: authored.events.length, logicalBytes: bytes,
       })
