@@ -145,6 +145,12 @@ it('excludes tests, installed dependencies, and build output from metadata disco
 
 it.each([
   ['valid bundle', {}, 'Nested', undefined],
+  ['manifest icon takes precedence', {
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './missing.svg' },
+  }, 'Nested', undefined],
+  ['unpublished manifest icon', {
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './missing.svg' }, files: ['locale'],
+  }, 'Nested', 'files must include icon.svg'],
   ['missing locale export', { exports: { './icon': './icon.svg' } }, 'Nested', 'exports must expose locale/en.json'],
   ['unpublished locale', { files: ['icon.svg'] }, 'Nested', 'files must include locale/en.json'],
   ['unpublished icon', { files: ['locale'] }, 'Nested', 'files must include icon.svg'],
@@ -173,7 +179,7 @@ it('checks grandchildren once and does not hide adjacent unowned locale director
   json('examples/child/grandchild/locale/en.json', { meta: { title: 'Grandchild' } })
   json('examples/child-other/locale/en.json', { meta: { title: 'Unowned' } })
   const problems = packageMetaProblems(root)
-  expect(problems.filter(problem => problem.includes('grandchild/package.json'))).toHaveLength(1)
+  expect(problems.filter(problem => problem.includes(join('grandchild', 'package.json')))).toHaveLength(1)
   expect(problems.join('\n')).toContain('exports must expose examples/child-other/locale/en.json')
 })
 
