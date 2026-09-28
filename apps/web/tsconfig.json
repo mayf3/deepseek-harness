@@ -74,6 +74,7 @@
     "tests/plugin-install-github.e2e.ts",
     "tests/client-plugin-live.e2e.ts",
     "tests/settings-chrome.e2e.ts",
+    "tests/caption-overlays.e2e.ts",
     "tests/settings-appearance.e2e.ts",
     "tests/menu-material.e2e.ts",
     "tests/desktop-locale.e2e.ts",
