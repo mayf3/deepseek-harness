@@ -1,5 +1,5 @@
 /** Cancellable ordinary-event HTTP exports, including retry waits and response reads. */
-import { Agent as HttpsAgent } from 'node:https'
+import type { Agent as HttpsAgent } from 'node:https'
 import { gzipSync } from 'node:zlib'
 import got from 'got'
 import { createOtlpNetworkExportDelegate, OTLPExporterBase, type OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
@@ -28,7 +28,7 @@ export function createEventLogExporter(options: OTLPExporterNodeConfigBase & { u
         body: compressed ? gzipSync(data) : Buffer.from(data),
         headers: { ...headers, ...(compressed ? { 'content-encoding': 'gzip' } : {}),
           ...(config.userAgent === undefined ? {} : { 'user-agent': config.userAgent }) },
-        agent: selectedAgent instanceof HttpsAgent ? { https: selectedAgent } : { http: selectedAgent },
+        agent: new URL(config.url).protocol === 'https:' ? { https: selectedAgent as HttpsAgent } : { http: selectedAgent },
         signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMillis)]),
         followRedirect: false,
         retry: { limit: 5, methods: ['POST'], statusCodes: [429, 502, 503, 504], errorCodes: [], backoffLimit: 5000 },
