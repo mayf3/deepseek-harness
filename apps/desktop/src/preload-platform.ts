@@ -22,6 +22,7 @@ export function markDocumentPlatform(): void {
  * process sends the state on every transition and after each load.
  */
 export function syncWindowFullscreen(): void {
+  // The main process sends this IPC only on macOS and Windows; other platforms need no listener.
   if (process.platform !== 'darwin' && process.platform !== 'win32') return
   ipcRenderer.on(DESKTOP_IPC.windowFullscreen, (_event, fullscreen: boolean) => {
     const root = document.documentElement as HTMLElement | null
