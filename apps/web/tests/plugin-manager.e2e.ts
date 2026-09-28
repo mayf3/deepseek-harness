@@ -373,6 +373,18 @@ describe('web e2e: plugin manager', () => {
     const panel = await openPluginsPanel()
 
     const info = panel.getByRole('button', { name: '插件说明' })
+    const infoBounds = await info.boundingBox()
+    const iconBounds = await info.locator('svg').boundingBox()
+    const subtitleBounds = await panel.getByText('安装、启用和配置插件', { exact: true }).boundingBox()
+    if (infoBounds === null || iconBounds === null || subtitleBounds === null) {
+      throw new Error('Plugin information button, icon, and subtitle must be visible')
+    }
+    expect(infoBounds.width).toBe(20)
+    expect(infoBounds.height).toBe(20)
+    expect(iconBounds.width).toBe(11)
+    expect(iconBounds.height).toBe(11)
+    expect(infoBounds.x - subtitleBounds.x - subtitleBounds.width).toBeCloseTo(4)
+    expect(iconBounds.y + iconBounds.height / 2).toBeCloseTo(subtitleBounds.y + subtitleBounds.height / 2)
     await info.hover()
     const hoverHelp = page.getByRole('tooltip')
     await hoverHelp.waitFor()
@@ -439,6 +451,45 @@ describe('web e2e: plugin manager', () => {
     await compareOrRefreshGolden(MANAGER_EXPECTED, snapshot, MODE)
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
+
+  it('keeps off-state switch thumbs light in both themes', async () => {
+    // The off-state thumb must stay light so an operable toggle cannot read as
+    // disabled, whose only other difference is reduced opacity.
+    for (const [theme, label] of [['light', '浅色'], ['dark', '深色']] as const) {
+      await openSettings(page, 'zh')
+      const settings = page.getByRole('dialog', { name: '设置', exact: true })
+      await settings.getByRole('button', { name: '通用设置', exact: true }).click()
+      await settings.getByRole('button', { name: label, exact: true }).click()
+      await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(theme === 'dark')
+      const panel = await openPluginsPanel()
+      const toggle = panel.getByRole('switch', { name: '启用 @fixture/bundle', exact: true })
+      await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
+      const appearance = await toggle.evaluate((element) => {
+        const thumb = element.firstElementChild
+        if (thumb === null) throw new Error('Switch thumb is missing')
+        const bounds = element.getBoundingClientRect()
+        return {
+          width: bounds.width,
+          height: bounds.height,
+          thumb: getComputedStyle(thumb).backgroundColor,
+          opacity: getComputedStyle(element).opacity,
+        }
+      })
+      expect(appearance).toEqual({
+        width: 36,
+        height: 20,
+        thumb: theme === 'dark' ? 'rgb(173, 178, 184)' : 'rgb(255, 255, 255)',
+        opacity: '1',
+      })
+    }
+    // Leave the shared page in the default theme for the tests after this one.
+    await openSettings(page, 'zh')
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await settings.getByRole('button', { name: '通用设置', exact: true }).click()
+    await settings.getByRole('button', { name: '浅色', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-ds-dark-theme'))).toBe(false)
+    await closeSettings()
+  })
 
   it('decodes manifest icons for disabled bundles and independent plugin rows', async () => {
     const panel = await openPluginsPanel()
