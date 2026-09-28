@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 import { OPEN_IN_APP_ICON_PREFIX_ROUTE } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
-import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
+import { DirectoryOpenInAppAction, OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
 import { OpenInAppPathController } from './open-path.ts'
 import { OpenPathAction, type OpenPathInjected } from './OpenPathAction.tsx'
 import { FileRouteAction } from './FileRouteAction.tsx'
@@ -96,7 +96,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar.right.tab.files.actions', () => ctx.slots.register({
     name: 'sidebar.right.tab.files.actions',
     id: 'open-in-app', locale: NS, inject: directoryInjected,
-  }, OpenInAppAction))
+  }, DirectoryOpenInAppAction))
   const applications: OpenPathInjected['applications'] = (path, signal) => paths.applications(path, signal)
   const pathInjected = (): OpenPathInjected => ({
     hooks: { openInAppDesktop: paths.desktop },

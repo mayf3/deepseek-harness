@@ -7,7 +7,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry, ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
-import { OpenInAppAction, type OpenInAppActionProps } from '../src/client/OpenInAppAction.tsx'
+import { DirectoryOpenInAppAction, OpenInAppAction, type OpenInAppActionProps } from '../src/client/OpenInAppAction.tsx'
 import { OpenInAppController } from '../src/client/controller.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -163,4 +163,17 @@ it('omits the dropdown when only one directory application is available', () => 
   render(<OpenInAppAction {...bench({ apps: ['finder'], cwd: '/w' }).props} />)
   expect(screen.getAllByRole('button')).toHaveLength(1)
   expect(screen.queryByRole('button', { name: zh['path.more'] })).toBeNull()
+})
+
+it('opens the displayed directory and follows its changes without reading the Session cwd', async () => {
+  const b = bench({ apps: ['finder'], cwd: '/session-workspace' })
+  const useSessions = vi.fn(() => { throw new Error('Directory controls must use the displayed path') })
+  const view = render(<DirectoryOpenInAppAction {...b.props} useSessions={useSessions} absolutePath="/displayed-directory" />)
+  await act(async () => { fireEvent.click(screen.getByRole('button')) })
+  expect(b.launch).toHaveBeenLastCalledWith('finder', '/displayed-directory')
+
+  view.rerender(<DirectoryOpenInAppAction {...b.props} useSessions={useSessions} absolutePath="/another-directory" />)
+  await act(async () => { fireEvent.click(screen.getByRole('button')) })
+  expect(b.launch).toHaveBeenLastCalledWith('finder', '/another-directory')
+  expect(useSessions).not.toHaveBeenCalled()
 })

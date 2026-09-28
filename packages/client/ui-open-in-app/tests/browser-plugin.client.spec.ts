@@ -18,7 +18,7 @@ import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply, inject, type OpenInAppActionInjected, type OpenPathInjected } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
-import { OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
+import { DirectoryOpenInAppAction, OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
 import { OpenPathAction } from '../src/client/OpenPathAction.tsx'
 import { OpenPathEmptyAction } from '../src/client/OpenPathEmptyAction.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
@@ -199,7 +199,7 @@ describe('open-in-app browser half', () => {
     const { ctx, fiber } = await bench()
     const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
     const files = ctx.slots.entries('sidebar.right.tab.files.actions')[0]
-    expect(files?.component).toBe(OpenInAppAction)
+    expect(files?.component).toBe(DirectoryOpenInAppAction)
     expect(files?.inject).toBe(entry?.inject)
     expect(entry?.component).toBe(OpenInAppAction)
     expect(entry?.options).toMatchObject({ id: 'open-in-app' })

@@ -31,7 +31,14 @@ export type { FilesBodyProps } from './FilesBody.tsx'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Workspace directory actions after the file tree's reload control. */
-    'sidebar.right.tab.files.actions': { kind: 'list'; scope: 'session' }
+    'sidebar.right.tab.files.actions': {
+      kind: 'list'
+      scope: 'session'
+      owner: {
+        /** Absolute directory path displayed by the file tree. */
+        readonly absolutePath: string
+      }
+    }
   }
 }
 

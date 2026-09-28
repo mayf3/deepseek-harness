@@ -178,6 +178,7 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
       { app: 'vscode', path: workspace.path }, { app: 'vscode', path: workspace.path },
       { app: 'finder', path: workspace.path }, { app: 'finder', path: workspace.path },
     ])
+    await expect.poll(() => opener.getAttribute('data-state')).toBe('idle')
     await compareOrRefreshGolden(join(root, 'files-open.expected.md'),
       await captureStableAria(page, '[data-files-state="tree"]', scaffold.workspaceCwd), mode)
     await opener.getByRole('button', { name: 'More ways to open', exact: true }).click()
