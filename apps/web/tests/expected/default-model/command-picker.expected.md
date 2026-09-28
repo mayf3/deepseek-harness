@@ -3,5 +3,6 @@
 - listbox "/model 匹配项":
   - option "DeepSeek-V4-Flash DeepSeek"
   - option "DeepSeek-V4-Flash-Vision-Exp DeepSeek"
-  - option "Origin Large Origin Gateway" [selected]
-  - option "Acme Large Acme Gateway"
+  - option "Origin Large Origin Gateway"
+  - option "Acme Large Acme Gateway" [selected]
+  - option "Acme Small Acme Gateway"

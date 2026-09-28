@@ -33,7 +33,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.trigger:focus-visible {
+.trigger:focus-visible:not([data-selection-focus]) {
   box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
@@ -199,13 +199,17 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.search input {
+.searchRow .search:focus-within {
+  border-color: transparent;
+}
+
+.searchRow .search input {
   padding: 0;
   font-size: 12px;
   line-height: normal;
 }
 
-.search input::placeholder {
+.searchRow .search input::placeholder {
   color: var(--dsw-alias-label-caption);
 }
 

@@ -5,14 +5,15 @@
  * each drilling into its own list — the provider-grouped model list over
  * the shared directory, and the effort levels. The trigger (313:14108's
  * ToggleButton) shows both: model name + effort in the caption tone.
- * In the model pane, search retains focus while ↑/↓ cycle the highlighted
- * result; Enter and Tab accept it. Root and effort panes move focus between
- * rows. Escape and Shift+Tab leave a drilled pane first and otherwise close
+ * Model catalogs above four entries show search, which retains focus while
+ * ↑/↓ cycle the highlighted result; Enter and Tab accept it. Smaller model
+ * catalogs, root panes, and effort panes move focus between rows. Escape and Shift+Tab leave a drilled pane first and otherwise close
  * back to the trigger. A drilled pane focuses the current effort or model
  * search field. Provider headings paint their background only while pinned
  * by scrolling. Clearing a query restores the full list and search focus.
- * Model names match a
- * case-insensitive ordered subsequence within each provider group, ranked by
+ * Selecting restores trigger focus without a ring until the trigger loses focus
+ * or the menu reopens. Model names match a case-insensitive ordered subsequence
+ * within each provider group, ranked by
  * prefix, alignment score, then catalog order. Returning to the root pane
  * hands focus back to the cell that opened it. Data and submission ride the
  * same per-session ModelDirectory as the /model popup; exact-model reasoning
@@ -71,6 +72,7 @@ export function ModelSelect(
   const [pane, setPane] = useState<Pane>('root')
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
+  const [selectionFocus, setSelectionFocus] = useState(false)
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -80,6 +82,7 @@ export function ModelSelect(
   const toastSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const groupsRef = useRef<HTMLDivElement | null>(null)
   const [menuPos, setMenuPos] = useState<CSSProperties | null>(null)
@@ -101,9 +104,10 @@ export function ModelSelect(
           : { reasoningEffort: model.reasoning.defaultEffort },
       } satisfies ModelSelection,
     }))), [groups])
+  const showSearch = choices.length > 4
   const filteredGroups = useMemo(() => groups.map(group => ({
-    ...group, models: rankByName(group.models, query.trim()),
-  })).filter(group => group.models.length > 0), [groups, query])
+    ...group, models: rankByName(group.models, showSearch ? query.trim() : ''),
+  })).filter(group => group.models.length > 0), [groups, query, showSearch])
   const visibleModels = useMemo(() => filteredGroups.flatMap(group => group.models.map(model => ({
     provider: group.id, model: model.id,
   }))), [filteredGroups])
@@ -153,16 +157,26 @@ export function ModelSelect(
     return () => { document.removeEventListener('mousedown', closeOutside) }
   }, [open])
 
+  useLayoutEffect(() => {
+    if (!showSearch) {
+      setQuery('')
+      setHighlightedIndex(null)
+    }
+  }, [showSearch])
+
   // Pane switches unmount the focused row; restore focus inside the menu so
   // keyboard navigation remains available.
   const paneFocus = useRef<'drill' | 'model' | 'effort' | null>(null)
+  const previousShowSearch = useRef(showSearch)
   useEffect(() => {
-    const intent = paneFocus.current
+    const changedSearchMode = previousShowSearch.current !== showSearch
+    previousShowSearch.current = showSearch
+    const intent = paneFocus.current ?? (changedSearchMode && pane === 'model' ? 'drill' : null)
     paneFocus.current = null
     if (!open || intent === null) return
     if (intent === 'drill') {
-      if (pane === 'model') {
-        menuRef.current?.querySelector('input')?.focus()
+      if (pane === 'model' && showSearch) {
+        searchRef.current?.focus()
         return
       }
       // The checked row is the value in use; a pane without one opens on its
@@ -176,7 +190,7 @@ export function ModelSelect(
     }
     const cell = itemRefs.current[intent === 'effort' ? 1 : 0]
     ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
-  }, [open, pane])
+  }, [open, pane, showSearch])
 
   useLayoutEffect(() => {
     const viewport = groupsRef.current
@@ -250,6 +264,7 @@ export function ModelSelect(
   if (!available) return null
 
   const show = (): void => {
+    setSelectionFocus(false)
     triggerRef.current?.focus()
     setQuery('')
     setHighlightedIndex(null)
@@ -268,6 +283,11 @@ export function ModelSelect(
     setOpen(false)
     setPane('root')
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
+  }
+
+  const closeAfterSelection = (): void => {
+    setSelectionFocus(true)
+    close(true)
   }
 
   const drill = (next: Pane): void => {
@@ -306,16 +326,16 @@ export function ModelSelect(
       return
     }
     if (!open) return
-    if (pane === 'model' && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    if (pane === 'model' && showSearch && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
       event.preventDefault()
       if (!busy && visibleModels.length > 0) {
         const direction = event.key === 'ArrowDown' ? 1 : -1
         setHighlightedIndex((activeModelIndex + direction + visibleModels.length) % visibleModels.length)
-        menuRef.current?.querySelector('input')?.focus()
+        searchRef.current?.focus()
       }
       return
     }
-    if (pane === 'model' && event.target instanceof HTMLInputElement
+    if (pane === 'model' && showSearch && event.target instanceof HTMLInputElement
       && (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey))) {
       if (event.key === 'Tab' && visibleModels.length === 0) return
       event.preventDefault()
@@ -346,9 +366,9 @@ export function ModelSelect(
       }
       if (focused !== triggerRef.current) return
       event.preventDefault()
-      if (pane === 'model') {
+      if (pane === 'model' && showSearch) {
         setHighlightedIndex(null)
-        menuRef.current?.querySelector('input')?.focus()
+        searchRef.current?.focus()
         return
       }
       const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
@@ -372,7 +392,7 @@ export function ModelSelect(
   const settleSelection = (result: Awaited<ReturnType<ModelSelectInjected['select']>>): void => {
     if (result === undefined) return
     if (result.ok) {
-      if (rootRef.current !== null) close(true)
+      if (rootRef.current !== null) closeAfterSelection()
       return
     }
     const { error } = result
@@ -388,13 +408,14 @@ export function ModelSelect(
   const submit = (selection: ModelSelection): void => {
     lastActionRef.current = 'select'
     // Disabled option rows cannot retain focus while a selection is pending.
+    setSelectionFocus(true)
     triggerRef.current?.focus()
     void select(selection).then(settleSelection)
   }
 
   const choose = (selection: ModelSelection): void => {
     if (state.current?.provider === selection.provider && state.current.model === selection.model) {
-      close(true)
+      closeAfterSelection()
       return
     }
     submit(selection)
@@ -403,7 +424,7 @@ export function ModelSelect(
   const chooseEffort = (effort: string | undefined): void => {
     if (state.current === null) return
     if (effectiveEffort === effort) {
-      close(true)
+      closeAfterSelection()
       return
     }
     const selection: ModelSelection = {
@@ -456,6 +477,8 @@ export function ModelSelect(
         aria-controls={open ? `${id}-menu` : undefined}
         title={triggerLabel}
         aria-busy={busy}
+        data-selection-focus={selectionFocus ? '' : undefined}
+        onBlur={() => { setSelectionFocus(false) }}
         disabled={locked}
         onClick={() => {
           if (open) {
@@ -505,8 +528,9 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
-              <div className={css.searchRow}>
+              {showSearch && <div className={css.searchRow}>
                 <Input
+                  ref={searchRef}
                   className={clsx(css.search, query !== '' && css.searchWithQuery)}
                   type="text"
                   role="searchbox"
@@ -526,13 +550,13 @@ export function ModelSelect(
                     disabled={busy}
                     onClick={() => {
                       changeQuery('')
-                      menuRef.current?.querySelector('input')?.focus()
+                      searchRef.current?.focus()
                     }}
                   >
                     <IconCloseFillRegular />
                   </button>
                 )}
-              </div>
+              </div>}
               {state.status === 'loading' && (
                 <div className={css.status}>{t('status.loading')}</div>
               )}
@@ -571,12 +595,16 @@ export function ModelSelect(
                             role="menuitemradio"
                             aria-checked={selected}
                             id={`${id}-model-${index}`}
-                            tabIndex={-1}
+                            tabIndex={showSearch ? -1 : 0}
+                            onFocus={() => { setHighlightedIndex(index) }}
                             data-highlighted={index === activeModelIndex ? '' : undefined}
                             className={clsx(
                               css.option, css.modelOption, selected && css.selected, index === activeModelIndex && css.optionActive,
                             )}
-                            onMouseMove={busy || index === activeModelIndex ? undefined : () => { setHighlightedIndex(index) }}
+                            onMouseMove={busy || index === activeModelIndex ? undefined : () => {
+                              if (showSearch) setHighlightedIndex(index)
+                              else itemRefs.current[index]?.focus()
+                            }}
                             key={model.id}
                             title={model.name}
                             disabled={busy}

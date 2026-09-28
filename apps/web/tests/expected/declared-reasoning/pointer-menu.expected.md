@@ -9,3 +9,4 @@
       - text: Acme Gateway
       - menuitemradio "Acme Think"
       - menuitemradio "Acme Swift" [checked]
+      - menuitemradio "Acme Lite"

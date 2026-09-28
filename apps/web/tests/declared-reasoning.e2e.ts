@@ -46,6 +46,7 @@ describe.skipIf(MODE === 'record').each([
           models: [
             { id: 'acme-think', name: 'Acme Think' },
             { id: 'acme-swift', name: 'Acme Swift' },
+            { id: 'acme-lite', name: 'Acme Lite' },
           ].map(model => ({
             ...model,
             reasoningEfforts: { off: null, high: 'high', max: 'ultra' },

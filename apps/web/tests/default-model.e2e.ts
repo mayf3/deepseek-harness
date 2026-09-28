@@ -73,7 +73,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
           displayName: 'Acme Gateway',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: MODEL, name: 'Acme Large' }],
+          models: [{ id: MODEL, name: 'Acme Large' }, { id: 'acme-small', name: 'Acme Small' }],
         },
       },
     })
@@ -132,6 +132,52 @@ describe('web e2e: the composer model switch is the default for later sessions',
     } finally {
       await search.press('Escape')
       await composer.fill('')
+    }
+  })
+
+  it('hides search only in the button menu when four models remain', async () => {
+    const trigger = page.getByRole('button', { name: /^选择模型/ })
+    const search = page.getByRole('searchbox', { name: '搜索模型…' })
+    const setModels = (expanded: boolean) => scaffold.ctx.settings.update('llm-pi-ai', {
+      providers: { [ROUTE]: {
+        displayName: 'Acme Gateway', api: 'openai-completions', baseURL: 'https://gateway.acme.example/v1',
+        models: expanded ? [{ id: MODEL, name: 'Acme Large' }, { id: 'acme-small', name: 'Acme Small' }]
+          : [{ id: MODEL, name: 'Acme Large' }],
+      } },
+    })
+    try {
+      await setModels(false)
+      await trigger.click()
+      await page.getByRole('menuitem', { name: /模型/ }).click()
+      await expect.poll(() => page.getByRole('menuitemradio').count()).toBe(4)
+      expect(await search.count()).toBe(0)
+      const current = page.getByRole('menuitemradio', { name: 'Origin Large', exact: true })
+      await expect.poll(() => current.evaluate(node => node === node.ownerDocument.activeElement)).toBe(true)
+      const rows = page.getByRole('menuitemradio')
+      const currentId = await current.getAttribute('id')
+      for (let index = 0; index < 4; index++) await page.keyboard.press('ArrowDown')
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe(currentId)
+      await page.keyboard.press('Enter')
+      await expect.poll(() => trigger.evaluate(node => node === node.ownerDocument.activeElement)).toBe(true)
+      expect(await trigger.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none')
+      await page.getByRole('button', { name: '添加文件或调用指令', exact: true }).click()
+      await page.getByRole('option', { name: /^模型/ }).click()
+      const commandSearch = page.getByRole('textbox', { name: '筛选选项', exact: true })
+      await commandSearch.waitFor()
+      expect(await commandSearch.getAttribute('placeholder')).toBe('搜索模型…')
+      await commandSearch.press('Escape')
+      await page.locator('[data-composer-input]').first().fill('')
+      expect(await rows.count()).toBe(0)
+    } finally {
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await setModels(true)
+      await trigger.click()
+      await page.getByRole('menuitem', { name: /模型/ }).click()
+      await expect.poll(() => page.getByRole('menuitemradio').count()).toBe(5)
+      await search.waitFor()
+      await search.press('Escape')
+      await page.keyboard.press('Escape')
     }
   })
 
@@ -344,6 +390,8 @@ describe('web e2e: the composer model switch is the default for later sessions',
       await page.keyboard.press('Enter')
       await expect.poll(() => trigger.getAttribute('aria-busy')).toBe('false')
       await expect.poll(() => trigger.textContent()).toContain('Acme Large')
+      await expect.poll(() => trigger.evaluate(element => element === element.ownerDocument.activeElement)).toBe(true)
+      expect(await trigger.evaluate(element => getComputedStyle(element).boxShadow)).toBe('none')
       expect(scaffold.ctx.agentDefaultModel.currentSelection()).toEqual({ provider: START_ROUTE, model: START_MODEL })
       const aria = await captureStableAria(page, '[data-composer-card]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(fileURLToPath(new URL('./expected/default-model/background-save.expected.md', import.meta.url)), aria, webSnapshotMode())
@@ -369,6 +417,10 @@ describe('web e2e: the composer model switch is the default for later sessions',
       .toEqual({ provider: ROUTE, model: MODEL })
     // ...while the one holding a logged route keeps deriving from its log.
     expect(await currentOf(loggedId)).toEqual({ provider: START_ROUTE, model: START_MODEL })
+    await trigger.press('Tab')
+    await trigger.focus()
+    expect(await trigger.evaluate(element => element.matches(':focus-visible'))).toBe(true)
+    expect(await trigger.evaluate(element => getComputedStyle(element).boxShadow)).not.toBe('none')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
