@@ -20,8 +20,6 @@
   - button "减小字号"
   - text: px 工作步骤展示 选择希望看到多少工具调用细节
   - button "详细"
-  - text: 性能与用量 选择性能与用量信息展示的详细程度
-  - button "详细"
   - text: 代码工作工具 开启后显示轨迹、本轮代码差异，新对话中的 Agent 预设切换
   - switch "代码工作工具"
   - text: 快捷键
@@ -29,4 +27,8 @@
   - button "编辑快捷键"
   - text: 繁忙时的发送行为 智能体运行时 Enter 键和发送按钮的行为；Cmd/Ctrl+Enter 使用另一行为
   - button "排队发送"
+  - text: 在使用官方模型 API 时上传 Session Log 帮助改进 DeepSeek 模型与产品
+  - switch "在使用官方模型 API 时上传 Session Log"
+  - text: 性能与用量 选择性能与用量信息展示的详细程度
+  - button "详细"
   - text: 当前版本：{{version}}

@@ -15,17 +15,17 @@
   en: 41cd21266011d571
   zh: 3172d1a2acbb27b7
 /deepseek-ai-dsh-client-ui-chat/reference-previews:
-  en: 3fda3d75483ce7c1
-  zh: 4d96ba654f70c021
+  en: 0a1948349b1fbfd9
+  zh: 56256e4d695e5192
 /deepseek-ai-dsh-client-ui-chat/hidden-chat-rows:
-  en: 5706ae03ceacf251
+  en: cbf1f0a2205046a5
   zh: 2e59d0815351349f
 /deepseek-ai-dsh-client-ui-chat/command-and-failure-rows:
   en: 2157fcd6b0d100b5
   zh: 9e865ac3953ebe30
 /deepseek-ai-dsh-client-ui-chat/turn-token-usage:
-  en: 29346bd0f9a5ff51
-  zh: 54dbed55f67aeecd
+  en: e1dd055d68ab25ea
+  zh: c5b62a22c9e457cb
 /deepseek-ai-dsh-client-ui-chat/completed-turn-footer:
   en: b4cd36e7ab91281e
   zh: 8ccf412b9dde61d5
@@ -33,8 +33,8 @@
   en: 0ca3e8c4eab1ca78
   zh: 1a1c71bab151eb7d
 /deepseek-ai-dsh-client-ui-chat/grouped-rendering:
-  en: cc6718a9ff761114
-  zh: d734fc73c1b77074
+  en: 1ccc8de0d1ca0481
+  zh: 156cdfb5b6ba6490
 /deepseek-ai-dsh-client-ui-chat/scroll-ownership:
   en: 69b021c5a5d8b5a7
   zh: 091ae7986c7a8a20

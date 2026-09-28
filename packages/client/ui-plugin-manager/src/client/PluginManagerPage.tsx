@@ -1337,7 +1337,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
                 <span>{t('intro')}</span>
                 <Tooltip label={t('infoDescription')} side="bottom" delayMs={300} maxWidth={300} portal openOnClick>
                   <Button variant="ghost" size="sm" className={css.infoButton} aria-label={t('infoLabel')}>
-                    <IconInfoOutlineRegular size={10} aria-hidden="true" />
+                    <IconInfoOutlineRegular size={11} aria-hidden="true" />
                   </Button>
                 </Tooltip>
               </div>

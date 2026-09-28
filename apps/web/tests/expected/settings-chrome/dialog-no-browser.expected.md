@@ -20,8 +20,6 @@
   - button "Decrease font size"
   - text: px Work details Choose how much detail to show for tool calls
   - button "Detailed"
-  - text: Performance & usage Choose how much performance and usage information to show
-  - button "Detailed"
   - text: Coding Tools Shows trajectory, code diffs, and Agent preset switching in new chats
   - switch "Coding Tools"
   - text: Keyboard shortcuts
@@ -29,4 +27,8 @@
   - button "Edit shortcuts"
   - text: Send behavior while busy What Enter and the Send button do while the agent is running; Cmd/Ctrl+Enter uses the other behavior
   - button "Queue"
+  - text: Upload Session Log when using the official model API Help improve DeepSeek models and products.
+  - switch "Upload Session Log when using the official model API"
+  - text: Performance & usage Choose how much performance and usage information to show
+  - button "Detailed"
   - text: "Current version: {{version}}"

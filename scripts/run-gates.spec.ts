@@ -15,8 +15,15 @@ import {
   type GateResult,
 } from './run-gates.ts'
 
-// Graph fixtures select their own browser pool instead of inheriting the CI host's pool.
-beforeEach(() => vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined))
+// Graph fixtures select their own browser pool instead of inheriting the CI
+// host's pool, and coverage gates take their shape from the values each case
+// sets, not from the lane that runs this file (a partitioned lane exports
+// DSH_COVERAGE_PARTITIONS to every child).
+beforeEach(() => {
+  vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_MAX_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_PARTITIONS', undefined)
+})
 afterEach(() => vi.unstubAllEnvs())
 
 /**
@@ -183,6 +190,13 @@ describe('CI worker allocation', () => {
       .not.toHaveProperty('DSH_COVERAGE_PARTITIONS')
   })
 
+  it('leaves the plain unit inventory with the environment pnpm run test finds', () => {
+    // A 3-CPU host would otherwise receive DSH_COVERAGE_PARTITIONS=2, which
+    // the inventory's own coverage-gate tests read as a partitioned lane.
+    expect(ciWorkerEnvironment('ci-unit', {}, 3)).toEqual({})
+    expect(ciWorkerEnvironment('ci-unit', {}, 16)).toEqual({})
+  })
+
   it.each(['0', '-1', 'NaN', '2.5'])('rejects invalid worker budget %s', (raw) => {
     expect(() => ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_MAX_WORKERS: raw }, 16))
       .toThrow('DSH_COVERAGE_MAX_WORKERS must be a positive integer')
@@ -200,6 +214,7 @@ describe('gate graph validation', () => {
     'ci-static',
     'ci-lint-contracts-ready',
     'ci-coverage',
+    'ci-unit',
     'ci-bench',
     'ci-snapshot',
     'ci-artifacts',
@@ -535,6 +550,34 @@ describe('gate graph validation', () => {
     }
   })
 
+  it('runs the plain unit inventory after the native build and leaves its budget to the inherited environment', () => {
+    const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+    expect(scripts['check:ci:unit']).toBe('tsx scripts/run-gates.ts ci-unit')
+
+    // The aggregate is the `test` package script's two segments, in order,
+    // so a step added to one cannot silently leave the other. The lane sets
+    // DSH_COVERAGE_TEST_TIMEOUT_MS; vitest.config.ts reads it per inline
+    // project (coverageTestTimeoutOptions), so the gate passes no budget flag.
+    const [nativeBuild, unitRun, ...rest] = (scripts.test ?? '').split(' && ')
+    expect(rest).toEqual([])
+    for (const budget of ['15000', undefined]) {
+      const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', budget, () =>
+        withPnpmEntrypoint(() => gatesForMode('ci-unit')))
+      expect(gates.map(gate => gate.id)).toEqual(['native-system', 'unit'])
+      expect(gates[0]).toMatchObject({ displayCommand: nativeBuild })
+      expect(gates[1]?.displayCommand).toBe(`pnpm exec ${unitRun}`)
+      expect(gates[1]).toMatchObject({
+        label: 'test',
+        needs: ['native-system'],
+        streamOutput: true,
+        args: ['/private/pnpm.cjs', 'exec', 'vitest', 'run'],
+      })
+      expect(gates[1]?.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
+    }
+  })
+
   it('selects partitioned coverage only when explicitly configured', () => {
     const coverage = withEnv('DSH_COVERAGE_PARTITIONS', '3', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete').find(subject => subject.id === 'coverage')))
@@ -757,6 +800,7 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'built-bin-smoke')?.args).toEqual(
       expect.arrayContaining([
         'apps/cli/tests/profiles/headless/tests/source-tool.built.e2e.ts',
+        'apps/desktop/tests/acl-skill.built.e2e.ts',
         'packages/subprocess/subprocess-local/tests/spawn-runner-built.e2e.ts',
         'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',

@@ -22,6 +22,7 @@ export type Mode =
   | 'ci-static'
   | 'ci-lint-contracts-ready'
   | 'ci-coverage'
+  | 'ci-unit'
   | 'ci-bench'
   | 'ci-snapshot'
   | 'ci-artifacts'
@@ -136,6 +137,7 @@ function parseMode(raw: string | undefined): Mode {
     case 'ci-static':
     case 'ci-lint-contracts-ready':
     case 'ci-coverage':
+    case 'ci-unit':
     case 'ci-bench':
     case 'ci-snapshot':
     case 'ci-artifacts':
@@ -151,7 +153,7 @@ function parseMode(raw: string | undefined): Mode {
       return raw
     default:
       throw new Error(
-        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
+        `run-gates: expected mode ci-primary | ci-linux-primary | ci-static | ci-lint-contracts-ready | ci-coverage | ci-unit | ci-bench | ci-snapshot | ci-artifacts | ci-consumers | ci-windows-blocking | ci-windows-complete | ci-windows-observational-ready | node-compat | check-all | hygiene | doc-sync | doc-quick, got ${JSON.stringify(raw)}.`,
       )
   }
 }
@@ -196,7 +198,12 @@ export function ciWorkerEnvironment(
   env: NodeJS.ProcessEnv,
   available = availableParallelism(),
 ): Record<string, string> {
-  if (!mode.startsWith('ci-')) return {}
+  // ci-unit's gates read none of these settings, while the inventory it runs
+  // reads the same variables (run-gates.spec.ts builds coverage gates from
+  // DSH_COVERAGE_PARTITIONS; the oxlint contract spawns run-oxlint, which
+  // reads DSH_OXLINT_THREADS), so the aggregate leaves the environment as
+  // `pnpm run test` finds it.
+  if (!mode.startsWith('ci-') || mode === 'ci-unit') return {}
   const additions: Record<string, string> = {}
   const setDefault = (name: string, value: number): void => {
     if (env[name] === undefined || env[name] === '') additions[name] = String(value)
@@ -276,6 +283,8 @@ export function gatesForMode(selected: Mode): Gate[] {
       ]
     case 'ci-coverage':
       return coverageGates()
+    case 'ci-unit':
+      return ciUnitGates()
     case 'ci-bench':
       return [pnpmScript('bench', 'test:bench', { label: 'performance benchmarks' })]
     case 'ci-snapshot':
@@ -696,6 +705,23 @@ function coverageGates(): Gate[] {
   ]
 }
 
+// The uninstrumented unit inventory for a whole-inventory reference lane
+// (the Sandbox workflow's darwin parity job). It is `pnpm run test`; the lane
+// sets DSH_COVERAGE_TEST_TIMEOUT_MS, which vitest.config.ts reads from the
+// inherited environment, because a shared hosted runner delays cases that
+// inherit Vitest's defaults past them. Output streams so the job log keeps
+// per-file timestamps for a 15–30 minute run.
+function ciUnitGates(): Gate[] {
+  return [
+    pnpmScript('native-system', 'build:native-system'),
+    pnpmExec('unit', ['vitest', 'run'], {
+      label: 'test',
+      needs: ['native-system'],
+      streamOutput: true,
+    }),
+  ]
+}
+
 // Recorded-session adapters boot process scenarios in `lib` mode. Callers wait
 // either on `build` or on a validation gate that transitively owns that build.
 function snapshotGate(needs: string[] = ['build']): Gate {
@@ -846,6 +872,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'apps/cli/tests/profiles/headless/tests/keyless-smoke.e2e.ts',
     'apps/cli/tests/profiles/headless/tests/source-tool.built.e2e.ts',
     'apps/cli/tests/built-bin.e2e.ts',
+    'apps/desktop/tests/acl-skill.built.e2e.ts',
     'packages/host/directory-picker-native/tests/built-worker.e2e.ts',
     'packages/sdk/server/tests/built-scope-carrier.e2e.ts',
     'packages/deliverables/tool-present/tests/built-errors.e2e.ts',
