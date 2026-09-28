@@ -648,8 +648,8 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // small share. A budget of 1 gives each gate 1 worker; lanes that need a strict
 // total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
 // which keeps the gates from overlapping at all.
-// DSH_COVERAGE_TEST_TIMEOUT_MS reaches both gates through the inherited
-// environment: vitest.config.ts applies it to every inline project.
+// DSH_COVERAGE_TEST_TIMEOUT_MS is not a gate argument: vitest.config.ts reads
+// it from the environment every gate inherits (coverageTestTimeoutOptions).
 function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   const [flag] = positiveIntArg('DSH_COVERAGE_MAX_WORKERS', '--maxWorkers')
   if (flag === undefined) return { instrumented: [], exempt: [] }

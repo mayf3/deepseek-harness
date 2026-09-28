@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
 import { lstat, mkdir, readdir, rm, unlink, writeFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
+import type { TestUserConfig } from 'vitest/config'
 import { coverageExemptHeavySuites } from './coverage-exempt.ts'
 import { pnpmInvocation } from './pnpm-invocation.ts'
 
@@ -100,11 +101,7 @@ export function parseCoverageTestTimeout(raw: string | undefined): number | unde
 }
 
 /** The Vitest `test` options one lane budget sets in each inline project. */
-export interface CoverageTestTimeoutOptions {
-  testTimeout?: number
-  hookTimeout?: number
-  expect?: { poll: { timeout: number } }
-}
+export type CoverageTestTimeoutOptions = Pick<TestUserConfig, 'testTimeout' | 'hookTimeout' | 'expect'>
 
 /**
  * Resolve the Vitest test options that apply one lane budget to the per-test,
@@ -113,11 +110,13 @@ export interface CoverageTestTimeoutOptions {
  * raised test budget accounts for: fixtures that await child exit or retry
  * Windows handle release spend that cost in `afterEach`, where Vitest's
  * separate 10 s default would otherwise fail a suite whose cases all passed.
- * The root config spreads these into each inline project: Vitest forwards
- * only a fixed list of CLI overrides into projects, and `--hookTimeout` and
- * `--expect.poll.timeout` are not on it, so a flag-based budget reaches only
- * the per-test default. Explicit `describe`, case, and fixture timeouts remain
- * authoritative.
+ * The root `vitest.config.ts` spreads these into each inline project, so the
+ * budget governs every Vitest run of that config in an environment carrying
+ * the variable, whichever gate or script starts it. The config, not a CLI
+ * flag, is the only route into inline projects: Vitest forwards a fixed list
+ * of CLI overrides into projects, and `--hookTimeout` and
+ * `--expect.poll.timeout` are not on it (only `--testTimeout` is). Explicit
+ * `describe`, case, and fixture timeouts remain authoritative.
  * @param raw - the configured millisecond budget, or undefined to keep Vitest's defaults.
  * @returns the options to spread into a project's `test` block, empty when unset.
  */

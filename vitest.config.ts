@@ -145,11 +145,9 @@ if (coveragePartitionRaw !== undefined && coveragePartitionRaw !== '' && coverag
 const coveragePartitionMode = coveragePartitionRaw === '1'
 
 // Lanes on shared hosts raise the per-test, hook, and expect.poll defaults
-// together through DSH_COVERAGE_TEST_TIMEOUT_MS. The budget lands in each
-// inline project below because Vitest forwards only a fixed list of CLI
-// overrides into projects: --testTimeout is on it, --hookTimeout and
-// --expect.poll.timeout are not. Unset keeps Vitest's defaults; explicit
-// describe, case, and fixture timeouts remain authoritative.
+// together through DSH_COVERAGE_TEST_TIMEOUT_MS; it lands in each inline
+// project below because CLI flags do not reach them (coverageTestTimeoutOptions
+// owns the rule and its reach).
 const laneTestBudget = coverageTestTimeoutOptions(process.env[COVERAGE_TEST_TIMEOUT_ENV])
 
 // These suites exercise process-global state, process APIs, or timing-sensitive process I/O

@@ -519,18 +519,18 @@ describe('gate graph validation', () => {
   })
 
   it('leaves the lane test budget to the inherited environment on both coverage gates', () => {
-    // vitest.config.ts reads DSH_COVERAGE_TEST_TIMEOUT_MS per inline project;
-    // a CLI flag here would reach only the per-test default and split the
-    // budget between two owners.
+    // vitest.config.ts reads DSH_COVERAGE_TEST_TIMEOUT_MS per inline project
+    // (coverageTestTimeoutOptions); a gate argument would add a second owner.
     for (const budget of ['15000', undefined]) {
       const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', budget, () =>
         withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
       for (const id of ['coverage', 'coverage-exempt-heavy']) {
         const gate = gates.find(subject => subject.id === id)
-        expect(gate?.args).not.toEqual(expect.arrayContaining([
+        if (gate === undefined) throw new Error(`ci-windows-complete must define the ${id} gate`)
+        expect(gate.args).not.toEqual(expect.arrayContaining([
           expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
         ]))
-        expect(gate?.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
+        expect(gate.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
       }
     }
   })

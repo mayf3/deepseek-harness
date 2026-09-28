@@ -1,6 +1,6 @@
 /**
- * Waits that end only when a lane budget below them is in force. Runs only
- * inside the Vitest child that scripts/lane-test-budget.spec.ts spawns.
+ * Waits that end only through the lane budget in force. Runs only inside the
+ * Vitest child that scripts/lane-test-budget.spec.ts spawns.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -11,11 +11,15 @@ describe('lane test budget fixture', () => {
     await sleep(600)
   })
 
-  // Its own case budget stays above the wait so the poll budget, not the
-  // per-test budget, is what ends the assertion.
+  // The predicate counts attempts instead of reading a clock, so a host stall
+  // cannot turn a budget-ended poll into a pass: a 10 ms interval fits at most
+  // ~20 attempts into a 200 ms budget and ~100 into Vitest's 1000 ms default,
+  // both far below the target, and the case's own budget stays above both so
+  // the poll budget is what ends the assertion. The reported duration is then
+  // the poll budget (or longer under load), which the spawning spec reads.
   it('expect.poll budget', { timeout: 5_000 }, async () => {
-    const start = Date.now()
-    await expect.poll(() => Date.now() - start).toBeGreaterThan(500)
+    let attempts = 0
+    await expect.poll(() => { attempts += 1; return attempts }, { interval: 10 }).toBeGreaterThan(10_000)
   })
 
   describe('hook budget', () => {

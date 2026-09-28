@@ -615,10 +615,9 @@ describe('CI workflow', () => {
   })
 
   it('applies the lane test budget inside every Vitest project', () => {
-    // The coverage and serial lanes grant DSH_COVERAGE_TEST_TIMEOUT_MS; Vitest
-    // forwards only --testTimeout of the three budgets into inline projects,
-    // so each project reads the budget from the config (behavior pinned by
-    // scripts/lane-test-budget.spec.ts).
+    // Each inline project spreads coverageTestTimeoutOptions, the only route
+    // for DSH_COVERAGE_TEST_TIMEOUT_MS into projects; the behavior itself is
+    // pinned by scripts/lane-test-budget.spec.ts.
     const config = readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')
 
     expect(config).toContain('const laneTestBudget = coverageTestTimeoutOptions(process.env[COVERAGE_TEST_TIMEOUT_ENV])')
