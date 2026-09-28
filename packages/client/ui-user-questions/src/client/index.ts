@@ -241,6 +241,9 @@ async function answerQuestion(
       claimSignal,
       (channel) => { card.pending.detachWaterfall(channel) },
     )
+    // Cancellation may win between the first claim frame and this continuation.
+    // The request has already settled, so its channel must never reach the card.
+    if (claimSignal.aborted) return await waterfall.result
     delegateRequest = () => { waterfall.channel.delegate() }
     card.pending.attachWaterfall(waterfall.channel)
     if (iterator !== undefined) {

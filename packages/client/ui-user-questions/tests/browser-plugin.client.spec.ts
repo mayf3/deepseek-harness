@@ -192,6 +192,30 @@ describe('apply', () => {
     }
   })
 
+  it('does not attach a cancelled claim after its first frame', async () => {
+    const b = await bench(true, [CONTINUED])
+    const controller = new AbortController()
+    b.remoteQuestions.attachWait.mockImplementationOnce(() => ({
+      dispose: vi.fn(), send: () => {}, end: () => {},
+      [Symbol.asyncIterator]: () => ({
+        next: () => {
+          controller.abort()
+          return Promise.resolve({ done: false as const, value: { remainingMs: 60_000 } })
+        },
+      }),
+    }))
+    try {
+      await expect(b.invoke(b.agent, { ...timed(), signal: controller.signal }, async () => ANSWER))
+        .rejects.toMatchObject({ code: 'ASK_ABORTED' })
+      const card = b.pending.getSnapshot()[0]!
+      expect(card.snapshot()).toMatchObject({ state: 'continued', channel: 'rpc' })
+      await card.answer(ANSWER)
+      expect(b.remoteQuestions.answer).toHaveBeenCalledOnce()
+    } finally {
+      await b.fiber.dispose()
+    }
+  })
+
   it('attaches an indefinite request before publishing control back to the caller', async () => {
     const b = await bench()
     try {

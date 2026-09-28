@@ -138,7 +138,7 @@ type TimedUserQuestionResult = AskUserQuestionAnswer | { pending: true; callId: 
 
 Client 接手通过业务 Remote stream 表达，不等同于 Gateway 投递。`TimedQuestionWait` 保存原 Host deadline，仅在没有接手记录时运行计时器。`attachWait` stream 发出当前剩余时长，Client 用本地时钟倒计时。聚焦、编辑和「慢慢回答」状态仍归本地所有。stream 取消释放相应接手记录；最后一个接手方离开后，Host 恢复原 deadline。无人接手时超时中止前台 waterfall 专属的 signal 并返回 pending，不取消 Turn。Gateway 与 `api-remotes` 不包含问答专属计时策略。
 
-`userQuestions` Session 投影把现有事件折叠成可回答的问题集合与已结算的集合；不记录任何等待状态、聚焦状态或 deadline。每个 `request/header` 都记录了模型看到的确切工具 schema，折叠只在该请求头声明了 timed `ask_user_question` schema（带 `timeout` 参数的那一个）时才跟踪调用；阻塞式 legacy 工具从不声明它，因此 legacy 会话折叠为空视图，其行、卡片和重启行为都不会改变。timed schema 下 `ask_user_question` 的 `tool/call` 打开一个问题。`tool/result` 只在两种情况下把它标为 `continued`：带 pending 载荷，或是 Session resume 修复补写的 `TOOL_OUTCOME_UNKNOWN` 合成结果；回答批次把它连同该批次移入 `settled`，任何失败都丢弃它。迟到回复在其消息进入 agent inbox 的那一刻把已继续的问题移入 `settled`，连同从该消息读出的回答批次：计时调用自己的结果记录的是超时，transcript 行无处可读用户最终的选择。回复正文不含可读批次时，该调用以零答案结算；回复指向的调用已不在可回答集合中时不改变任何内容，因此 inbox splice 与持久的用户消息只记录同一条回复一次。
+`userQuestions` Session 投影把现有事件折叠成可回答的问题集合与已结算的集合；不记录任何等待状态、聚焦状态或 deadline。每个 `request/header` 都记录了模型看到的确切工具 schema。只有请求头声明了带 `timeout` 参数的 timed `ask_user_question` schema，投影才跟踪原生调用；阻塞式 legacy 工具从不声明它。原生 `tool/call` 打开一个问题。`tool/result` 只在两种情况下把它标为 `continued`：带 pending 载荷，或是 Session resume 修复补写的 `TOOL_OUTCOME_UNKNOWN` 合成结果；回答批次把它连同该批次移入 `settled`，其他结果或失败都丢弃它。`run_code` 的 PTC 子调用若在 `tool/ptc-dispatch` 结果中返回 pending，也会进入投影，尽管请求头只列出 `run_code`。迟到回复在消息获准成为 `user/message` 时，才把已继续的问题连同消息中的回答批次移入 `settled`：计时调用自己的结果记录的是超时，transcript 行无处可读用户最终的选择。排队的回复可在准入前取消，此时问题仍可回答。回复正文不含可读批次时，该调用以零答案结算；回复指向的调用已不在可回答集合中时不改变任何内容。
 
 ```ts type-equiv
 /** `open` while the tool call may still return the answer; `continued` once the answer can only arrive as a new turn. */
