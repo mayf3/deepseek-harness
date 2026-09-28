@@ -25,7 +25,7 @@
  * chevron, and each row whose value that selection carries shows one in place
  * of its check mark.
  */
-import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type FocusEvent,
@@ -40,6 +40,7 @@ import {
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
+import { orderModelProviders } from './provider-order.ts'
 
 /** Which pane the dropdown shows: the two-row root or one drilled-in list. */
 type Pane = 'root' | 'model' | 'effort'
@@ -89,9 +90,7 @@ export function ModelSelect(
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
 
-  const groups = useMemo(() => state.groups.toSorted((left, right) =>
-    (left.id === 'deepseek-account' ? 0 : left.id === 'deepseek-official' ? 1 : 2)
-      - (right.id === 'deepseek-account' ? 0 : right.id === 'deepseek-official' ? 1 : 2)), [state.groups])
+  const groups = useMemo(() => orderModelProviders(state.groups), [state.groups])
   const choices = useMemo(() => groups.flatMap(group =>
     group.models.map(model => ({
       group,
@@ -195,30 +194,7 @@ export function ModelSelect(
   useLayoutEffect(() => {
     const viewport = groupsRef.current
     if (viewport === null) return
-    const entries = [...viewport.querySelectorAll<HTMLElement>(':scope > section')].map(section => ({
-      section, heading: section.firstElementChild as HTMLElement,
-    }))
-    // Section boxes retain their normal positions while their headings stick.
-    const update = (): void => {
-      const top = viewport.getBoundingClientRect().top
-      const stuck = entries.map(({ section }) => {
-        const bounds = section.getBoundingClientRect()
-        return viewport.scrollTop > 0 && bounds.top < top && bounds.bottom > top
-      })
-      entries.forEach(({ heading }, index) => { heading.toggleAttribute('data-stuck', stuck[index]) })
-    }
-    update()
-    viewport.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
-    observer?.observe(viewport)
-    for (const { section } of entries) observer?.observe(section)
-    return () => {
-      viewport.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
-      observer?.disconnect()
-      for (const { heading } of entries) heading.removeAttribute('data-stuck')
-    }
+    return observeStickyMenuGroups(viewport)
   }, [available, open, pane, filteredGroups])
 
   useLayoutEffect(() => {
@@ -581,10 +557,8 @@ export function ModelSelect(
                 hidden={filteredGroups.length === 0}
               >
                 {filteredGroups.map((group) => {
-                  const headingId = `${id}-${group.id}`
                   return (
-                    <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
-                      <div className={css.groupTitle} id={headingId}>{group.id === 'deepseek-account' ? t('provider.account') : group.name}</div>
+                    <MenuGroup key={group.id} label={group.id === 'deepseek-account' ? t('provider.account') : group.name}>
                       {group.models.map((model) => {
                         const index = modelIndex++
                         const selected = state.current?.provider === group.id && state.current.model === model.id
@@ -621,7 +595,7 @@ export function ModelSelect(
                           </button>
                         )
                       })}
-                    </section>
+                    </MenuGroup>
                   )
                 })}
               </div>

@@ -13,7 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -132,6 +132,57 @@ describe('web e2e: the composer model switch is the default for later sessions',
     } finally {
       await search.press('Escape')
       await composer.fill('')
+    }
+  })
+
+  it('shares provider order, fuzzy result order and sticky header material between both model pickers', async () => {
+    const readGroups = (surface: Locator, role: 'option' | 'menuitemradio') => surface.locator('[data-menu-group]')
+      .evaluateAll((groups, rowRole) => groups.map(group => ({
+        label: group.querySelector('[data-menu-group-heading]')!.textContent,
+        rows: [...group.querySelectorAll(`[role="${rowRole}"]`)].map(row => row.textContent),
+      })), role)
+    const checkSticky = async (surface: Locator, viewport: Locator) => {
+      // Bound only this test's list viewport so native scrolling can cross a heading.
+      await viewport.evaluate((node) => { node.style.maxHeight = '80px'; node.scrollTop = 0 })
+      const heading = surface.locator('[data-menu-group-heading]').first()
+      await expect.poll(() => heading.getAttribute('data-stuck')).toBeNull()
+      const clear = await heading.evaluate(node => getComputedStyle(node).backgroundColor)
+      expect(clear).toBe('rgba(0, 0, 0, 0)')
+      await viewport.evaluate((node) => { node.scrollTop = 10 })
+      await expect.poll(() => heading.getAttribute('data-stuck')).toBe('')
+      const stuck = await heading.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { fill: style.backgroundColor, radius: style.borderRadius, font: style.fontSize, padding: style.padding }
+      })
+      await viewport.evaluate((node) => { node.scrollTop = 0 })
+      await expect.poll(() => heading.getAttribute('data-stuck')).toBeNull()
+      return stuck
+    }
+    try {
+      await page.getByRole('button', { name: /^选择模型/ }).click()
+      await page.getByRole('menuitem', { name: /^模型/ }).click()
+      const menu = page.getByRole('group', { name: '模型与推理等级', exact: true })
+      const menuSearch = page.getByRole('searchbox', { name: '搜索模型…' })
+      const order = await readGroups(menu, 'menuitemradio')
+      const sticky = await checkSticky(menu, menu.getByRole('menu', { name: '模型', exact: true }))
+      await menuSearch.fill('  ACMLG  ')
+      const filtered = await readGroups(menu, 'menuitemradio')
+      await menuSearch.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.getByRole('button', { name: '添加文件或调用指令', exact: true }).click()
+      await page.getByRole('option', { name: /^模型/ }).click()
+      const popup = page.locator('[aria-label="/model 选项"]')
+      await popup.getByRole('option').first().waitFor()
+      expect(await readGroups(popup, 'option')).toEqual(order)
+      expect(await checkSticky(popup, popup.getByRole('listbox'))).toEqual(sticky)
+      const popupSearch = page.getByRole('textbox', { name: '筛选选项', exact: true })
+      await popupSearch.fill('  ACMLG  ')
+      expect(await readGroups(popup, 'option')).toEqual(filtered)
+      expect(await popupSearch.evaluate(node => node === node.ownerDocument.activeElement)).toBe(true)
+    } finally {
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.locator('[data-composer-input]').first().fill('')
     }
   })
 

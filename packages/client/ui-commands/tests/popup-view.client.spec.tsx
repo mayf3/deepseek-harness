@@ -78,6 +78,30 @@ function rowLabels(): string[] {
 }
 
 describe('PopupSelectView', () => {
+  it('renders provider groups and selects the same fuzzy-ranked row the user sees', async () => {
+    const alpha = { name: 'alpha', label: 'Alpha provider' }
+    const beta = { name: 'beta', label: 'Beta provider' }
+    const options: SelectOption[] = [
+      { id: 'a-deep', label: 'DeepSeek Flash', group: alpha },
+      { id: 'b-flash', label: 'Flash Beta', group: beta },
+      { id: 'a-prefix', label: 'Flash Lite', group: alpha, active: true },
+      { id: 'other', label: 'Unmatched', group: { name: 'other', label: 'Other provider' } },
+    ]
+    const onSelect = vi.fn()
+    const { search } = await mountOpen({ searchMode: 'fuzzy-label', options: () => Promise.resolve(options), onSelect })
+    expect(screen.getAllByRole('group').map(group => group.querySelector('[data-menu-group-heading]')?.textContent))
+      .toEqual(['Alpha provider', 'Beta provider', 'Other provider'])
+    expect(rowLabels()).toEqual(['DeepSeek Flash', 'Flash Lite', 'Flash Beta', 'Unmatched'])
+    fireEvent.change(search, { target: { value: 'flash' } })
+    expect(rowLabels()).toEqual(['Flash Lite', 'DeepSeek Flash', 'Flash Beta'])
+    expect(screen.queryByRole('group', { name: 'Other provider' })).toBeNull()
+    expect(document.activeElement).toBe(search)
+    fireEvent.keyDown(search, { key: 'ArrowUp' })
+    expect(screen.getByRole('option', { name: 'Flash Beta' }).getAttribute('aria-selected')).toBe('true')
+    await act(async () => { fireEvent.keyDown(search, { key: 'Enter' }); await Promise.resolve() })
+    expect(onSelect).toHaveBeenCalledWith(options[1], 'ctx-A')
+  })
+
   it('uses command-owned search copy and resets to generic copy for the next popup', async () => {
     const labels = { placeholder: '搜索模型…', empty: '没有可用的模型。', noResults: '没有匹配的模型。' }
     const searchLabels = vi.fn(() => labels)
