@@ -11,11 +11,11 @@ description: 'Use on Windows for unexpected DSH sandbox access denials: workspac
 
 Diagnose unexpected writes/listing denied inside a `workspace-write` workspace, or reads the signed-in user should plainly have. Root-only failure and uniform failure are both eligible.
 
-Stop and explain expected denials: writes outside the workspace, any write in `read-only`, piped grandchild `spawn EPERM`, or ConstrainedLanguage errors for .NET/COM/reflection. Use an authorized unconfined call or another permitted operation; do not repair ACLs for these cases.
+Stop and explain expected denials: writes outside the workspace, any write in `read-only`, piped grandchild `spawn EPERM`, or ConstrainedLanguage errors for .NET/COM/reflection. Request an approval for the one call you still need; do not repair ACLs for these cases.
 
 ## Read the report before choosing a repair
 
-Resolve the script from this skill's resource directory. Run it **unconfined from the first diagnostic call**: the confined token cannot inspect the conflicting object. This does not elevate the Windows token. Use one path per invocation; do not repeat `-Path` or pass a comma-separated string to `pwsh -File`.
+Resolve the script from this skill's resource directory. Run it in the current sandbox first: classification completes under `workspace-write` with a writable `-Out` directory, while `read-only` cannot write one and refuses. When a denial or an unwritable report directory prevents the call, request one escalation of that same call through the normal approval path instead of assuming the diagnosis cannot run; if approval is refused, unavailable to the session, or forbidden by policy, report the path as undiagnosed and stop. Unconfined does not elevate the Windows token. Use one path per invocation; do not repeat `-Path` or pass a comma-separated string to `pwsh -File`.
 
 ```powershell
 & '<skill-directory>\scripts\diagnose-windows-sandbox-acl.ps1' -Path '<failing-path>' -Out '<report-directory>' -Compact
