@@ -310,6 +310,19 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledOnce()
   })
 
+  it('reports a queued plan reply when hiding its panel fails', async () => {
+    const carrier = new PendingQuestion(SID, questions(), 'continued-plan-hide-error' as ToolCallId)
+    const answer = vi.fn(async () => true)
+    carrier.attachRpc({ answer })
+    carrier.attachSeat({ hide: () => { throw new Error('hide failed') } })
+    carrier.setState('continued')
+    render(<QuestionComposer matched={carrier} {...kit} />)
+
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
+    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    expect(answer).toHaveBeenCalledOnce()
+  })
+
 
   it('dismisses the request so the composer returns for a plain message', () => {
     const { carrier, cancel, answer } = wait()
