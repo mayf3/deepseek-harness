@@ -518,6 +518,44 @@ describe('gate graph validation', () => {
     expect(results.some(result => result.status === 'skipped')).toBe(false)
   })
 
+  it.each(['ci-windows-complete', 'ci-windows-observational-ready'] as const)(
+    'provisions the locked Electron binary before built smoke in %s', (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      const install = gates.find(gate => gate.id === 'electron-install')
+      expect(install).toMatchObject({
+        command: process.execPath,
+        args: ['/private/pnpm.cjs', '--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron'],
+        env: { ELECTRON_GET_USE_PROXY: 'true' },
+      })
+      expect(gates.find(gate => gate.id === 'built-bin-smoke')?.needs).toContain('electron-install')
+      expect(gates.filter(gate => gate.id !== 'electron-install').every(gate => gate.env?.ELECTRON_GET_USE_PROXY === undefined)).toBe(true)
+    },
+  )
+
+  it.each(['ci-windows-complete', 'ci-windows-observational-ready'] as const)(
+    'keeps failed Electron provisioning visible without stopping unrelated diagnostics in %s', async (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      const attempted: string[] = []
+      const results = await runGates(gates, 8, async (subject) => {
+        attempted.push(subject.id)
+        return resultFor(subject, subject.id === 'electron-install' ? 'failed' : 'passed')
+      })
+      expect(results.filter(result => result.status === 'failed').map(result => result.gate.id)).toEqual(['electron-install'])
+      expect(attempted).not.toContain('built-bin-smoke')
+      expect(results.find(result => result.gate.id === 'built-bin-smoke')?.status).toBe('skipped')
+      expect(results.find(result => result.gate.id === 'doc-graphs')?.status).toBe('passed')
+      if (mode === 'ci-windows-complete') {
+        expect(results.filter(result => result.status === 'failed' && !result.gate.allowFailure)).toEqual([])
+      }
+    },
+  )
+
+  it.each(['ci-primary', 'ci-linux-primary', 'ci-artifacts', 'ci-windows-blocking'] as const)(
+    'does not provision the observational Electron dependency in %s', (mode) => {
+      expect(withPnpmEntrypoint(() => gatesForMode(mode)).some(gate => gate.id === 'electron-install')).toBe(false)
+    },
+  )
+
   it('applies one configured test, polling, and hook timeout to both coverage gates', () => {
     const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
