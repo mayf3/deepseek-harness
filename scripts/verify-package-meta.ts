@@ -17,6 +17,7 @@ interface SourceJson {
   metadata: boolean
   invalid: boolean
   icon?: unknown
+  packageName?: string
 }
 
 function sourceJsonFiles(dir: string): SourceJson[] {
@@ -31,7 +32,12 @@ function sourceJsonFiles(dir: string): SourceJson[] {
     if (typeof contents !== 'object' || contents === null || Array.isArray(contents)) {
       return { file, metadata: false, invalid: true }
     }
-    return { file, metadata: Object.hasOwn(contents, 'meta'), invalid: false, icon: 'icon' in contents ? contents.icon : undefined }
+    const name = 'name' in contents ? contents.name : undefined
+    return {
+      file, metadata: Object.hasOwn(contents, 'meta'), invalid: false,
+      icon: 'icon' in contents ? contents.icon : undefined,
+      ...basename(file) === 'package.json' && typeof name === 'string' && name.trim() !== '' ? { packageName: name } : {},
+    }
   })
 }
 
@@ -71,6 +77,9 @@ function packageProblems(manifestPath: string): string[] {
   const dir = realpathSync(dirname(manifestPath))
   const pkg = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest
   const documents = sourceJsonFiles(dir)
+  const nestedPackages = documents.filter(document => document.file !== 'package.json' && document.packageName !== undefined)
+    .map(document => ({ file: document.file, prefix: `${dirname(document.file).replaceAll('\\', '/')}/` }))
+  const children = nestedPackages.filter(child => !nestedPackages.some(parent => child !== parent && child.file.startsWith(parent.prefix)))
   const byPath = new Map(documents.map(document => [join(dir, document.file), document]))
   const parentURL = pathToFileURL(join(dir, 'package.json')).href
   const specifierOf = (plugin: string): string => pkg.name + (plugin === '.' ? '' : plugin.slice(1))
@@ -189,6 +198,8 @@ function packageProblems(manifestPath: string): string[] {
 
   for (const document of documents) {
     const requests = alternatives.get(document.file)
+    // Named nested packages own unclaimed resources; explicit outer exports still require validation.
+    if (requests === undefined && children.some(child => document.file.startsWith(child.prefix))) continue
     if (!document.file.split('/').includes('locale') && requests === undefined) continue
     if (!document.metadata && !document.invalid) continue
     if (claimed.has(join(dir, document.file))) continue
@@ -198,11 +209,11 @@ function packageProblems(manifestPath: string): string[] {
     })) continue
     problems.push(`${manifestPath}: exports must expose ${document.file} as a plugin locale resource with an en.json discovery baseline`)
   }
-  return problems
+  return problems.concat(children.flatMap(child => packageProblems(join(dir, child.file))))
 }
 
 /**
- * Check static plugin locale metadata and resource publication without evaluating plugin entries or reading built output.
+ * Check workspace and named nested package metadata without evaluating plugin entries or reading built output.
  * @param root - repository or fixture root.
  * @returns diagnostics for an empty package corpus, invalid metadata, inaccessible resources, or omitted publication files.
  */

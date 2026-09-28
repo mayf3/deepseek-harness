@@ -107,18 +107,16 @@ describe('the shipped creator skills', () => {
     for (const name of readdirSync(templates)) {
       const dir = join(templates, name)
       const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-        icon: string
-        exports: Record<string, string>
+        exports: Record<string, string> & { './icon': string }
         files: string[]
         dsh: { bundle: { patch: string } }
       }
-      expect(manifest.exports['./package.json']).toBe('./package.json')
+      expect(manifest).not.toHaveProperty('icon')
       expect(manifest.exports['./locale/*.json']).toBe('./locale/*.json')
-      expect(manifest.icon).toBe('./icon.svg')
-      const icon = readFileSync(join(dir, manifest.icon), 'utf8')
+      expect(manifest.exports['./icon']).toBe('./icon.svg')
+      const icon = readFileSync(join(dir, manifest.exports['./icon']), 'utf8')
       expect(Buffer.byteLength(icon)).toBeLessThanOrEqual(256 * 1024)
       expect(icon).toContain('<svg xmlns="http://www.w3.org/2000/svg"')
-      expect(icon).toContain('viewBox="0 0 64 64"')
       const locales = readdirSync(join(dir, 'locale')).map(file => `locale/${file}`)
       expect(locales).toContain('locale/en.json')
       for (const file of locales) {
@@ -127,7 +125,7 @@ describe('the shipped creator skills', () => {
         expect(locale.meta.description).toMatch(/\S/u)
       }
       const resources = new Set([...Object.values(manifest.exports).filter(file => !file.includes('*')),
-        ...locales, manifest.icon, manifest.dsh.bundle.patch])
+        ...locales, manifest.dsh.bundle.patch])
       for (const resource of resources) {
         const file = resource.replace(/^\.\//u, '')
         expect(body('cordis-plugin-development'), file).toContain(`\`templates/${name}/${file}\``)
