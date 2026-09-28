@@ -1,8 +1,6 @@
 ---
 name: agent-experience
 description: Use when writing or changing a model-facing tool definition (name, description, parameter schema, or its system-prompt section), and when designing skills, context loading, or multi-step workflows, to make information discoverable and use context efficiently.
-metadata:
-  date: "2026-09-11"
 ---
 
 - **Start with minimal context:** expose purpose, available actions, and constraints first; load detailed instructions when needed.
