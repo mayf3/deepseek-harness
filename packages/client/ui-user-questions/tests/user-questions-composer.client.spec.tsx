@@ -696,7 +696,7 @@ describe('timed card', () => {
     await vi.waitFor(() => { expect(answer).toHaveBeenCalledWith({ answers: [{ id: 'scope', selected: ['仅工具'] }] }) })
   })
 
-  it('queues an RPC reply, hides the panel, and allows retry after discard', async () => {
+  it('steers an RPC reply, hides the panel, and rejects a duplicate before discard', async () => {
     const carrier = new PendingQuestion(SID, TIMED, ToolCallId('ask-retry'))
     const answer = vi.fn(async () => true)
     const hide = vi.fn()
@@ -710,7 +710,7 @@ describe('timed card', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
     await vi.waitFor(() => { expect(hide).toHaveBeenCalledOnce() })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
-    expect(screen.queryByText(zh['status.queued'])).toBeNull()
+    expect(screen.queryByText(zh['status.sent'])).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
     expect(await screen.findByText('a reply is already queued for this question')).toBeTruthy()

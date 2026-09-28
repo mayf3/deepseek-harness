@@ -12,7 +12,6 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
@@ -340,21 +339,6 @@ describe('QueueDock', () => {
     fireEvent.click(header)
     expect(header.getAttribute('aria-expanded')).toBe('false')
     expect(view.queryByText('one')).toBeNull()
-  })
-
-  it('shows a queued late answer without exposing its structured payload for editing', () => {
-    const reply: UserMessage = {
-      ...row('reply', '{"kind":"answer_to_pending_question","answers":[{"id":"q2"}]}'),
-      source: { kind: 'user-question-reply', callId: ToolCallId('batch-2'), outcome: 'answered' },
-    }
-    const snap = snapshotWith([reply])
-    const source = liveSession(snap)
-    const view = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
-
-    expect(view.getByText(zh['queue.questionReply'])).toBeTruthy()
-    expect(view.queryByText(/answer_to_pending_question/u)).toBeNull()
-    expect(view.queryByRole('button', { name: zh['queue.edit'] })).toBeNull()
-    expect(view.getByRole('button', { name: zh['queue.remove'] })).toBeTruthy()
   })
 
   it('keeps an active single-row editor visible when another item arrives', () => {

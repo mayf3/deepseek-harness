@@ -20,7 +20,7 @@ import css from './QuestionComposer.module.css'
  * runtime failure messages (finished strings from the wire) pass through
  * verbatim.
  */
-type Feedback = { key: 'error.incomplete' | 'error.unanswered' | 'error.unavailable' | 'error.resubmit' | 'status.queued' } | { text: string }
+type Feedback = { key: 'error.incomplete' | 'error.unanswered' | 'error.unavailable' | 'error.resubmit' | 'status.sent' } | { text: string }
 
 /** A removed card can remain mounted until the composer seat updates. */
 const REMOVED_CARD: QuestionCardSnapshot = {
@@ -365,7 +365,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
         sentVia.current = null
         setBusy(null)
         setError(null)
-        void pending.dismiss().catch(() => { setError({ key: 'status.queued' }) })
+        void pending.dismiss().catch(() => { setError({ key: 'status.sent' }) })
       })
       .catch((cause: unknown) => {
         sentVia.current = null

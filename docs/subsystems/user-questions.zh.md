@@ -220,7 +220,7 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ```ts cordis-catalog
 /**
- * Answer a continued question. The reply joins the agent's next-turn queue as a
+ * Answer a continued question. The reply is steered into the agent as a
  * user message whose source names the call; that message is also the
  * record that closes the question in the projection.
  * @param agent - Live root agent for the owning Session.

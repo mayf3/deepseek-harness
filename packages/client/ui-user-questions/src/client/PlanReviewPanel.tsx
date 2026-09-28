@@ -27,18 +27,18 @@ function tooltip(description: string | undefined): { title?: string } {
  * @returns The plan-review takeover for this request.
  */
 export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPanelProps) {
-  // The panel waits for the host's resolved frame before leaving, so repeated
-  // clicks must not resubmit. A failed send re-enables it and shows the error.
+  // Foreground decisions wait for the resolved frame; accepted Remote decisions
+  // hide the panel. A failed send re-enables the buttons and shows the error.
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const settle = (send: () => Promise<void>, queued = false): void => {
+  const settle = (send: () => Promise<void>, remote = false): void => {
     setBusy(true)
     setError(null)
     void send()
       .then(() => {
-        if (!queued) return
+        if (!remote) return
         setBusy(false)
-        void pending.dismiss().catch(() => { setError(t('status.queued')) })
+        void pending.dismiss().catch(() => { setError(t('status.sent')) })
       })
       .catch((cause: unknown) => {
         setBusy(false)

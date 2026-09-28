@@ -241,8 +241,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
         <ul id={listId} className={css.list} hidden={!listVisible}>
           {listVisible && queue.map((row) => {
             const attachments = queueAttachments(row.content)
-            const questionReply = row.source.kind === 'user-question-reply'
-            const text = questionReply ? null : textOf(row.content)
+            const text = textOf(row.content)
             return (
               <li key={row.id} className={css.row}>
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
@@ -279,9 +278,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                             ))}
                         </span>
                       )}
-                      <span className={css.preview}>
-                        {questionReply ? t('queue.questionReply') : projectUserText(previewOf(row.content), [])}
-                      </span>
+                      <span className={css.preview}>{projectUserText(previewOf(row.content), [])}</span>
                     </>
                   )}
                 {queueMutable && <div className={css.actions}>
@@ -314,7 +311,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                     )
                     : (
                       <>
-                        {!questionReply && <Tooltip portal label={t('queue.edit')} side="bottom" delayMs={500} disabled={text === null}>
+                        <Tooltip portal label={t('queue.edit')} side="bottom" delayMs={500} disabled={text === null}>
                           <button
                             type="button"
                             className={css.action}
@@ -329,7 +326,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                           >
                             <IconEditOutlineRegular size={14} />
                           </button>
-                        </Tooltip>}
+                        </Tooltip>
                         <Tooltip portal label={t('queue.remove')} side="bottom" delayMs={500}>
                           <button
                             type="button"

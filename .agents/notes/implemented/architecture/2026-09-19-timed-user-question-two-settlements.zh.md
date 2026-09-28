@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-前台回答继续使用现有 Remote Event waterfall。超时结束该请求并返回 pending；迟到回答通过业务 RPC 将一条持久用户消息排入下一轮队列。接手 stream 只控制前台等待，既不传递回答，也不替代 Remote Event。
+前台回答继续使用现有 Remote Event waterfall。超时结束该请求并返回 pending；迟到回答通过业务 RPC steer 一条持久用户消息。接手 stream 只控制前台等待，既不传递回答，也不替代 Remote Event。
 
 ### 模式与范围
 
@@ -26,7 +26,7 @@ Status: implemented
 | 归属方 | 职责 |
 |---|---|
 | `tool-ask-user` | 模型 schema、超时校验、服务选择和 pending 结果文本。 |
-| `UserQuestionService` | 前台等待与 Client 接手、无人接手时的 deadline、迟到回答校验与下一轮排队，以及持久问题投影。 |
+| `UserQuestionService` | 前台等待与 Client 接手、无人接手时的 deadline、迟到回答校验与 steering（中途引导），以及持久问题投影。 |
 | Gateway 与 Remote 运行时 | 现有请求投递、结算、取消及 Remote stream 传输；不包含问题专属计时器或按事件名分支。 |
 | `ui-user-questions` | 每个 Session 和调用的一张卡片、回答通道选择、本地倒计时与草稿，以及回复 Definition 和渲染器。 |
 | `ui-chat` | 基于消息 id 的呈现聚合，以及普通过程／轮次折叠。 |
@@ -48,7 +48,7 @@ Client 倒计时到期以 `ASK_TIMED_OUT` 拒绝 waterfall。无人接手时，H
 
 `userQuestions` 投影从现有 Session 事件重建问题状态。对原生调用，它通过 `request/header` 记录的 `timeout` 参数识别 timed schema，不跟踪 legacy 调用。有效的 `tool/call` 打开问题。其 `tool/result` 在 pending 或 `TOOL_OUTCOME_UNKNOWN` 时将问题标为已继续，在有效回答批次时结算并保存答案，其他结果或失败则移除问题。PTC 子调用在 `tool/ptc-dispatch` 结果为 pending 时进入投影，因为模型请求头只列出 `run_code`。
 
-已继续的问题接受 `answer(agent, callId, answer)`。未知或非已继续调用返回 `false`；另一条回复等待准入时抛出 `REPLY_QUEUED`；回答批次没有恰好包含每个问题一次时抛出 `BAD_ANSWER`。接受的回答通过 `agent.followup(createUserMessage(...))` 送入 agent，来源为 `{ kind: 'user-question-reply', callId, outcome: 'answered' }`，JSON 文本包含 `answer_to_pending_question`、调用 id、原问题及答案。Remote 根据 Session id 解析 Agent 时按需恢复根实例；恢复操作不属于 `answer()` 方法体。
+已继续的问题接受 `answer(agent, callId, answer)`。未知或非已继续调用返回 `false`；另一条回复等待准入时抛出 `REPLY_QUEUED`；回答批次没有恰好包含每个问题一次时抛出 `BAD_ANSWER`。接受的回答通过 `agent.steer(createUserMessage(...))` 送入 agent，来源为 `{ kind: 'user-question-reply', callId, outcome: 'answered' }`，JSON 文本包含 `answer_to_pending_question`、调用 id、原问题及答案。Remote 根据 Session id 解析 Agent 时按需恢复根实例；恢复操作不属于 `answer()` 方法体。
 
 inbox 消息是持久的排队回复。逐 Session 预约覆盖从排队、领取到准入的期间；领取恢复后的 inbox 回复时会重建预约。回复作为 `user/message` 准入时问题结算；丢弃回复或 Turn 结束而未准入时释放预约，允许再次回答。已结算答案批次保留在投影中，让原工具行即使自身结果仍是 pending，也能显示迟到回答。无法使用的已记录回复文本以空答案批次结算。
 
@@ -58,7 +58,7 @@ inbox 消息是持久的排队回复。逐 Session 预约覆盖从排队、领�
 
 `QuestionCards` 按 Session 和 `callId`，让实时请求与已继续投影共享一个 `PendingQuestion`。转发请求在投影列出问题之前，仍会让卡片存活至接手 stream 的首帧。没有调用 id 的阻塞请求拥有独立的逐请求卡片，并使用跨重载唯一的键，避免旧草稿附着到另一请求。开放卡片通过 waterfall 提交；缺少该通道时禁用提交。已继续卡片使用迟到回答 RPC。
 
-waterfall 提交没有送达确认。Gateway 可能丢弃输掉结算竞争的结果，因此卡片保留草稿并保持忙碌，等待投影同步。若提交期间问题变为已继续，控件带重提提示重新可用，用户可以通过 RPC 提交保留的草稿。RPC 接受提交后把回复放入普通的下一轮队列并关闭面板。队列显示这条回复；移除它后，问题仍可从工具行重新回答。这不是自动重试，也不保证每次本地提交都能到达模型。
+waterfall 提交没有送达确认。Gateway 可能丢弃输掉结算竞争的结果，因此卡片保留草稿并保持忙碌，等待投影同步。若提交期间问题变为已继续，控件带重提提示重新可用，用户可以通过 RPC 提交保留的草稿。RPC 接受提交后会将回复作为 steer 送往最近一步，但不会立即结算问题，同时关闭面板。当前工具等待须先结束，该步才能读取回复；若 steer 被丢弃，可以重新打开问题并再次回答。这不是自动重试，也不保证每次本地提交都能到达模型。
 
 按工具调用标识的卡片在调用不属于活动投影且没有转发中的请求时移除。移除会关闭卡片并清理草稿。本地提交和传输取消帧都不能单独决定问题已经回答。无调用标识的阻塞卡片随 waterfall 结束；关闭这种阻塞面板以 `ASK_CANCELLED` 拒绝请求。
 

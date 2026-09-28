@@ -366,7 +366,7 @@ function wireRejection(code: string): Error {
 }
 
 interface LiveAgent extends Agent {
-  followup: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
+  steer: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
   inject: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
   queuedTurns: UserMessage[]
   queuedMessages: UserMessage[]
@@ -375,12 +375,12 @@ interface LiveAgent extends Agent {
 function liveAgent(id: string): LiveAgent {
   const queuedTurns: UserMessage[] = []
   const queuedMessages: UserMessage[] = []
-  const followup = vi.fn<(message: UserMessage) => void>((message) => { queuedTurns.push(message) })
+  const steer = vi.fn<(message: UserMessage) => void>((message) => { queuedMessages.push(message) })
   const inject = vi.fn<(message: UserMessage) => void>()
   return Object.assign(stubAgent(id), {
     session: Session.create(SessionId(id)),
     inbox: { nextTurn: queuedTurns, nextStep: queuedMessages },
-    followup,
+    steer,
     inject,
     queuedTurns,
     queuedMessages,
@@ -633,7 +633,7 @@ describe('late replies', () => {
     }, { surfaceOp: 'append' })
   }
 
-  it('queues an answer for the next turn and closes the question once it is admitted', async () => {
+  it('steers an answer into a continued question and closes it once the reply is admitted', async () => {
     const ctx = await timedContext()
     const agent = liveAgent('late-answer')
     ctx.agents.enter(agent, undefined)
@@ -643,17 +643,40 @@ describe('late replies', () => {
 
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
 
-    expect(agent.followup).toHaveBeenCalledOnce()
-    const queued = agent.followup.mock.calls[0]![0]
-    expect(agent.queuedTurns).toEqual([queued])
-    expect(queued.source).toEqual({ kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' })
-    expect(replyText(queued)).toEqual({
+    expect(agent.steer).toHaveBeenCalledOnce()
+    const steered = agent.steer.mock.calls[0]![0]
+    expect(steered.source).toEqual({ kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' })
+    expect(replyText(steered)).toEqual({
       kind: 'answer_to_pending_question', tool: 'ask_user_question', callId: timedCallId,
       questions: timedQuestions, answers: batch.answers,
     })
-    agent.session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [queued] })
-    agent.session.append('user/message', queued, { surfaceOp: 'append' })
+    agent.session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [steered] })
+    agent.session.append('user/message', steered, { surfaceOp: 'append' })
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts steers for different continued batches while both await the next step', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-out-of-order')
+    const secondCallId = ToolCallId('another-timed-batch')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    agent.session.append('tool/call', {
+      turn: 1, step: 1, callId: secondCallId, name: 'ask_user_question',
+      arguments: JSON.stringify({ questions: timedQuestions }),
+    })
+    continueInLog(agent, secondCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+
+    expect(ctx.userQuestions.answer(agent, secondCallId, batch)).toBe(true)
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    expect(agent.queuedMessages.map(message => message.source)).toEqual([
+      { kind: 'user-question-reply', callId: secondCallId, outcome: 'answered' },
+      { kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' },
+    ])
+    expect(agent.queuedTurns).toEqual([])
     await ctx.fiber.dispose()
   })
 
@@ -668,13 +691,13 @@ describe('late replies', () => {
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
     expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
       .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
-    expect(agent.followup).toHaveBeenCalledTimes(1)
+    expect(agent.steer).toHaveBeenCalledTimes(1)
 
-    const first = agent.followup.mock.calls[0]![0]
-    agent.queuedTurns.shift()
+    const first = agent.steer.mock.calls[0]![0]
+    agent.queuedMessages.shift()
     agentEvents(ctx, agent).emit('agent/inbox/discarded', { message: first })
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
-    expect(agent.followup).toHaveBeenCalledTimes(2)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
     await ctx.fiber.dispose()
   })
 
@@ -697,7 +720,7 @@ describe('late replies', () => {
     agent.queuedTurns.push(reply)
     expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
       .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.steer).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 
@@ -768,7 +791,7 @@ describe('late replies', () => {
 
     expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
       .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
-    expect(agent.followup).toHaveBeenCalledOnce()
+    expect(agent.steer).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
 
@@ -781,8 +804,8 @@ describe('late replies', () => {
     const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
 
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
-    const first = agent.followup.mock.calls[0]![0]
-    agent.queuedTurns.shift()
+    const first = agent.steer.mock.calls[0]![0]
+    agent.queuedMessages.shift()
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: first, turn: 1 })
     expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
       .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
@@ -790,22 +813,22 @@ describe('late replies', () => {
     const ended = agent.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
     ctx.emit('session/event', agent.session, ended)
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
-    expect(agent.followup).toHaveBeenCalledTimes(2)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
     await ctx.fiber.dispose()
   })
 
-  it('permits retry when queuing a reply throws before it is stored', async () => {
+  it('permits retry when steering a reply throws before it is queued', async () => {
     const ctx = await timedContext()
-    const agent = liveAgent('late-queue-error')
+    const agent = liveAgent('late-steer-error')
     ctx.agents.enter(agent, undefined)
     askInLog(agent, timedCallId)
     continueInLog(agent, timedCallId)
     const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
-    agent.followup.mockImplementationOnce(() => { throw new Error('queue failed') })
+    agent.steer.mockImplementationOnce(() => { throw new Error('steer failed') })
 
-    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch)).toThrow('queue failed')
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch)).toThrow('steer failed')
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
-    expect(agent.followup).toHaveBeenCalledTimes(2)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
     await ctx.fiber.dispose()
   })
 
@@ -819,7 +842,7 @@ describe('late replies', () => {
     continueInLog(agent, timedCallId)
 
     expect(ctx.userQuestions.answer(agent, timedCallId, { answers: [] })).toBe(false)
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.steer).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 
@@ -831,7 +854,7 @@ describe('late replies', () => {
 
     expect(ctx.userQuestions.answer(agent, timedCallId, { answers: [] })).toBe(false)
     expect(ctx.userQuestions.answer(agent, ToolCallId('never-asked'), { answers: [] })).toBe(false)
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.steer).not.toHaveBeenCalled()
     expect(agent.inject).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
@@ -852,7 +875,7 @@ describe('late replies', () => {
       expect(() => ctx.userQuestions.answer(agent, timedCallId, { answers }))
         .toThrow(expect.objectContaining({ name: 'UserQuestionError', code: 'BAD_ANSWER' }))
     }
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.steer).not.toHaveBeenCalled()
     // The question stays continued and takes a well-formed batch afterwards.
     expect(ctx.userQuestions.answer(agent, timedCallId, { answers: [{ id: 'scope', selected: [] }] })).toBe(true)
     await ctx.fiber.dispose()
@@ -874,7 +897,7 @@ describe('late replies', () => {
 
     expect(ctx.sessionProjections.stateOf(agent.session, 'userQuestions')?.questions).toEqual({ active: [], settled: [] })
     expect(ctx.userQuestions.answer(agent, timedCallId, { answers: [{ id: 'scope', selected: [] }] })).toBe(false)
-    expect(agent.followup).not.toHaveBeenCalled()
+    expect(agent.steer).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
 })

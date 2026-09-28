@@ -295,7 +295,7 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledTimes(1)
   })
 
-  it('hides a continued plan decision after its reply is queued', async () => {
+  it('hides a continued plan decision after steering its reply', async () => {
     const carrier = new PendingQuestion(SID, questions(), 'continued-plan' as ToolCallId)
     const answer = vi.fn(async () => true)
     const hide = vi.fn()
@@ -310,7 +310,7 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledOnce()
   })
 
-  it('reports a queued plan reply when hiding its panel fails', async () => {
+  it('reports a sent plan reply when hiding its panel fails', async () => {
     const carrier = new PendingQuestion(SID, questions(), 'continued-plan-hide-error' as ToolCallId)
     const answer = vi.fn(async () => true)
     carrier.attachRpc({ answer })
@@ -319,7 +319,7 @@ describe('PlanReviewPanel', () => {
     render(<QuestionComposer matched={carrier} {...kit} />)
 
     fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
-    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    expect(await screen.findByText(zh['status.sent'])).toBeTruthy()
     expect(answer).toHaveBeenCalledOnce()
   })
 
