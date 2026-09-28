@@ -7,7 +7,7 @@ import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { connectFreshWorkspace, openSettings, newEnglishPage } from './support.ts'
 
-it('persists Coding Tools and limits only the built-in PTC and Minimal session choices', async () => {
+it('persists Coding Tools and limits the built-in PTC and Minimal choices in sessions and Settings', async () => {
   const scaffold = await launchWebScaffold({
     agentPresets: { default: 'standard', definitions: [{ id: 'custom', name: 'Custom mode', plugins: [] }] },
   })
@@ -34,9 +34,17 @@ it('persists Coding Tools and limits only the built-in PTC and Minimal session c
   await expect.poll(() => page.getByRole('heading', { name: 'Agent presets', exact: true }).count()).toBe(1)
   const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
   expect(await settings.getByRole('switch').count()).toBe(0)
-  await expect.poll(() => settings.locator('[data-agent-preset-id]').count()).toBe(5)
+  const visiblePresets = () => settings.locator('[data-agent-preset-id]').evaluateAll(cards => cards.map(card => card.getAttribute('data-agent-preset-id')))
+  await expect.poll(visiblePresets).toEqual(['standard', 'cordis', 'custom'])
+  await settings.getByRole('button', { name: 'Set as new task default: Custom mode', exact: true }).click()
+  await settings.getByRole('button', { name: 'New task default: Custom mode', exact: true }).waitFor()
+  await scaffold.ctx.settings.update('ui-settings', { enabled: true })
+  await expect.poll(visiblePresets).toEqual(['standard', 'ptc', 'minimal', 'cordis', 'custom'])
   await settings.getByRole('button', { name: 'Set as new task default: Minimal mode', exact: true }).click()
   await settings.getByRole('button', { name: 'New task default: Minimal mode', exact: true }).waitFor()
+  await scaffold.ctx.settings.update('ui-settings', { enabled: false })
+  await expect.poll(visiblePresets).toEqual(['standard', 'cordis', 'custom'])
+  expect((await scaffold.ctx.agentPresets.remoteExportList()).presets.find(preset => preset.isDefault)?.id).toBe('minimal')
   await settings.getByRole('button', { name: 'Set as new task default: Standard mode', exact: true }).click()
   await settings.getByRole('button', { name: 'New task default: Standard mode', exact: true }).waitFor()
   expect(await settings.getByRole('button', { name: 'Let the agent help me create a preset', exact: true }).isEnabled()).toBe(true)
@@ -77,6 +85,7 @@ it('persists Coding Tools and limits only the built-in PTC and Minimal session c
   await settings.getByRole('button', { name: 'General', exact: true }).click()
   await expect.poll(() => toggle.getAttribute('aria-checked')).toBe('false')
   await settings.getByRole('button', { name: 'Agent presets', exact: true }).click()
+  await expect.poll(visiblePresets).toEqual(['standard', 'cordis', 'custom'])
   await settings.getByRole('button', { name: 'New task default: Standard mode', exact: true }).waitFor()
   await settings.getByRole('button', { name: 'Let the agent help me create a preset', exact: true }).click()
   await settings.waitFor({ state: 'detached' })

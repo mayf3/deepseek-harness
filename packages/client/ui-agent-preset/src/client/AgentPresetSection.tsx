@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   Button, IconBrowseOutlineRegular, IconPlusOutlineRegular, Modal, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AgentPresetSectionState } from './section-store.ts'
 import { isBuiltInPreset, presetDisplayText } from './locales.ts'
@@ -14,6 +14,8 @@ import css from './AgentPresetSection.module.css'
 /** Settings actions and their shared controller state. */
 export interface AgentPresetSectionInjected {
   hooks: {
+    /** Shared Coding Tools preference; off hides the built-in PTC and Minimal cards. */
+    developerTools: ObservableSnapshot<boolean>
     agentPresetSection: SnapshotStore<AgentPresetSectionState>
   }
   /** Stage the `cordis` preset and start a Creator-mode task; absent without a conversation flow. */
@@ -59,10 +61,11 @@ function CardDescription({ text }: { text: string }): ReactNode {
  * @returns The preset settings section.
  */
 export function AgentPresetSection({
-  useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft,
+  useAgentPresetSection, useDeveloperTools, load, view, closeView, makeDefault, startCreatorDraft,
   close: closeSettings, t,
 }: AgentPresetSectionProps) {
   const state = useAgentPresetSection(value => value)
+  const developerTools = useDeveloperTools(value => value)
   const [guide, setGuide] = useState<{
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
@@ -99,7 +102,8 @@ export function AgentPresetSection({
     <p className={css.intro}>{t('sectionIntro')}</p>
     {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
     {([true, false] as const).map((builtIn) => {
-      const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn)
+      const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn
+        && (developerTools || !builtIn || (row.id !== 'ptc' && row.id !== 'minimal')))
       const entry = builtIn ? null : creatorButton
       if (rows.length === 0 && entry === null) return null
       return <section key={String(builtIn)} className={css.group}>

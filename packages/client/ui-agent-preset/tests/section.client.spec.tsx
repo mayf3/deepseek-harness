@@ -12,7 +12,8 @@ const translations: ReadonlyMap<string, string> = new Map(Object.entries(en))
 function unusedHook(): never {
   throw new Error('This section does not read global slot sources')
 }
-function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void) {
+function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?: () => void, outerClose?: () => void, enabled = true) {
+  const developerTools = createSnapshotStore(enabled)
   const store = createSnapshotStore<AgentPresetSectionState>({ status: 'ready', error: null,
     saving: false, rows: [{ id: 'standard', isDefault: true }, { id: 'mine', name: 'Mine', isDefault: false }],
     view: null, ...partial })
@@ -23,10 +24,11 @@ function view(partial: Partial<AgentPresetSectionState> = {}, startCreatorDraft?
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook, useSessionRetainInfo: unusedHook,
     useWorkspaces: unusedHook, useResource: unusedHook,
     useAgentPresetSection: bindSnapshotSelector(store),
+    useDeveloperTools: bindSnapshotSelector(developerTools),
     t: key => translations.get(key) ?? key }
   render(outerClose === undefined ? <AgentPresetSection {...props} />
     : <Modal open onClose={outerClose} title="Settings" closeLabel="Close"><AgentPresetSection {...props} /></Modal>)
-  return { ...actions, store }
+  return { ...actions, store, developerTools }
 }
 function rowFor(id: string): HTMLElement {
   const row = document.querySelector<HTMLElement>(`[data-agent-preset-id="${id}"]`)
@@ -40,6 +42,44 @@ it('offers default selection without a separate selection switch', () => {
   expect(button.disabled).toBe(false)
   fireEvent.click(button)
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
+})
+it.each([false, true])('offers Standard, Creator and custom defaults with Coding Tools %s', (enabled) => {
+  const actions = view({ rows: [
+    { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
+    { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
+    { id: 'mine', name: 'Mine', isDefault: false },
+  ] }, vi.fn(), undefined, enabled)
+  expect(screen.queryByRole('button', { name: `${en.setDefault}: ${en.presetPtcName}` }) !== null).toBe(enabled)
+  expect(screen.queryByRole('button', { name: `${en.inUse}: ${en.presetMinimalName}` }) !== null).toBe(enabled)
+  for (const [id, name] of [['standard', en.presetStandardName], ['cordis', en.presetCordisName], ['mine', 'Mine']]) {
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: `${en.setDefault}: ${name}` })
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(actions.makeDefault).toHaveBeenLastCalledWith(id)
+  }
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: en.creatorDraft }).disabled).toBe(false)
+})
+it('updates the settings choices live without changing the saved default', () => {
+  const actions = view({ rows: [
+    { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
+    { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
+  ] })
+  const rows = actions.store.getSnapshot().rows
+  act(() => { actions.developerTools.set(false) })
+  expect(document.querySelector('[data-agent-preset-id="ptc"]')).toBeNull()
+  expect(document.querySelector('[data-agent-preset-id="minimal"]')).toBeNull()
+  expect(rowFor('standard')).toBeTruthy()
+  expect(rowFor('cordis')).toBeTruthy()
+  expect(actions.makeDefault).not.toHaveBeenCalled()
+  expect(actions.store.getSnapshot().rows).toBe(rows)
+  act(() => { actions.developerTools.set(true) })
+  expect(screen.getByRole('button', { name: `${en.inUse}: ${en.presetMinimalName}` })).toBeTruthy()
+  expect(rowFor('ptc')).toBeTruthy()
+})
+it.each(['ptc', 'minimal'])('keeps a named custom %s override selectable with Coding Tools off', (id) => {
+  const actions = view({ rows: [{ id, name: 'My mode', isDefault: false }] }, undefined, undefined, false)
+  fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: My mode` }))
+  expect(actions.makeDefault).toHaveBeenCalledWith(id)
 })
 it('reads the roster once and sets a default from the card body', async () => {
   const actions = view()

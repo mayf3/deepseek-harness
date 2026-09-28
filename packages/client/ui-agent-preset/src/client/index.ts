@@ -12,8 +12,8 @@
  * edited where the roster is visible — the settings section's "make default"
  * — so General settings carries no duplicate control for the same field.
  *
- * Developer tools (General settings) hide PTC and Minimal from the hero menu
- * when off. Settings actions, staged choices and the saved default remain available.
+ * Coding Tools (General settings) hide PTC and Minimal from the hero menu
+ * and Settings roster when off, preserving staged choices and the saved default.
  */
 
 // Type-only: pulls the Session Controller service merge (ctx.sessions).
@@ -200,7 +200,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   const sectionInjected = (): AgentPresetSectionInjected => ({
-    hooks: { agentPresetSection: section.store },
+    hooks: { agentPresetSection: section.store, developerTools: ctx.configForms.developerTools.enabled },
     load: () => section.load(),
     view: (id: string) => section.view(id),
     closeView: () => { section.closeView() },

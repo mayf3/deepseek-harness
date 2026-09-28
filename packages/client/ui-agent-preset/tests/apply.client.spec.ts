@@ -28,7 +28,7 @@ import { apply as hostApply } from '../src/index.ts'
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); each bench stages zh explicitly on the locale instead.
 
-/** The Developer tools half of `ctx.configForms`, which filters the hero menu. */
+/** The Developer tools half of `ctx.configForms`, which filters preset choices. */
 function developerTools(enabled = true): { configForms: { developerTools: { enabled: ObservableSnapshot<boolean> } } } {
   return { configForms: { developerTools: { enabled: createSnapshotStore(enabled) } } }
 }
@@ -351,14 +351,17 @@ describe('ui-agent-preset apply', () => {
     await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
   })
 
-  it('hands the section its own store and default write', async () => {
-    const { ctx, slots } = await bench()
+  it('hands the section its own store, live Coding Tools preference, and default write', async () => {
+    const { ctx, slots, setDeveloperTools } = await bench()
     ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
 
+    expect(section.hooks.developerTools).toBe(ctx.configForms.developerTools.enabled)
+    await setDeveloperTools(false)
+    expect(section.hooks.developerTools.getSnapshot()).toBe(false)
     await section.load()
     await section.makeDefault('standard')
     expect(section.hooks.agentPresetSection.getSnapshot().rows)
