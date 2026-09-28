@@ -540,7 +540,7 @@ describe('gate graph validation', () => {
       expect(install).toMatchObject({
         command: process.execPath,
         args: ['/private/pnpm.cjs', '--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron'],
-        env: { ELECTRON_GET_USE_PROXY: 'true' },
+        env: { ELECTRON_GET_USE_PROXY: '1' },
       })
       expect(gates.find(gate => gate.id === 'built-bin-smoke')?.needs).toContain('electron-install')
       expect(gates.filter(gate => gate.id !== 'electron-install').every(gate => gate.env?.ELECTRON_GET_USE_PROXY === undefined)).toBe(true)

@@ -254,6 +254,7 @@ describe('PTC mode typed values: keyless real-process contracts', () => {
     await Promise.race([
       registered,
       running.then((result) => {
+        // Promise.race handles a late rejection after registration, too.
         completion(result)
         throw new Error('run_code completed before background job registration')
       }),

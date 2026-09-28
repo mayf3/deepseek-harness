@@ -402,7 +402,7 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       expect(grant.code, `${grant.output}\n${aclLines(target).join('\n')}`).toBe(2)
       expect(grant.output, grant.output).toContain('GRANT_FAILED')
       expect(grant.output).toContain('GRANTED=0 REFUSED=1')
-      // Rollback must preserve the complete descriptor, not an icacls rights spelling.
+      // Rollback must preserve the complete descriptor.
       expect(sddlOf(target)).toBe(before)
       expect(reports(grant)).toEqual(containingArray([
         containingObject({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
