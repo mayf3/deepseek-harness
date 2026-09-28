@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-09-28-session-corpus-performance.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-28-session-corpus-performance.md
+/agent-note-performance-baselines-for-large-session-corpora:
+  en: e84801a4e9d16b7a
+  zh: 2fb8bc57ed14ea0d
+/agent-note-performance-baselines-for-large-session-corpora/problem:
+  en: d2a5a514f5c0aec3
+  zh: becf99e4e8ae7b8f
+/agent-note-performance-baselines-for-large-session-corpora/decision:
+  en: f8d67782422a1f40
+  zh: 296d52c006d41661
+/agent-note-performance-baselines-for-large-session-corpora/decision/workload:
+  en: ae4682fdb06d3192
+  zh: 6a48d412f15bedfa
+/agent-note-performance-baselines-for-large-session-corpora/decision/corpus-construction:
+  en: b10d48e91e1ec022
+  zh: e47854e79e3fb630
+/agent-note-performance-baselines-for-large-session-corpora/decision/measured-endpoints:
+  en: e2854f9bdf00a586
+  zh: b2cc87dd1d50444e
+/agent-note-performance-baselines-for-large-session-corpora/calibration-evidence:
+  en: d18a054dd2d204da
+  zh: 054c48ee9fe17c8b
+/agent-note-performance-baselines-for-large-session-corpora/alternatives-considered:
+  en: a17b4375a6350360
+  zh: 4d2b9b9e691940a9
+/agent-note-performance-baselines-for-large-session-corpora/consequences:
+  en: b82f7c00d2271186
+  zh: 70a0da23fe292a27
