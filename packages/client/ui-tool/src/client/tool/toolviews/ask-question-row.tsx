@@ -338,8 +338,7 @@ export function AskQuestionRow({
     if (presentation?.record !== undefined) {
       summary = presentation.summary
       transcript = presentation.transcript
-      // The panel registry still owns an editable card until admission. Let
-      // QuestionToolRow reveal this immutable transcript instead.
+      // The queued reply is reviewed in this row while its editable card is absent.
       rowAction = () => false
       rowActionLabel = t('ask.review')
     }

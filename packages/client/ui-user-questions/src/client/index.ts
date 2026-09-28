@@ -11,6 +11,7 @@
  * the generic question flow. Both use the same carrier and composer seat.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { InboxWireState } from '@deepseek-ai/dsh-agent/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -279,9 +280,8 @@ async function answerQuestion(
 }
 
 /**
- * Mirror the `userQuestions` projection of every bound Session onto the cards:
- * continued rows get a card and the Remote answer path, and a tool-call-keyed
- * card whose call the projection no longer lists is removed once its waterfall is gone.
+ * Mirror answerable calls onto cards. A submitted reply in the durable Inbox
+ * removes the editable card until the reply is admitted or discarded.
  */
 function publishContinuedQuestions(ctx: ClientContext, cards: QuestionCards): () => void {
   const sessions = ctx.sessions
@@ -308,13 +308,24 @@ function publishContinuedQuestions(ctx: ClientContext, cards: QuestionCards): ()
     }
     for (const [sessionId, binding] of bound) {
       if (stopProjections.has(sessionId)) continue
-      stopProjections.set(sessionId, binding.session.projections.faceOf('userQuestions').subscribe(reconcile))
+      const stopQuestions = binding.session.projections.faceOf('userQuestions').subscribe(reconcile)
+      const stopInbox = binding.session.projections.faceOf('inbox').subscribe(reconcile)
+      stopProjections.set(sessionId, () => { stopQuestions(); stopInbox() })
     }
     const rows = new Map<string, { sessionId: SessionId; row: PendingUserQuestion }>()
     for (const [sessionId, binding] of bound) {
       const projected = binding.session.projections.faceOf('userQuestions').getSnapshot() as
         UserQuestionProjectionView | undefined
+      const inbox = binding.session.projections.faceOf('inbox').getSnapshot() as InboxWireState | undefined
+      const queued = new Set<string>()
+      for (const message of [...(inbox?.['next-step'] ?? []), ...(inbox?.['next-turn'] ?? [])]) {
+        if (typeof message !== 'object' || message === null || Array.isArray(message)) continue
+        const source = message.source
+        if (typeof source !== 'object' || source === null || Array.isArray(source)) continue
+        if (source.kind === 'user-question-reply' && typeof source.callId === 'string') queued.add(source.callId)
+      }
       for (const row of projected?.active ?? []) {
+        if (row.state === 'continued' && queued.has(row.callId)) continue
         rows.set(PendingQuestion.keyOf(sessionId, row.callId), { sessionId, row })
       }
     }

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { InboxWireState } from '@deepseek-ai/dsh-agent/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { PendingUserQuestion, UserQuestionProjectionView } from '@deepseek-ai/dsh-user-questions/types'
@@ -30,6 +31,11 @@ const RECORD = { questions: [...QUESTIONS], answers: [...ANSWER.answers] }
 const CONTINUED: PendingUserQuestion = { callId: CALL, questions: [...QUESTIONS], state: 'continued' }
 /** The projection value this consumer reads; it acts on the answerable half alone. */
 const view = (active: readonly PendingUserQuestion[]): UserQuestionProjectionView => ({ active, settled: [] })
+const emptyInbox = (): InboxWireState => ({ 'next-step': [], 'next-turn': [] })
+const queuedInbox = (callId: ToolCallId): InboxWireState => ({
+  'next-step': [{ source: { kind: 'user-question-reply', callId }, content: [] }],
+  'next-turn': [],
+})
 
 type QuestionRequest = {
   questions: PendingQuestion['questions']
@@ -46,7 +52,12 @@ type QuestionListener = (
 type RemoteBooleanResult = { ok: true; value: boolean } | { ok: false; error: { message: string } }
 
 /** `absent` seeds a projection face that has published nothing yet. */
-async function bench(declare = true, durable: readonly PendingUserQuestion[] | 'absent' = [], remainingMs = 60_000) {
+async function bench(
+  declare = true,
+  durable: readonly PendingUserQuestion[] | 'absent' = [],
+  remainingMs = 60_000,
+  initialInbox: InboxWireState = emptyInbox(),
+) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
@@ -69,6 +80,7 @@ async function bench(declare = true, durable: readonly PendingUserQuestion[] | '
     candidate as Context & { [SESSION_SCOPE]?: SessionId }
   )[SESSION_SCOPE])
   const projection = createSnapshotStore<UserQuestionProjectionView | undefined>(durable === 'absent' ? undefined : view(durable))
+  const inbox = createSnapshotStore<InboxWireState | undefined>(initialInbox)
   const list = createSnapshotStore({
     ids: [SESSION_ID],
     byId: { [SESSION_ID]: { id: SESSION_ID } },
@@ -78,7 +90,7 @@ async function bench(declare = true, durable: readonly PendingUserQuestion[] | '
     currentAddress: undefined,
   })
   const binding = vi.fn((sessionId: SessionId) => sessionId === SESSION_ID
-    ? ({ sessionId: SESSION_ID, session: { projections: { faceOf: () => projection } } })
+    ? ({ sessionId: SESSION_ID, session: { projections: { faceOf: (name: string) => name === 'inbox' ? inbox : projection } } })
     : undefined)
   ctx.provide('sessions', { scopeOf, list, binding } as never)
   const pending = new Map<PendingQuestion, () => Promise<void>>()
@@ -151,6 +163,7 @@ async function bench(declare = true, durable: readonly PendingUserQuestion[] | '
     list,
     binding,
     projection,
+    inbox,
     remoteQuestions,
     invoke,
     async releasePending() {
@@ -626,6 +639,59 @@ describe('apply', () => {
 
     currentCard.timeout()
     await expect(current).rejects.toMatchObject({ code: 'ASK_TIMED_OUT' })
+  })
+
+  it('does not reopen a queued older answer after a browser reconnect', async () => {
+    const currentCall = ToolCallId('call-current')
+    const active = [CONTINUED, { ...CONTINUED, callId: currentCall, state: 'open' as const }]
+    const b = await bench(true, active)
+    try {
+      const current = b.invoke(b.agent, { ...timed(), wait: { callId: currentCall, timed: true } }, async () => ANSWER)
+      await vi.waitFor(() => {
+        expect(b.pending.getSnapshot().find(card => card.callId === currentCall)?.snapshot().channel).toBe('waterfall')
+      })
+      const oldCard = b.pending.getSnapshot()[0]!
+      b.inbox.set(queuedInbox(CALL))
+
+      expect(oldCard.snapshot().closed).toBe(true)
+      expect(b.pending.getSnapshot().map(card => card.callId)).toEqual([currentCall])
+      expect(b.panels()?.reveal(SESSION_ID, CALL)).toBe(false)
+
+      b.inbox.set(emptyInbox())
+      expect(b.pending.getSnapshot().find(card => card.callId === CALL)?.snapshot())
+        .toMatchObject({ state: 'continued', channel: 'rpc' })
+      b.pending.getSnapshot().find(card => card.callId === currentCall)?.timeout()
+      await expect(current).rejects.toMatchObject({ code: 'ASK_TIMED_OUT' })
+    } finally {
+      await b.fiber.dispose()
+    }
+
+    const reconnected = await bench(true, active, 60_000, queuedInbox(CALL))
+    try {
+      expect(reconnected.pending.getSnapshot()).toEqual([])
+      expect(reconnected.panels()?.reveal(SESSION_ID, CALL)).toBe(false)
+    } finally {
+      await reconnected.fiber.dispose()
+    }
+  })
+
+  it('ignores unrelated inbox entries and recognizes a next-turn reply', async () => {
+    const otherCall = ToolCallId('call-other')
+    const b = await bench(true, [CONTINUED, { ...CONTINUED, callId: otherCall }])
+    try {
+      b.inbox.set(undefined)
+      expect(b.pending.getSnapshot().map(card => card.callId)).toEqual([CALL, otherCall])
+
+      b.inbox.set({
+        'next-step': [null, { source: null }, { source: { kind: 'other', callId: CALL } },
+          { source: { kind: 'user-question-reply', callId: 42 } }],
+        'next-turn': [{ source: { kind: 'user-question-reply', callId: otherCall } }],
+      })
+      expect(b.pending.getSnapshot().map(card => card.callId)).toEqual([CALL])
+      expect(b.panels()?.reveal(SESSION_ID, otherCall)).toBe(false)
+    } finally {
+      await b.fiber.dispose()
+    }
   })
 
   it('publishes a plan-review request ahead of plain questions', async () => {
