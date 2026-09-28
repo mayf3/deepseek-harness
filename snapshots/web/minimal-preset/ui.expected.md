@@ -1,6 +1,6 @@
 - banner:
   - navigation "Session hierarchy": Use the bash tool to
-  - 'button "Mode details: Minimal mode"': Minimal mode
+  - text: Minimal mode
   - button "More actions"
   - button "Open right sidebar"
   - tablist:

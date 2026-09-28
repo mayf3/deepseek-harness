@@ -16,8 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconInfoOutlineRegular, IconWarningOutlineRegular,
-  Menu, Modal, Toast, Tooltip,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Modal, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -29,7 +28,7 @@ import css from './AgentPresetSeat.module.css'
 /** Registration-side business face for the hero chip. */
 export interface AgentPresetSeatInjected {
   hooks: {
-    /** Shared Developer tools preference; off hides the chip. */
+    /** Shared Developer tools preference; off hides ordinary preset selection. */
     developerTools: ObservableSnapshot<boolean>
     /** Seat snapshot bound by the renderer as useAgentPresetSeat. */
     agentPresetSeat: SnapshotStore<AgentPresetSeatState>
@@ -104,12 +103,11 @@ export function AgentPresetSeat({
   useEffect(() => {
     if (developerTools) return
     setOpen(false)
-    setDetailsOpen(false)
     setToast(null)
   }, [developerTools])
 
   const chosen = state.options.find(option => option.id === state.current)
-  useEffect(() => { setDetailsOpen(false) }, [state.current, chosen?.id])
+  useEffect(() => { setDetailsOpen(false) }, [developerTools, state.current, chosen?.id])
 
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
   const label = chosenText?.name ?? state.current
@@ -161,7 +159,7 @@ export function AgentPresetSeat({
     : label
 
   return (
-    <div className={css.controls}>
+    <>
       {developerTools ? <Menu
         open={open}
         onClose={() => { setOpen(false) }}
@@ -215,25 +213,14 @@ export function AgentPresetSeat({
           </button>
         )}
       /> : (
-        <span className={`${css.seat} ${css.readOnly}`} title={state.error ?? chosenText?.description}>
+        <button type="button" className={css.seat} title={state.error ?? chosenText?.description}
+          aria-label={`${t('modeExplanation')}: ${label}`} aria-haspopup="dialog" disabled={chosen === undefined}
+          onClick={() => { setDetailsOpen(true) }}>
           <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
           <span className={css.seatLabel}>{shownLabel}</span>
-        </span>
+        </button>
       )}
-      {chosen === undefined ? null : (
-        <Tooltip label={t('modeExplanation')} portal>
-          <button
-            type="button"
-            className={css.details}
-            aria-label={`${t('modeExplanation')}: ${label}`}
-            aria-haspopup="dialog"
-            onClick={() => { setOpen(false); setDetailsOpen(true) }}
-          >
-            <IconInfoOutlineRegular size={14} />
-          </button>
-        </Tooltip>
-      )}
-      {!detailsOpen || chosen === undefined ? null : guide === undefined ? (
+      {!detailsOpen || developerTools || chosen === undefined ? null : guide === undefined ? (
         <Modal open title={label} description={chosen.description ?? t('noDescription')}
           closeLabel={t('close')} onClose={() => { setDetailsOpen(false) }} />
       ) : (
@@ -253,6 +240,6 @@ export function AgentPresetSeat({
           onDone={() => { setToast(null) }}
         />
       )}
-    </div>
+    </>
   )
 }

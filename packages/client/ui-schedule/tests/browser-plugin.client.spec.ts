@@ -3,7 +3,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { resolveSlotLabel, type HostObservable, type PropsRenderSlots, type StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type HostObservable, type StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
@@ -24,11 +24,9 @@ import { ScheduleCatalogAction } from '../src/client/ScheduleCatalogAction.tsx'
 import { SessionScheduleHover } from '../src/client/SessionScheduleHover.tsx'
 import { SessionScheduleMark } from '../src/client/SessionScheduleMark.tsx'
 import { ScheduleTurnCard, type ScheduleTurnCardInjected } from '../src/client/ScheduleTurnCard.tsx'
-import { SchedulePluginActivation, SchedulePluginUsage, type SchedulePluginUsageInjected } from '../src/client/SchedulePluginUsage.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 const Empty = () => null
-const PluginSlots = (_props: PropsRenderSlots<'plugins.bundle.usage' | 'plugins.bundle.activation'>) => null
 
 /** Raw inject face of an ambient row seat: the shared Host catalog observable. */
 interface SessionCatalogFace {
@@ -139,44 +137,6 @@ function declareTranscriptSeats(ctx: Context): () => void {
 }
 
 describe('ui-schedule browser half', () => {
-  it('contributes plugin guidance only while loaded and opens the real task panel without creating a Session', async () => {
-    const catalog = vi.fn().mockResolvedValue({ ok: true, value: [] })
-    const ctx = await baseContext({ schedule: { catalog }, $on: () => () => {} })
-    const selectPanel = vi.fn()
-    const startSession = vi.spyOn(ctx.uiWorkspace, 'startSession')
-    const openSession = vi.spyOn(ctx.uiWorkspace, 'openSession')
-    ctx.provide('layout', { selectPanel } as never)
-    const fiber = ctx.plugin({ inject: [...inject], apply })
-    await fiber.await()
-    expect(ctx.slots.entries('plugins.bundle.usage')).toHaveLength(0)
-    const declaration = ctx.slots.register({ name: 'root', children: {
-      'plugins.bundle.usage': { kind: 'keyed', scope: 'root' },
-      'plugins.bundle.activation': { kind: 'keyed', scope: 'root' },
-    } }, PluginSlots)
-    const usage = ctx.slots.entries('plugins.bundle.usage')[0]!
-    const activation = ctx.slots.entries('plugins.bundle.activation')[0]!
-    expect(usage.options.key).toBe('@deepseek-ai/dsh-experimental-schedule-bundle')
-    expect(usage.component).toBe(SchedulePluginUsage)
-    expect(activation.component).toBe(SchedulePluginActivation)
-    const face = injectedFace(usage) as SchedulePluginUsageInjected
-    const guidance = injectedFace(activation) as SchedulePluginUsageInjected
-    expect(guidance.hooks.catalog).toBe(face.hooks.catalog)
-    const stop = face.hooks.catalog.subscribe(vi.fn())
-    await face.onRetry()
-    expect(face.hooks.catalog.getSnapshot().status).toBe('ready')
-    face.onOpenAutomation()
-    guidance.onOpenAutomation()
-    expect(selectPanel.mock.calls).toEqual([['schedules'], ['schedules']])
-    expect(startSession).not.toHaveBeenCalled()
-    expect(openSession).not.toHaveBeenCalled()
-    stop()
-    await fiber.dispose()
-    expect(ctx.slots.entries('plugins.bundle.usage')).toHaveLength(0)
-    expect(ctx.slots.entries('plugins.bundle.activation')).toHaveLength(0)
-    declaration()
-    await ctx.fiber.dispose()
-  })
-
   it('declares only the services used by registration', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'remote', 'remote.schedule', 'conversation', 'uiConversation', 'uiWorkspace', 'sessions',

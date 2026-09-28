@@ -78,18 +78,10 @@ export interface PluginAddActionsProps {
   readonly onDismiss: () => void
 }
 
-/** Bundle facts supplied to its usage guidance and entry actions. */
-export interface PluginBundleUsageProps {
-  /** The bundle whose detail page is open. */
-  readonly pkg: PluginPackageRef
-}
-
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Additional MenuItemButton rows after installation in the add-plugin menu. */
     'plugins.add.actions': { kind: 'list'; scope: 'root'; owner: PluginAddActionsProps }
-    /** Bundle-owned usage guidance below the description, keyed by npm package name. */
-    'plugins.bundle.usage': { kind: 'keyed'; scope: 'root'; owner: PluginBundleUsageProps }
     /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
     'plugins.bundle.activation': { kind: 'keyed'; scope: 'root'; owner: PluginActivationOwnerProps }
     /**

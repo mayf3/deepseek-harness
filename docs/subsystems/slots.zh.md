@@ -8,7 +8,7 @@ Slots 是 Web Client 的类型化 React 组合系统。[`dsh-client-ui-slots`](.
 
 `plugins.bundle.config` 以 npm 包名为 key，提供 Bundle 详情配置。`plugins.bundle.activation` 在用户显式启用后渲染可选引导，由拥有者提供关闭引导和打开该 Bundle 详情的回调。`conversation.input.activity` 提供模型选择器与发送按钮之间的单个活动控件，可展开工具栏并在卸载时释放展开状态。
 
-插件目录声明 `plugins.add.actions`，它是 root 作用域的 list，在添加插件菜单的安装项之后提供 `MenuItemButton` 行。owner 提供 `onDismiss()`，用于开始动作前关闭菜单。同时声明 `plugins.bundle.usage`，它是 root 作用域的 keyed slot，在组件详情之前提供使用指引。后者以 npm 包名分派，并传入 `{ pkg: PluginPackageRef }`；占用者根据组合包的安装和启用状态决定适用动作。两者均遵循所属插件页面声明的生命周期。
+插件目录声明 `plugins.add.actions`，它是 root 作用域的 list，在添加插件菜单的安装项之后提供 `MenuItemButton` 行。owner 提供 `onDismiss()`，用于开始动作前关闭菜单。该 slot 遵循所属插件页面声明的生命周期。
 
 ## 声明与生命周期
 
@@ -137,8 +137,6 @@ root
 ├─ main
 │  ├─ plugins.add.actions
 │  ├─ plugins.item
-│  ├─ plugins.bundle.activation
-│  ├─ plugins.bundle.usage
 │  ├─ plugins.bundle.config
 │  ├─ plugins.row.config
 │  ├─ plugins.detail.actions

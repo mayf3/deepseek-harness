@@ -57,7 +57,6 @@ import { TaskTabBindings } from './task-tab-bindings.ts'
 import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx'
 import type { TaskDetailInjected } from './TaskDetail.tsx'
 import { TaskManagerIcon } from './TaskManagerIcon.tsx'
-import { SchedulePluginActivation, SchedulePluginUsage, type SchedulePluginUsageInjected } from './SchedulePluginUsage.tsx'
 import { sessionLinkState } from './session-link.ts'
 import { en, NS, zh, type ScheduleCatalogKey } from './locales.ts'
 import { en as managerEn, zh as managerZh, type TaskManagerKey } from './task-manager-locales.ts'
@@ -183,19 +182,6 @@ export function apply(ctx: ClientContext): void {
     locale: MANAGER_NS,
     label: () => t('panel'),
   }, TaskManagerIcon))
-  ctx.inject(['layout'], (scope) => {
-    const usage = (): SchedulePluginUsageInjected => ({
-      hooks: manager.hooks,
-      onRetry: manager.onRetry,
-      onOpenAutomation: () => { scope.layout.selectPanel(PANEL_ID) },
-    })
-    scope.slots.inject('plugins.bundle.usage', () => scope.slots.register({
-      name: 'plugins.bundle.usage', key: '@deepseek-ai/dsh-experimental-schedule-bundle', locale: MANAGER_NS, inject: usage,
-    }, SchedulePluginUsage))
-    scope.slots.inject('plugins.bundle.activation', () => scope.slots.register({
-      name: 'plugins.bundle.activation', key: '@deepseek-ai/dsh-experimental-schedule-bundle', locale: MANAGER_NS, inject: usage,
-    }, SchedulePluginActivation))
-  })
   // The created task is a Turn-level element, not a Tool-group row: the Turn
   // Definition publishes the settled result and this tail list entry renders
   // the card beneath the closing prose.

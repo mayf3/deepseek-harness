@@ -41,7 +41,7 @@ export type PluginManagerPageProps =
   & PropsLocale<'pluginManager'>
   & PropsRenderSlots<
     | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'
-    | 'plugins.add.actions' | 'plugins.bundle.usage'
+    | 'plugins.add.actions'
     | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'
   >
   & InjectFace<PluginManagerFace>
@@ -246,6 +246,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
     <section className={css.detailSection} data-plugin-rows>
       <div className={css.sectionHead}>
         <h4 className={css.sectionTitle}>{t('partsLabel')}</h4>
+        {rows.length === 0 ? null : <span className={css.sectionCount}>{partsSummary(rows, t)}</span>}
       </div>
       {rows.length === 0 ? <p className={css.status}>{t('partsEmpty')}</p> : null}
       {rows.length > ROW_FILTER_THRESHOLD
@@ -570,44 +571,13 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
   )
 }
 
-/** Human-readable row metadata, without technical identifiers or runtime controls. */
-function CapabilitiesSummary({ rows, resolveText, t }: {
-  readonly rows: readonly PackageRow[]
-  readonly resolveText: ResolveText
-  readonly t: Translate
-}): ReactNode {
-  const seen = new Set<string>()
-  const capabilities = rows.flatMap((row) => {
-    const metadataTitle = row.meta?.title === undefined ? undefined : resolveText(row.meta.title).trim()
-    const title = metadataTitle === row.moduleName || metadataTitle === row.rowId ? undefined : metadataTitle
-    const description = row.meta?.description === undefined ? undefined : resolveText(row.meta.description).trim() || undefined
-    if (title === undefined && description === undefined) return []
-    const identity = JSON.stringify([title, description])
-    if (seen.has(identity)) return []
-    seen.add(identity)
-    return [{ rowId: row.rowId, title, description }]
-  })
-  if (capabilities.length === 0) return null
-  return (
-    <section className={css.detailSection} data-plugin-capabilities>
-      <h4 className={css.sectionTitle}>{t('capabilitiesTitle')}</h4>
-      <ul className={css.capabilities}>
-        {capabilities.map(({ rowId, title, description }) => (
-          <li key={rowId} className={css.capability}>
-            {title === undefined ? null : <span className={css.capabilityTitle}>{title}</span>}
-            {description === undefined || description === title ? null : <span className={css.capabilityDescription}>{description}</span>}
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
-}
-
 /**
  * One package's page: the crumb back to the list; its icon with its switch
  * and, for a package the profile installed, uninstall; its title beside its
- * version, beta, and problem tags; usage guidance, readable capabilities,
- * configuration, and component diagnostics folded until requested or failed.
+ * version tag, its beta tag, and its problem tag; the package name the title
+ * stands for, which is what installs it elsewhere; its one-liner; the Host's
+ * problem when it reports one; the configuration the bundle registered for
+ * itself; and its rows with their switches and configure controls.
  */
 function PackageDetail({
   pkg, t, resolveText, busy, rowBusy, configured, configure, renderSlot,
@@ -631,11 +601,6 @@ function PackageDetail({
   const { title, description, beta } = packageText(pkg, resolveText)
   const status = packageStatus(pkg)
   const subject: PluginsSubject = { kind: 'bundle', pkg: packageRef(pkg) }
-  const hasProblem = pkg.error !== undefined || pkg.meta?.error !== undefined
-    || pkg.rows.some(row => row.phase === 'failed' || row.meta?.error !== undefined)
-  const [componentsOpen, setComponentsOpen] = useState(hasProblem)
-  const componentsId = useId()
-  useEffect(() => { if (hasProblem) setComponentsOpen(true) }, [hasProblem])
   return (
     <div className={css.detail} data-plugin-detail={pkg.name}>
       <DetailTop
@@ -673,28 +638,13 @@ function PackageDetail({
           {status === 'problem' ? <Tag className={css.statusTag} tone="danger">{t('statusProblem')}</Tag> : null}
           {renderSlot('plugins.detail.badge', { subject })}
         </div>
+        <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
         {description === undefined ? null : <p className={css.detailDesc}>{description}</p>}
-        <div className={css.scope}>
-          <span>{t('deploymentScope')}</span>
-          <Tooltip label={t('deploymentScopeDescription')} side="bottom" maxWidth={300} portal openOnClick>
-            <Button variant="ghost" size="sm" className={css.infoButton} aria-label={t('deploymentScopeDescription')}>
-              <IconInfoOutlineRegular size={11} aria-hidden="true" />
-            </Button>
-          </Tooltip>
-        </div>
       </div>
       <MetadataError error={pkg.meta?.error} t={t} />
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
       {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
       <div className={css.detailSections}>
-        {renderSlot('plugins.bundle.usage', { pkg: subject.pkg }, { entryKey: pkg.name })}
-        <CapabilitiesSummary rows={pkg.rows} t={t} resolveText={resolveText} />
-        {pkg.overrides.length === 0 ? null : (
-          <section className={css.detailSection} data-plugin-overrides>
-            <h4 className={css.sectionTitle}>{t('overridesTitle')}</h4>
-            <p className={css.capabilityDescription}>{t('overridesDescription', { count: String(pkg.overrides.length) })}</p>
-          </section>
-        )}
         {configured
           ? (
             <section className={css.detailSection} data-plugin-config>
@@ -702,32 +652,13 @@ function PackageDetail({
             </section>
           )
           : null}
-        <section className={css.detailSection} data-plugin-components>
-          <button type="button" className={css.componentsToggle} aria-expanded={componentsOpen} aria-controls={componentsId}
-            onClick={() => { setComponentsOpen(value => !value) }}>
-            <IconChevronDownOutlineRegular size={14} className={css.detailsChevron} aria-hidden="true" />
-            <span>{t('componentsDisclosure')}</span>
-            <span className={css.sectionCount}>{partsSummary(pkg.rows, t)}</span>
-          </button>
-          <div id={componentsId} className={css.componentsBody} hidden={!componentsOpen}>
-            {componentsOpen ? <>
-              <p className={css.detailName}><code data-plugin-name>{pkg.name}</code></p>
-              <RowsSection
-                rows={pkg.rows}
-                t={t}
-                resolveText={resolveText}
-                toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
-                configure={configure}
-              />
-              {pkg.overrides.length === 0 ? null : (
-                <section className={css.detailSection}>
-                  <h4 className={css.sectionTitle}>{t('overridesComponents')}</h4>
-                  <ul className={css.overrideIds}>{pkg.overrides.map(id => <li key={id}><code>{id}</code></li>)}</ul>
-                </section>
-              )}
-            </> : null}
-          </div>
-        </section>
+        <RowsSection
+          rows={pkg.rows}
+          t={t}
+          resolveText={resolveText}
+          toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
+          configure={configure}
+        />
         {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
@@ -1511,7 +1442,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       {loaded && openPkg !== undefined && openRow === undefined
         ? (
           <PackageDetail
-            key={openPkg.name}
             pkg={openPkg}
             t={t}
             resolveText={resolveText}

@@ -8,7 +8,7 @@ This page documents slot ownership, component inputs, extension APIs, and the sh
 
 `plugins.bundle.config` supplies bundle detail configuration, keyed by npm package name. `plugins.bundle.activation` renders optional guidance after user-requested enablement, with owner callbacks to dismiss or open that bundle’s details. `conversation.input.activity` supplies one action between the model selector and Send, with toolbar expansion released on unmount.
 
-The plugin catalog declares `plugins.add.actions`, a root-scoped list for `MenuItemButton` rows after installation in the Add plugin menu. Its owner supplies `onDismiss()` to close the menu before starting an action. It also declares `plugins.bundle.usage`, a root-scoped keyed slot for usage guidance before component details. The latter dispatches the npm package name and supplies `{ pkg: PluginPackageRef }`; its occupant decides which actions apply to the bundle's installed and enabled state. Both follow the owning Plugins page declaration lifetime.
+The plugin catalog declares `plugins.add.actions`, a root-scoped list for `MenuItemButton` rows after installation in the Add plugin menu. Its owner supplies `onDismiss()` to close the menu before starting an action. The slot follows the owning Plugins page declaration lifetime.
 
 ## Declaration and lifecycle
 
@@ -137,8 +137,6 @@ root
 ├─ main
 │  ├─ plugins.add.actions
 │  ├─ plugins.item
-│  ├─ plugins.bundle.activation
-│  ├─ plugins.bundle.usage
 │  ├─ plugins.bundle.config
 │  ├─ plugins.row.config
 │  ├─ plugins.detail.actions

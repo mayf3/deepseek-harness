@@ -1,3 +1,2 @@
 - button "Choose workspace": workspace
 - button "Standard mode"
-- 'button "Mode details: Standard mode"'

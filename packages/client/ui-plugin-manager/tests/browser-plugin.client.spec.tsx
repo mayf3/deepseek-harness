@@ -62,30 +62,6 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-plugin-manager browser plugin', () => {
-  it('reattaches add-plugin menu actions and bundle usage across page declaration lifetimes', async () => {
-    const b = await bench()
-    b.slots.inject('plugins.add.actions', () => b.slots.register({
-      name: 'plugins.add.actions', id: 'create-plugin',
-    }, () => null))
-    b.slots.inject('plugins.bundle.usage', () => b.slots.register({
-      name: 'plugins.bundle.usage', key: '@acme/notes',
-    }, () => null))
-    const fiber = b.ctx.plugin({ inject: [...inject], apply })
-    await fiber.await()
-    const removeRoot = declare(b.slots)
-    expect(b.slots.entries('plugins.add.actions')).toHaveLength(1)
-    expect(b.slots.entries('plugins.bundle.usage')).toHaveLength(1)
-    removeRoot()
-    expect(b.slots.entries('plugins.add.actions')).toHaveLength(0)
-    expect(b.slots.entries('plugins.bundle.usage')).toHaveLength(0)
-    declare(b.slots)
-    expect(b.slots.entries('plugins.add.actions')).toHaveLength(1)
-    expect(b.slots.entries('plugins.bundle.usage')).toHaveLength(1)
-    await fiber.dispose()
-    expect(b.slots.entries('plugins.add.actions')).toHaveLength(0)
-    expect(b.slots.entries('plugins.bundle.usage')).toHaveLength(0)
-  })
-
   it('resets bundle selection when leaving Plugins and releases its panel observer with the registration', async () => {
     const b = await bench()
     const removeRoot = declare(b.slots)
@@ -171,9 +147,8 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(icon.locale).toBe(NS)
     expect(resolveSlotLabel(icon.options.label)).toBe('插件')
     // The page declares the slots a plugin's configuration arrives through, and binds their projection beside its state.
-    expect(b.slots.spec('plugins.item')).toMatchObject({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('plugins.add.actions')).toMatchObject({ kind: 'list', scope: 'root' })
-    expect(b.slots.spec('plugins.bundle.usage')).toMatchObject({ kind: 'keyed', scope: 'root' })
+    expect(b.slots.spec('plugins.item')).toMatchObject({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('plugins.bundle.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
     expect(b.slots.spec('plugins.row.config')).toMatchObject({ kind: 'keyed', scope: 'root' })
     for (const name of ['plugins.detail.actions', 'plugins.detail.badge', 'plugins.detail.section'] as const) {

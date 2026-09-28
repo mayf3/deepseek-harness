@@ -269,7 +269,7 @@ describe('web e2e: agent-preset selection', () => {
 
   it('names every preset and what it is for', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-menu'))
-    await page.getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await page.getByRole('button', { name: 'Standard mode' }).click()
     const menu = page.getByRole('menu')
     await menu.waitFor({ timeout: 10_000 })
 
@@ -285,7 +285,7 @@ describe('web e2e: agent-preset selection', () => {
 
   it('applies the staged pick to the blank session, and the host honors it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-stage'))
-    await page.getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await page.getByRole('button', { name: 'Standard mode' }).click()
     await page.getByRole('menuitem', { name: /Minimal mode/ }).click()
 
     // The chip stages; the blank session the workspace connect produced is
@@ -296,7 +296,7 @@ describe('web e2e: agent-preset selection', () => {
   })
 
   it('omits eagerly failed presets from selection and retains their diagnostics', async () => {
-    await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
+    await page.getByRole('button', { name: 'Minimal mode' }).click()
     await page.getByRole('menu').waitFor()
     expect(await page.getByRole('menuitem', { name: /Refusing mode/ }).count()).toBe(0)
     await page.keyboard.press('Escape')
@@ -329,7 +329,7 @@ describe('web e2e: agent-preset selection', () => {
     // against its list row, so a row that never reprojected the first switch
     // answers "already standard" and sends nothing — and restores the catalog
     // instead of leaving the session reading the narrower composition.
-    await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
+    await page.getByRole('button', { name: 'Minimal mode' }).click()
     await page.getByRole('menuitem', { name: /^Standard mode/ }).first().click()
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
@@ -373,7 +373,7 @@ describe('web e2e: agent-preset selection', () => {
     await reopened.getByRole('button', { name: 'New task default: Minimal mode' }).waitFor({ timeout: 10_000 })
     await reopened.getByRole('button', { name: 'Close' }).last().click()
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
-    await page.getByRole('button', { name: 'Minimal mode', exact: true }).waitFor({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Minimal mode' }).waitFor({ timeout: 10_000 })
   })
 
   it('labels a resumed session with the preset it was created under', async () => {

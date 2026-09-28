@@ -1,39 +1,6 @@
 /* Agent-preset chip on the new-session screen, beside the workspace picker.
    Geometry mirrors HeroShell's .workspace so the two read as one row. */
 
-.controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.details {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 24px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-caption);
-  cursor: pointer;
-}
-
-.details:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.details:focus-visible {
-  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color);
-  outline-offset: 2px;
-}
-
 /* Overflow-driven degradation (mirrors HeroShell's .workspace), no
    breakpoint: the label shrinks with an ellipsis down to nothing, so the
    preset icon and chevron always sit snug against whatever text remains —
@@ -67,7 +34,7 @@
   cursor: pointer;
 }
 
-button.seat:not(:disabled):hover,
+.seat:not(:disabled):hover,
 .seat[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -75,10 +42,6 @@ button.seat:not(:disabled):hover,
 .seat:disabled {
   cursor: default;
   color: var(--dsw-alias-label-quaternary);
-}
-
-.readOnly {
-  cursor: default;
 }
 
 .seatIcon {

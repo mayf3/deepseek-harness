@@ -48,7 +48,7 @@ export type { ConfigLedger, OfficialItem } from './config-ledger.ts'
 export type { PluginManagerFace } from './manager-store.ts'
 export type { PluginManagerLocaleKey } from './locales.ts'
 export type {
-  ConfigPageForm, PluginActivationOwnerProps, PluginBundleUsageProps, PluginAddActionsProps,
+  ConfigPageForm, PluginActivationOwnerProps, PluginAddActionsProps,
   PluginConfigViewProps, PluginDetailProps, PluginPackageRef, PluginRowRef, PluginsSubject,
 } from './slot-contract.ts'
 
@@ -119,7 +119,6 @@ export function apply(ctx: ClientContext): void {
       children: {
         'plugins.add.actions': { kind: 'list', scope: 'root' },
         'plugins.item': { kind: 'list', scope: 'root' },
-        'plugins.bundle.usage': { kind: 'keyed', scope: 'root' },
         'plugins.bundle.activation': { kind: 'keyed', scope: 'root' },
         'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
         'plugins.row.config': { kind: 'keyed', scope: 'root' },
