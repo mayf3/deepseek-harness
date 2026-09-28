@@ -6,8 +6,9 @@ export interface FrontmatterSplit {
   body: string
 }
 
-// Opening `---` on the first line, closing `---` or `...` on its own line.
-const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/u
+// Opening `---` on the first line, then the first closing `---` or `...` line; `??` lets an
+// empty block close on the line right after the opening.
+const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)??(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/u
 
 /**
  * Split a leading YAML frontmatter block from Markdown text without parsing its YAML.

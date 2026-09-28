@@ -132,35 +132,42 @@ describe('MarkdownBody', () => {
   it('renders leading YAML frontmatter as fields instead of a heading', async () => {
     const text = [
       '---', 'name: pdf', 'description: >-', '  Extract text', '  from PDF files.',
-      'metadata:', '  tags: [docs, pdf]', 'license:', 'version: 2', 'beta: true', '---', '', '# Body',
+      'metadata:', '  tags: [docs, pdf]', 'anchor: &list [a]', 'copy: *list', 'license:', 'version: 1.0', 'beta: true', '1: one', '? orphan',
+      '---', '', '# Body',
     ].join('\n')
     const view = render(<MarkdownBody {...props(content([text], true))} />)
-    const fields = await vi.waitUntil(() => view.container.querySelector('[data-document-frontmatter]'))
-    expect([...fields.querySelectorAll('dt')].map(node => node.textContent)).toEqual(['name', 'description', 'metadata', 'license', 'version', 'beta'])
-    expect([...fields.querySelectorAll('dd')].map(node => node.textContent))
-      .toEqual(['pdf', 'Extract text from PDF files.', 'tags:\n  - docs\n  - pdf', '', '2', 'true'])
+    const fields = await vi.waitUntil(() => view.container.querySelector('[data-document-frontmatter] dl'))
+    expect([...fields.querySelectorAll('dt')].map(node => node.textContent))
+      .toEqual(['name', 'description', 'metadata', 'anchor', 'copy', 'license', 'version', 'beta', '1', 'orphan'])
+    expect([...fields.querySelectorAll('dd')].map(node => node.textContent)).toEqual([
+      'pdf', 'Extract text from PDF files.', 'tags: [docs, pdf]', '[a]', '*list', '', '1.0', 'true', 'one', '',
+    ])
     expect(view.getAllByRole('heading').map(node => node.textContent)).toEqual(['Body'])
   })
 
   it.each([
     ['invalid YAML', 'name: [unclosed'],
-    ['a non-mapping document', '- first\n- second'],
-    ['excessive aliases', 'a: &a [x]\nb: [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a, *a]'],
+    ['a scalar document', '~'],
+    ['a sequence document', '- first\n- second'],
   ])('shows the verbatim frontmatter source for %s', async (_, source) => {
     const view = render(<MarkdownBody {...props(content([`---\r\n${source}\r\n...\r\nBody.`], true))} />)
-    const block = await vi.waitUntil(() => view.container.querySelector('pre[data-document-frontmatter]'))
-    expect(block?.textContent).toBe(source)
+    await act(async () => { await import('../src/client/markdown/frontmatter-fields.tsx') })
+    const block = view.container.querySelector('[data-document-frontmatter]')
+    expect(block?.querySelector('dl')).toBeNull()
+    expect(block?.querySelector('pre')?.textContent).toBe(source)
     expect(view.getByText('Body.')).toBeDefined()
   })
 
-  it('hides empty frontmatter and keeps an unterminated opening rule as Markdown', async () => {
-    const view = render(<MarkdownBody {...props(content(['---\n# comment\n---\nBody.'], true))} />)
-    await act(async () => { await import('../src/client/markdown/frontmatter-fields.tsx') })
-    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
-    expect(view.getByText('Body.')).toBeDefined()
-    view.rerender(<MarkdownBody {...props(content(['---\n---\nNext.'], true))} />)
-    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
-    expect(view.getByText('Next.')).toBeDefined()
+  it('collapses frontmatter without content and keeps an unterminated opening rule as Markdown', async () => {
+    const view = render(<MarkdownBody {...props(content(['---\nname: pdf\n---\nBody.'], true))} />)
+    const block = await vi.waitUntil(() => view.container.querySelector('[data-document-frontmatter]:has(dl)'))
+    view.rerender(<MarkdownBody {...props(content(['---\n# comment\n---\nBody.'], true))} />)
+    expect(view.container.querySelector('[data-document-frontmatter]')).toBe(block)
+    expect(block.childElementCount).toBe(0)
+    view.rerender(<MarkdownBody {...props(content(['---\n---\n# Next\n\n---\nTail'], true))} />)
+    expect(view.container.querySelector('[data-document-frontmatter]')?.childElementCount).toBe(0)
+    expect(view.getByRole('heading', { name: 'Next' })).toBeDefined()
+    expect(view.getByText('Tail')).toBeDefined()
     view.rerender(<MarkdownBody {...props(content(['---\nname: pdf'], false))} />)
     expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
     expect(view.container.querySelector('hr')).not.toBeNull()

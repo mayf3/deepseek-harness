@@ -1,22 +1,9 @@
-/* Leading YAML frontmatter: a bordered key/value list above the body, never heading text. */
-.frontmatter {
+/* Key/value grid inside the Markdown body's frontmatter box. */
+.fields {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 16px;
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md);
-  background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-markdown-small);
-  color: var(--dsw-alias-label-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-pre.frontmatter {
-  display: block;
-  font-family: var(--ds-font-family-code);
+  margin: 0;
 }
 
 .field {
