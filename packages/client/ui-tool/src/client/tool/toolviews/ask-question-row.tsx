@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { IconQuestionOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent/types'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 // Also merges the userQuestions key into SessionProjectionMap for useProjection.
 import type {
@@ -61,6 +62,16 @@ function answerEntries(text: string): AskUserQuestionAnswerItem[] | null {
     })
   }
   return entries
+}
+
+/** Answers from a submitted steer that still awaits admission to a step. */
+function queuedAnswerEntries(message: unknown, callId: string): AskUserQuestionAnswerItem[] | null {
+  if (!isRecord(message) || !Array.isArray(message.content)) return null
+  const content: unknown = message.content[0]
+  if (!isRecord(content) || content.type !== 'text' || typeof content.text !== 'string') return null
+  const parsed = parseJson(content.text)
+  if (!isRecord(parsed) || parsed.kind !== 'answer_to_pending_question' || parsed.callId !== callId) return null
+  return answerEntries(content.text)
 }
 
 /** One question's choices from call JSON; absent when any entry is malformed. */
@@ -218,6 +229,16 @@ export function AskQuestionRow({
   // answers come from its result text alone, without a panel to read back.
   const settled = useProjection('userQuestions', view =>
     view?.settled.find(row => row.callId === callId))
+  // A continued call stays answerable until its steered reply is admitted.
+  // Select the durable Inbox entry so its submitted answers can be reviewed
+  // read-only during that interval, including after a browser reconnect.
+  const queuedReply = useProjection('inbox', (view) => {
+    const matches = (message: unknown): boolean => {
+      const source = isRecord(message) ? message.source : undefined
+      return isRecord(source) && source.kind === 'user-question-reply' && source.callId === callId
+    }
+    return view?.['next-step'].find(matches) ?? view?.['next-turn'].find(matches)
+  })
   const reopen = useCallback(() => revealPanel(callId), [callId, revealPanel])
   // Composer verdicts settle the call as specific UserQuestionErrors
   // (ask_user_question handler): 'ASK_CANCELLED' is the user's own
@@ -310,6 +331,18 @@ export function AskQuestionRow({
           rowActionLabel = t('ask.review')
         }
       }
+    }
+  }
+  if (answerable && queuedReply !== undefined && rowAction === reopen) {
+    const answers = queuedAnswerEntries(queuedReply, callId)
+    const presentation = answers === null ? null : answeredPresentation(questionEntries(argsRaw), answers, t)
+    if (presentation?.record !== undefined) {
+      summary = presentation.summary
+      transcript = presentation.transcript
+      // The panel registry still owns an editable card until admission. Let
+      // QuestionToolRow reveal this immutable transcript instead.
+      rowAction = () => false
+      rowActionLabel = t('ask.review')
     }
   }
   if (rowAction !== undefined) return (

@@ -66,7 +66,7 @@ A tool-call-keyed card is removed when its call is absent from the active projec
 
 The Client computes `Date.now() + remainingMs`. Manual focus on a pristine answer surface pauses its countdown, and blur resumes the preserved remainder. Focus before the claim handshake remains effective when the deadline arrives; blur before the handshake does not create a timer. First edit or Take time freezes the countdown, with that disposition saved beside the browser-local draft.
 
-Autofocus applies only when the answer channel is ready, no countdown is active, and the card is not locked. Hiding a timed-call panel leaves its claim and countdown running; its tool row can reopen it. A settled call opens a read-only panel from recorded questions and answers, not another answer channel.
+Autofocus applies only when the answer channel is ready, no countdown is active, and the card is not locked. Hiding a timed-call panel leaves its claim and countdown running; its tool row can reopen it. Once a late reply enters the Inbox, the tool row displays its submitted answers and “View answers” expands the read-only transcript while admission is pending. A settled call opens a read-only panel with recorded answers. Discarding the queued reply restores the answer action.
 
 ### Reply node and grouping
 

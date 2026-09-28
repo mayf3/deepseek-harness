@@ -48,6 +48,8 @@ interface RowEnvironment {
   answerable?: readonly string[]
   /** Answer batches the projection settled a late reply with, by call id; absent = none. */
   settled?: Readonly<Record<string, readonly unknown[]>>
+  /** Pending steers mirrored by the durable Inbox projection. */
+  inbox?: { readonly 'next-turn': readonly unknown[]; readonly 'next-step': readonly unknown[] }
   /** The injected reopen verb; absent = a panel is always there to show. */
   revealPanel?: (callId: string) => boolean
   /** The injected read-only verb; absent = a provider is always there. */
@@ -59,7 +61,8 @@ function rowProps(block: ToolCallBlock, env: RowEnvironment = {}): Parameters<ty
     active: (env.answerable ?? []).map(callId => ({ callId })),
     settled: Object.entries(env.settled ?? {}).map(([callId, answers]) => ({ callId, answers })),
   }
-  const useProjection = (_key: string, select: (value: unknown) => unknown) => select(view)
+  const useProjection = (key: string, select: (value: unknown) => unknown) =>
+    select(key === 'inbox' ? env.inbox : view)
   const props = {
     useDisclosure, callId: 'c1', toolName: 'ask_user_question', t,
     ...('kind' in block ? { phase: 'result', block } : { phase: block.phase, block }),
@@ -77,6 +80,13 @@ function rowProps(block: ToolCallBlock, env: RowEnvironment = {}): Parameters<ty
 }
 
 const answers = (entries: unknown[]): string => JSON.stringify({ answers: entries })
+
+const queuedReply = (callId: string, entries: unknown[]): unknown => ({
+  source: { kind: 'user-question-reply', callId, outcome: 'answered' },
+  content: [{ type: 'text', text: JSON.stringify({
+    kind: 'answer_to_pending_question', tool: 'ask_user_question', callId, answers: entries,
+  }) }],
+})
 
 /** Every pill the row can offer, by its visible copy. */
 const PILL = { reopen: '回答', review: '查看回答' } as const
@@ -151,6 +161,62 @@ describe('AskQuestionRow', () => {
     expect(revealPanel).toHaveBeenCalledWith('c1')
     // Reopening is not a disclosure: the body the user already opened stays open.
     expect(screen.getByRole('button', { expanded: true })).toBeTruthy()
+  })
+
+  it('shows a queued steer as a read-only submitted answer before it is admitted', () => {
+    const reviewPanel = vi.fn(() => true)
+    const revealPanel = vi.fn(() => true)
+    const batch = [
+      { id: 'goal', selected: ['Develop a feature'] },
+      { id: 'scope', selected: [], custom: 'the web app' },
+      { id: 'notes', selected: [] },
+    ]
+    render(<AskQuestionRow {...rowProps(
+      resultNode(READABLE_ARGS, PENDING_RESULT),
+      {
+        answerable: ['c1'],
+        inbox: { 'next-step': [queuedReply('other', batch), queuedReply('c1', batch)], 'next-turn': [] },
+        revealPanel, reviewPanel,
+      },
+    )} />)
+
+    expect(screen.getByText('2/3 已回答')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: PILL.reopen })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: PILL.review }))
+    expect(screen.getByRole('button', { expanded: true })).toBeTruthy()
+    expect(screen.getByText('the web app')).toBeTruthy()
+    expect(reviewPanel).not.toHaveBeenCalled()
+    expect(revealPanel).not.toHaveBeenCalled()
+  })
+
+  it('returns to the answer action if the pending steer is removed', () => {
+    const block = resultNode(READABLE_ARGS, PENDING_RESULT)
+    const batch = [
+      { id: 'goal', selected: ['Develop a feature'] },
+      { id: 'scope', selected: [] },
+      { id: 'notes', selected: [] },
+    ]
+    const view = render(<AskQuestionRow {...rowProps(block, {
+      answerable: ['c1'], inbox: { 'next-step': [], 'next-turn': [queuedReply('c1', batch)] },
+    })} />)
+    expect(screen.getByRole('button', { name: PILL.review })).toBeTruthy()
+
+    view.rerender(<AskQuestionRow {...rowProps(block, {
+      answerable: ['c1'], inbox: { 'next-step': [], 'next-turn': [] },
+    })} />)
+    expect(screen.getByRole('button', { name: PILL.reopen })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: PILL.review })).toBeNull()
+  })
+
+  it('does not lock a question for an unrelated or malformed queued message', () => {
+    const bad = { source: { kind: 'user-question-reply', callId: 'c1' }, content: [
+      { type: 'text', text: JSON.stringify({ kind: 'wrong', callId: 'c1', answers: [] }) },
+    ] }
+    render(<AskQuestionRow {...rowProps(resultNode(READABLE_ARGS, PENDING_RESULT), {
+      answerable: ['c1'], inbox: { 'next-step': [queuedReply('other', [])], 'next-turn': [bad] },
+    })} />)
+    expect(screen.getByRole('button', { name: PILL.reopen })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: PILL.review })).toBeNull()
   })
 
   it('keyboard activation of the pill leaves the row disclosure closed', () => {
