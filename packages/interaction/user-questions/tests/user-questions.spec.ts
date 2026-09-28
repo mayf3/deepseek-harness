@@ -720,6 +720,13 @@ describe('late replies', () => {
     expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
       .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
 
+    // An unexpected second claim for the same call must not replace the first reservation.
+    const otherReply = createUserMessage({
+      source: { kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' },
+      content: [{ type: 'text', text: 'another restored reply' }],
+    })
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: otherReply, turn: 2 })
+
     const ended = agent.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
     ctx.emit('session/event', agent.session, ended)
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
