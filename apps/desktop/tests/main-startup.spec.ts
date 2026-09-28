@@ -717,8 +717,8 @@ describe('desktop main startup', () => {
     expect((await handler(new Request('dsh-app://foreign/index.html'))).status).toBe(404)
   })
 
-  it('relays the macOS fullscreen state on transitions and after each load', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+  it.each(['darwin', 'win32'] as const)('relays the %s fullscreen state on transitions and after each load', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
     const window = harness.windows[0]!
@@ -740,7 +740,7 @@ describe('desktop main startup', () => {
     expect(sent()).toHaveLength(relayed)
   })
 
-  it.each(['win32', 'linux'] as const)('registers no fullscreen relay on %s', async (platform) => {
+  it.each(['linux'] as const)('registers no fullscreen relay on %s', async (platform) => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
