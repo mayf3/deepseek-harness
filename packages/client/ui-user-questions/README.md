@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package presents an agent's question in the Web client as an interactive card attached to the chat input. Users navigate questions, choose options, enter custom answers, skip items, and submit one structured batch. A timed question shows a countdown; pristine focus pauses it, the first edit or `Take time` holds it indefinitely, and an untouched countdown lets the agent continue while the card stays answerable. Closing the card puts its panel away without answering; the `ask_user_question` tool call row reopens it, read-only over the recorded answers once the question settled. It survives navigation, reload, and machine restart.
+The Web client shows an agent's question beside the chat input. Users choose options, enter text, skip questions, and submit one answer batch. A timed card counts down; focus pauses it, editing or `Take time` holds it, and expiry lets the agent continue while the question stays answerable. Closing a card linked to a tool call hides it; its tool row reopens it and later shows recorded answers. The Host preserves the question across restart, while this browser preserves unfinished input across reload.
 
 ## Table of Contents
 

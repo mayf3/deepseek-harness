@@ -49,7 +49,9 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、`phase` 判别字
 
 每个注册视图都接收[工具 slot 类型](src/client/contract/slots.ts)声明的显式 `preparing`、`start` 和 `result` props。通用行在三个阶段使用同一个 `ToolRow`。行模型统一选择标题，并组合通用工具名前缀与已有参数摘要，不按生命周期阶段改变前缀；专用标题不附带英文名。准备阶段的共享参数解析入口直接返回无调用，不解析部分 JSON。write/edit 将准备态和派发后阶段拆成两个组件，只有准备态组件调用 `useToolCallArgumentsPartial`，start 与 result 共用派发后组件。Bash、Skill、Cordis 等自定义 renderer 分别处理准备态，其依赖参数的组件接收 `StartedToolCallViewProps`。
 
-本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、运行中的 `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 PTC dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。运行中的原子工具行以同一道高光从左到右扫过标题、分隔符、摘要与后缀；已完成行保持静态。运行中与已完成的前台标准 `bash`/`pwsh` 和 `terminal_send` 调用，无论位于根还是 PTC dispatch 子调用中，都在通过相同的参数、结果和错误检查后使用 terminal 卡片。持久 `bash`/`pwsh` 调用仅在运行中使用 terminal 卡片。以已识别的 spill 策略提示结尾的 shell 输出，在 shell 行中使用可展开的 generic 输出，在 Details 中使用 generic 输出；位置被改变或被省略的退出标记无法证明成功。已完成的持久 shell 结果保持 generic 展示，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；根调用的持久 shell 结果可展开，后台启动回执则保持折叠。带有 `AUTO_REVIEW_DENIED` 的原生或 PTC dispatch 失败会在折叠行显示 Auto review 裁决，展开时显示一行归一化后的“未执行”原因；原因缺失或只有空白时使用本地化 fallback 文案。成功的问题行按稳定 id 配对调用中的问题与回答，展开后显示可读的问答行；回答在结果携带时取自结果，而计时调用的结果只记录了超时时，则取自 `userQuestions` 投影中迟到回复结算它时留下的答案，两者读起来一致。已取消或已中断的问题行显示其裁决与原始问题，不虚构回答。问题行在摘要旁带一个胶囊按钮，按钮上是该行自己的问题图标：只要 `userQuestions` 会话投影仍把该调用列为可回答，点击它就在编辑器位置重新打开这道问题的实时回答面板；调用带着回答结束后，它以只读方式打开同一个面板，展示这些问题与回答。计时调用在没有任何回答的情况下结束时读作已结束且不提供该按钮，已取消或已中断的行同样不提供，问题字段校验失败的已回答调用也不提供；面板能力拒绝时，点击改为展开该行。不受支持、格式错误或含糊的输入回退为压平的工具输入／结果文本。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
+本包拥有 generic fallback，以及 shell/pwsh、read、read_image、write/edit、运行中的 `str_replace_editor` `create`／`str_replace`、grep/glob、web、todo、question 与 PTC dispatch 的内置展示。结构化卡片直接从第一方原始 event 字段派生；Host `presentCall` 与 `presentResult` 值不会进入 Client。运行中的原子工具行以同一道高光从左到右扫过标题、分隔符、摘要与后缀；已完成行保持静态。运行中与已完成的前台标准 `bash`/`pwsh` 和 `terminal_send` 调用，无论位于根还是 PTC dispatch 子调用中，都在通过相同的参数、结果和错误检查后使用 terminal 卡片。持久 `bash`/`pwsh` 调用仅在运行中使用 terminal 卡片。以已识别的 spill 策略提示结尾的 shell 输出，在 shell 行中使用可展开的 generic 输出，在 Details 中使用 generic 输出；位置被改变或被省略的退出标记无法证明成功。已完成的持久 shell 结果保持 generic 展示，因为 reset 与部分输出诊断不一定描述单个进程的退出状态；根调用的持久 shell 结果可展开，后台启动回执则保持折叠。带有 `AUTO_REVIEW_DENIED` 的原生或 PTC dispatch 失败会在折叠行显示 Auto review 裁决，展开时显示一行归一化后的“未执行”原因；原因缺失或只有空白时使用本地化 fallback 文案。
+
+问题行按 id 配对问题与答案；答案来自工具结果，迟到回答则来自 `userQuestions` 投影。可回答的调用提供按钮以重新打开面板；带有答案的已结算调用会以只读方式打开面板。没有答案的已关闭调用和无效记录不提供按钮。已取消和已中断的行显示裁决，不虚构答案。若面板提供方不接受按钮操作，点击会展开该行。不受支持或含糊的输入回退为压平的工具文本。`ui-skill` 展示了业务包自行拥有的 `skill` 注册项。
 
 回答面板按钮归问题 renderer 所有。它使用 `DisclosureRow` 组合自己的操作与 transcript；通用 `ToolRow` 不选择或派发问题操作。
 
@@ -89,7 +91,7 @@ terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice
 
 ### 声明的可选能力
 
-本包在浏览器 `Context` 上为其问题行声明 `UserQuestionPanels`：`reveal(sessionId, callId): boolean` 显示该调用的回答面板，并报告是否还有面板可显示；`review(sessionId, callId, record): boolean` 把已结束调用记录下来的问题与回答显示为只读面板，记录由该行自己记录的调用，加上记录了回答的那一方——结果，或投影中迟到回复的条目——共同解析得出。问题视图在自己的 slot `inject` 中经 `ctx.get('userQuestionPanels')` 读取两者，因此不含提问 UI 的组装渲染同样的行，只是没有动作。该能力由 `ui-user-questions` 提供，其背后的面板行为也由它拥有。
+本包声明可选的 `UserQuestionPanels` 能力；`ui-user-questions` 提供它。`reveal(sessionId, callId)` 打开可回答的面板，`review(sessionId, callId, record)` 以只读方式打开已记录的答案。行通过 `ctx.get('userQuestionPanels')` 读取此能力；未组合问题 UI 时仍保留文本记录。
 
 </details>
 

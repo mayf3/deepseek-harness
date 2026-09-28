@@ -1,13 +1,13 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import UserQuestionService, {
   TIMED_WAIT_PARAMETER,
   UserQuestionError,
   type AskUserQuestionAnswer,
   type AskUserQuestionRequest,
 } from '@deepseek-ai/dsh-user-questions'
-import { createToolResultMessage, ToolCallId, type ToolSchema, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId, type ToolSchema, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, TOOL_OUTCOME_UNKNOWN } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
@@ -368,15 +368,22 @@ function wireRejection(code: string): Error {
 interface LiveAgent extends Agent {
   steer: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
   inject: ReturnType<typeof vi.fn<(message: UserMessage) => void>>
+  queuedTurns: UserMessage[]
+  queuedMessages: UserMessage[]
 }
 
 function liveAgent(id: string): LiveAgent {
-  const steer = vi.fn<(message: UserMessage) => void>()
+  const queuedTurns: UserMessage[] = []
+  const queuedMessages: UserMessage[] = []
+  const steer = vi.fn<(message: UserMessage) => void>((message) => { queuedMessages.push(message) })
   const inject = vi.fn<(message: UserMessage) => void>()
   return Object.assign(stubAgent(id), {
     session: Session.create(SessionId(id)),
+    inbox: { nextTurn: queuedTurns, nextStep: queuedMessages },
     steer,
     inject,
+    queuedTurns,
+    queuedMessages,
   })
 }
 
@@ -646,6 +653,120 @@ describe('late replies', () => {
     agent.session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [steered] })
     agent.session.append('user/message', steered, { surfaceOp: 'append' })
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts one queued reply and permits retry when it is discarded', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-duplicate')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(agent.steer).toHaveBeenCalledTimes(1)
+
+    const first = agent.steer.mock.calls[0]![0]
+    agent.queuedMessages.shift()
+    agentEvents(ctx, agent).emit('agent/inbox/discarded', { message: first })
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
+    await ctx.fiber.dispose()
+  })
+
+  it('refuses a reply already present in the durable inbox', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-inbox')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+    const reply = createUserMessage({
+      source: { kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' },
+      content: [{ type: 'text', text: 'queued reply' }],
+    })
+    agent.queuedMessages.push(reply)
+
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    agent.queuedMessages.shift()
+    agent.queuedTurns.push(reply)
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(agent.steer).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps the reservation through unrelated inbox and Session events', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-unrelated')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+    const other = createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'other' }] })
+    const otherReply = createUserMessage({
+      source: { kind: 'user-question-reply', callId: ToolCallId('other-call'), outcome: 'answered' },
+      content: [{ type: 'text', text: 'other reply' }],
+    })
+    const events = agentEvents(ctx, agent)
+    const otherSession = Session.create(SessionId('other-session'))
+    const otherEnd = otherSession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.emit('session/event', otherSession, otherEnd)
+    events.emit('agent/inbox/claimed', { message: otherReply, turn: 1 })
+
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    events.emit('agent/inbox/claimed', { message: other, turn: 1 })
+    events.emit('agent/inbox/claimed', { message: otherReply, turn: 1 })
+    events.emit('agent/inbox/discarded', { message: other })
+    events.emit('agent/inbox/discarded', { message: otherReply })
+    for (const message of [other, otherReply]) {
+      const event = agent.session.append('user/message', message, { surfaceOp: 'append' })
+      ctx.emit('session/event', agent.session, event)
+    }
+    const stepEnd = agent.session.append('step/end', { turn: 1, step: 1 })
+    ctx.emit('session/event', agent.session, stepEnd)
+    const turnEnd = agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    ctx.emit('session/event', agent.session, turnEnd)
+
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(agent.steer).toHaveBeenCalledOnce()
+    await ctx.fiber.dispose()
+  })
+
+  it('permits retry when a claimed reply ends without admission', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-claimed')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    const first = agent.steer.mock.calls[0]![0]
+    agent.queuedMessages.shift()
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: first, turn: 1 })
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+
+    const ended = agent.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    ctx.emit('session/event', agent.session, ended)
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
+    await ctx.fiber.dispose()
+  })
+
+  it('permits retry when steering a reply throws before it is queued', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-steer-error')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+    agent.steer.mockImplementationOnce(() => { throw new Error('steer failed') })
+
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch)).toThrow('steer failed')
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
+    expect(agent.steer).toHaveBeenCalledTimes(2)
     await ctx.fiber.dispose()
   })
 
