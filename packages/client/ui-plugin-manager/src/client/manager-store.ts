@@ -94,6 +94,8 @@ export interface PackageView {
   /** Why the Host cannot read the bundle, when it cannot. */
   readonly error?: ManagementError
   readonly rows: readonly PackageRow[]
+  /** Existing row ids whose configuration or enablement the bundle's patch changes. */
+  readonly overrides: readonly string[]
 }
 
 /** The typed spec as the Host read it, on the installing, installed, and failed screens. */
@@ -423,6 +425,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     optional: bundle.optional,
     enabled: bundle.enabled,
     rows,
+    overrides: bundle.overrides,
     ...bundle.version === undefined ? {} : { version: bundle.version },
     ...bundle.description === undefined ? {} : { description: bundle.description },
     ...bundle.meta === undefined ? {} : { meta: bundle.meta },

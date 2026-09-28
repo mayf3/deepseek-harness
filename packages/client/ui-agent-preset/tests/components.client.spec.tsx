@@ -49,6 +49,12 @@ function translate(key: keyof typeof en, params?: Record<string, unknown>): stri
     : template.replace(/\{(\w+)\}/g, (match, name: string) => name in params ? String(params[name]) : match)
 }
 
+function seatTrigger(): HTMLElement {
+  const button = screen.getAllByRole('button').find(item => item.getAttribute('aria-haspopup') === 'menu')
+  if (button === undefined) throw new Error('No preset selection trigger')
+  return button
+}
+
 function renderSeat(
   state: Partial<AgentPresetSeatState> = {},
   select: () => Promise<string | undefined> = () => Promise.resolve(undefined),
@@ -69,7 +75,7 @@ function renderSeat(
     t: translate,
   } as AgentPresetSeatProps
   render(<AgentPresetSeat {...props} />)
-  return { ...actions, developerTools }
+  return { ...actions, developerTools, store }
 }
 
 function renderLabel(
@@ -89,7 +95,7 @@ function renderLabel(
     useAgentPresets: bindSnapshotSelector(store),
     t: (key: keyof typeof en) => en[key],
   } as unknown as AgentPresetLabelProps)} />)
-  return { load, view }
+  return { load, view, store }
 }
 
 describe('the new-session chip', () => {
@@ -103,7 +109,7 @@ describe('the new-session chip', () => {
     renderSeat({}, undefined, {
       id: 's1', retainInfo: { referenceCount: 1, retainedBy: { mainView: 1 } },
     })
-    expect(screen.getByRole('button')).toBeTruthy()
+    expect(seatTrigger()).toBeTruthy()
     cleanup()
 
     renderSeat({}, undefined, { id: 's1', retainInfo: undefined })
@@ -114,14 +120,14 @@ describe('the new-session chip', () => {
     const actions = renderSeat()
 
     await waitFor(() => { expect(actions.load).toHaveBeenCalledTimes(1) })
-    expect(screen.getByRole('button').textContent).toContain(en.presetStandardName)
-    expect(screen.getByRole('button').getAttribute('title')).toBe(en.seatHint)
+    expect(seatTrigger().textContent).toContain(en.presetStandardName)
+    expect(seatTrigger().getAttribute('title')).toBe(en.seatHint)
   })
 
   it('offers each preset with what it is for', () => {
     renderSeat()
 
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(seatTrigger())
 
     // The id alone never said what a preset does; the description is the
     // whole reason a preset can publish metadata at all.
@@ -134,49 +140,49 @@ describe('the new-session chip', () => {
 
   it('closes the picker immediately when developer tools turn off without changing the staged preset', () => {
     const actions = renderSeat()
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(seatTrigger())
     expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
     act(() => { actions.developerTools.set(false) })
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByText(en.presetStandardDescription)).toBeNull()
     expect(actions.select).not.toHaveBeenCalled()
     act(() => { actions.developerTools.set(true) })
-    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-    expect(screen.getByRole('button').textContent).toContain(en.presetStandardName)
+    expect(seatTrigger().getAttribute('aria-expanded')).toBe('false')
+    expect(seatTrigger().textContent).toContain(en.presetStandardName)
   })
 
   it('falls back to the id when the staged preset published no name', () => {
     renderSeat({ current: 'mine' })
 
-    expect(screen.getByRole('button').textContent).toContain('mine')
+    expect(seatTrigger().textContent).toContain('mine')
   })
 
   it('shows the staged id until a stale roster contains it', () => {
     renderSeat({ current: 'arriving' })
 
-    expect(screen.getByRole('button').textContent).toContain('arriving')
+    expect(seatTrigger().textContent).toContain('arriving')
   })
 
   it('stages the picked preset and closes the menu', () => {
     const actions = renderSeat()
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(seatTrigger())
 
     fireEvent.click(screen.getByText('mine'))
 
     expect(actions.select).toHaveBeenCalledWith('mine')
-    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(seatTrigger().getAttribute('aria-expanded')).toBe('false')
   })
 
   it('disables the trigger while a switch is in flight', () => {
     renderSeat({ busy: true })
 
-    expect(screen.getByRole('button')).toHaveProperty('disabled', true)
+    expect(seatTrigger()).toHaveProperty('disabled', true)
   })
 
   it('shows a refused switch on the trigger', () => {
     renderSeat({ error: 'session has already started' })
 
-    expect(screen.getByRole('button').getAttribute('title')).toBe('session has already started')
+    expect(seatTrigger().getAttribute('title')).toBe('session has already started')
   })
 
   it('renders nothing before the roster arrives or when there is none', () => {
@@ -191,11 +197,66 @@ describe('the new-session chip', () => {
 
   it('closes on an outside dismissal', () => {
     renderSeat()
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(seatTrigger())
 
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(seatTrigger().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('opens mode help without selecting and returns keyboard focus after Escape', () => {
+    const actions = renderSeat()
+    const trigger = screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    expect(screen.getByRole('dialog', { name: en.presetStandardName })).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: en.modeExplanation }))
+    fireEvent.click(screen.getByRole('tab', { name: en.howToUse }))
+    expect(screen.getByRole('tab', { name: en.howToUse }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
+  it('uses only a custom preset description even when it names a built-in id', () => {
+    const actions = renderSeat({ options: [{ id: 'standard', name: 'My workflow', description: 'Our review workflow' }] })
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: My workflow` }))
+
+    expect(screen.getByRole('dialog', { name: 'My workflow' }).textContent).toContain('Our review workflow')
+    expect(screen.queryByRole('tab')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
+  it('forgets open help when developer tools turn off', () => {
+    const actions = renderSeat()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
+    act(() => { actions.developerTools.set(false) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { actions.developerTools.set(true) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it.each([
+    { name: 'no presets', options: [] },
+    { name: 'another preset', options: [{ id: 'mine' }] },
+  ])('keeps help closed when the current preset returns after removal leaves $name', ({ options }) => {
+    const actions = renderSeat()
+    const before = actions.store.getSnapshot()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
+    expect(screen.getByRole('dialog', { name: en.presetStandardName })).toBeTruthy()
+
+    act(() => { actions.store.set({ ...before, options }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { actions.store.set(before) })
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })).toBeTruthy()
+    expect(actions.select).not.toHaveBeenCalled()
   })
 })
 
@@ -208,7 +269,7 @@ describe('a refused switch', () => {
       const reason = 'failed to import loader entry live-on-mac (@deepseek-ai/dsh-also-gone)'
       renderSeat({}, () => Promise.resolve(reason))
 
-      fireEvent.click(screen.getByRole('button'))
+      fireEvent.click(seatTrigger())
       fireEvent.click(screen.getByRole('menuitem', { name: /mine/ }))
 
       // The host refuses a mount discovery reported healthy, so this banner is
@@ -230,7 +291,7 @@ describe('a refused switch', () => {
   it('says nothing when the switch lands', async () => {
     const actions = renderSeat()
 
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(seatTrigger())
     fireEvent.click(screen.getByRole('menuitem', { name: /mine/ }))
 
     await waitFor(() => { expect(actions.select).toHaveBeenCalledWith('mine') })
@@ -246,7 +307,7 @@ describe('the chip introduce cue', () => {
 
   /** Character spans carry inline animation delays; nothing else does. */
   function delayedChars(): HTMLElement[] {
-    return Array.from(screen.getByRole('button').querySelectorAll<HTMLElement>('[style]'))
+    return Array.from(seatTrigger().querySelectorAll<HTMLElement>('[style]'))
   }
 
   it('reveals a long Latin name inside the shared window, then acknowledges', () => {
@@ -334,9 +395,47 @@ describe('the session-header label', () => {
     })
 
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(1) })
-    // A control here would promise a switch the host refuses outright.
-    expect(screen.queryByRole('button')).toBeNull()
+    // Reading details never offers a change to the task's preset.
+    expect(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })).toBeTruthy()
+    expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.getByTitle(en.presetStandardDescription).textContent).toBe(en.presetStandardName)
+  })
+
+  it('opens read-only mode help from a running task and restores focus on close', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
+    const trigger = screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    expect(screen.getByRole('dialog', { name: en.presetStandardName })).toBeTruthy()
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('displays the custom description without claiming built-in capabilities', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } }, {
+      options: [{ id: 'standard', name: 'Review only', description: 'Describe changes for review' }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: Review only` }))
+    expect(screen.getByRole('dialog', { name: 'Review only' }).textContent).toContain('Describe changes for review')
+    expect(screen.queryByRole('tab')).toBeNull()
+  })
+
+  it('keeps help closed when the session preset returns after leaving the roster', () => {
+    const { store } = renderLabel({ blank: false, projectionValues: { agentPreset: 'standard' } })
+    const before = store.getSnapshot()
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
+    expect(screen.getByRole('dialog', { name: en.presetStandardName })).toBeTruthy()
+
+    act(() => { store.set({ ...before, options: [{ id: 'mine' }] }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByTitle(en.headerHint).textContent).toBe('standard')
+    act(() => { store.set(before) })
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` })).toBeTruthy()
   })
 
   it('falls back to the id, and to the generic hint, when metadata is absent', () => {

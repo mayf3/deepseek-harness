@@ -27,6 +27,11 @@ export type AgentPresetSettingsKey =
   | 'switchRefused'
   | 'close'
   | 'creatorDraft'
+  | 'createPlugin'
+  | 'createPluginDescription'
+  | 'createPluginChecking'
+  | 'createPluginUnavailable'
+  | 'createPluginMissing'
   | 'enableDevToolsToSetDefault'
   | 'enableDevToolsToCreate'
 
@@ -66,6 +71,11 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   close: 'Close',
 
   creatorDraft: 'Let the agent help me create a preset',
+  createPlugin: 'Let the agent create a plugin',
+  createPluginDescription: 'Enter Creator mode and make your own DSH plugin',
+  createPluginChecking: 'Checking whether Creator mode is available',
+  createPluginUnavailable: 'Temporarily unavailable. Reopen this menu to retry',
+  createPluginMissing: 'Creator mode is not included in this configuration',
 
   enableDevToolsToSetDefault: 'Turn on Coding Tools in General settings to choose a default',
   enableDevToolsToCreate: 'Turn on Coding Tools in General settings to start Creator mode',
@@ -103,6 +113,11 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   close: '关闭',
 
   creatorDraft: '让 Agent 帮我创建预设模式',
+  createPlugin: '让 Agent 创建插件',
+  createPluginDescription: '进入创造模式，制作属于你的 DSH 插件',
+  createPluginChecking: '正在确认创造模式是否可用',
+  createPluginUnavailable: '暂时不可用，请重新打开菜单重试',
+  createPluginMissing: '当前配置未提供创造模式',
 
   enableDevToolsToSetDefault: '请先在通用设置中开启代码工作工具，再设置默认值',
   enableDevToolsToCreate: '请先在通用设置中开启代码工作工具，再启动创造模式',

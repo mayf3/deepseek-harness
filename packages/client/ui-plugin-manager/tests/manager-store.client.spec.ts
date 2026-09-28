@@ -113,10 +113,15 @@ it('hands a custom page the shared configuration form of its entry', () => {
 })
 
 describe('packageView', () => {
+  it('retains the Host-reported rows adjusted by the bundle', () => {
+    expect(packageView({ ...BUNDLE, overrides: ['system-prompt', 'tools'] }, PLUGINS).overrides)
+      .toEqual(['system-prompt', 'tools'])
+  })
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({
       name: 'dsh-better-sidebar', version: '0.16.0', description: 'A sidebar.',
       installed: true, optional: false, enabled: false,
+      overrides: [],
       rows: [
         { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY, enabled: true, phase: 'active' },
         { rowId: 'theme', moduleName: 'dsh-better-sidebar/theme', enabled: false, phase: null },
@@ -132,6 +137,7 @@ describe('packageView', () => {
     expect(packageView(protectedBundle, PLUGINS)).toEqual({
       name: '@deepseek-ai/dsh-base', installed: false, optional: false, enabled: true, readOnlyReason: 'management-required',
       error: { code: 'operation-error', diagnostic: 'broken' },
+      overrides: [],
       rows: [
         { rowId: 'core', moduleName: '@deepseek-ai/dsh-base', entryId: 'include:core', enabled: true, phase: 'active', readOnlyReason: 'management-required' },
         { rowId: 'gone', moduleName: 'x', entryId: 'include:gone', enabled: false, phase: null },

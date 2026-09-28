@@ -16,12 +16,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
+  IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconInfoOutlineRegular, IconWarningOutlineRegular,
+  Menu, Modal, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AgentPresetSeatState } from './seat-store.ts'
-import { presetDisplayText } from './locales.ts'
+import { isBuiltInPreset, presetDisplayText } from './locales.ts'
+import { PresetGuideDialog, presetGuide } from './PresetGuideDialog.tsx'
 import css from './AgentPresetSeat.module.css'
 
 /** Registration-side business face for the hero chip. */
@@ -84,6 +86,7 @@ export function AgentPresetSeat({
   const main = useSessionRetainInfo(info => sessionId === undefined
     || (info?.retainedBy.mainView ?? 0) > 0)
   const [open, setOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   // The seq keys the banner, so picking the same broken preset twice replays
   // it rather than leaving the first one silently in place.
   const toastSeq = useRef(0)
@@ -101,13 +104,17 @@ export function AgentPresetSeat({
   useEffect(() => {
     if (developerTools) return
     setOpen(false)
+    setDetailsOpen(false)
     setToast(null)
   }, [developerTools])
 
   const chosen = state.options.find(option => option.id === state.current)
+  useEffect(() => { setDetailsOpen(false) }, [state.current, chosen?.id])
+
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
   const label = chosenText?.name ?? state.current
   const ready = state.options.length > 0 && state.current !== ''
+  const guide = chosen === undefined ? undefined : presetGuide(chosen.id, isBuiltInPreset(chosen) ? 'system' : 'user')
 
   // The introduce cue: the pick was staged from another screen (the settings
   // creator entry), so the chip announces it — the icon eases in and each
@@ -154,7 +161,7 @@ export function AgentPresetSeat({
     : label
 
   return (
-    <>
+    <div className={css.controls}>
       <Menu
         open={open}
         onClose={() => { setOpen(false) }}
@@ -208,6 +215,25 @@ export function AgentPresetSeat({
           </button>
         )}
       />
+      {chosen === undefined ? null : (
+        <Tooltip label={t('modeExplanation')} portal>
+          <button
+            type="button"
+            className={css.details}
+            aria-label={`${t('modeExplanation')}: ${label}`}
+            aria-haspopup="dialog"
+            onClick={() => { setOpen(false); setDetailsOpen(true) }}
+          >
+            <IconInfoOutlineRegular size={14} />
+          </button>
+        </Tooltip>
+      )}
+      {!detailsOpen || chosen === undefined ? null : guide === undefined ? (
+        <Modal open title={label} description={chosen.description ?? t('noDescription')}
+          closeLabel={t('close')} onClose={() => { setDetailsOpen(false) }} />
+      ) : (
+        <PresetGuideDialog guide={guide} initialPage="explanation" t={t} onClose={() => { setDetailsOpen(false) }} />
+      )}
       {toast !== null && (
         <Toast
           key={toast.seq}
@@ -222,6 +248,6 @@ export function AgentPresetSeat({
           onDone={() => { setToast(null) }}
         />
       )}
-    </>
+    </div>
   )
 }

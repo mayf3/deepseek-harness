@@ -30,6 +30,9 @@
       "path": "../ui-layout"
     },
     {
+      "path": "../ui-plugin-manager/tsconfig.client.json"
+    },
+    {
       "path": "../ui-sidebar"
     },
     {

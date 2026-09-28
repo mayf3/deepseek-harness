@@ -31,6 +31,8 @@ Coding Tools in General Settings decide whether a mode can be chosen at all: wit
 
 Known shipped presets offer mode details and usage examples in a read-only dialog. Its tabs preserve each page's scroll position; closing returns focus to the opening action. Help does not change the new-task default. The default badge replaces the card's group badge, and the preset id appears beside the title. Guide copy and examples belong to this package.
 
+The new-task picker and session header also open the same read-only help. The Plugins page’s “Add plugin” menu offers “Let the agent create a plugin”. Choosing it closes the menu and opens the existing Creator task flow without submitting a message or replacing a draft. The item stays in place while the roster loads or refreshes, and explains why it is disabled when Creator mode is unavailable or Coding Tools are off. The optional slot contribution disappears with its owner.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

@@ -1,4 +1,4 @@
-/* Session-header agent-preset label: static chrome, never a control. */
+/* Session-header preset details never change the task's selected mode. */
 
 .label {
   display: inline-flex;
@@ -7,6 +7,7 @@
   max-width: 180px;
   padding: 0 2px 0 0;
   height: 22px;
+  border: none;
   border-radius: var(--dsw-radius-xs);
   background: var(--dsw-alias-fill-tsp-secondary);
   font-size: 12px;
@@ -17,14 +18,33 @@
   text-overflow: ellipsis;
 }
 
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.details {
+  cursor: pointer;
+}
+
+.details:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.details:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color);
+  outline-offset: 2px;
+}
+
 .icon {
   flex: none;
   opacity: 0.7;
 }
 
 /* First sacrifice when the title row (the enclosing inline-size container)
-   runs out of width: the preset is passive chrome, so it yields before any
-   interactive header action loses its label. */
+   runs out of width: mode help yields before task actions lose their labels. */
 @container (max-width: 540px) {
   .label {
     display: none;

@@ -22,6 +22,7 @@ import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSectio
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
+import { CreatePluginMenuItem, type CreatePluginMenuItemInjected } from '../src/client/CreatePluginMenuItem.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
@@ -810,6 +811,50 @@ describe('ui-agent-preset apply', () => {
     await label.load()
 
     expect(label.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard' }])
+  })
+
+  it('binds the Add plugin menu item to the roster and Creator flow and removes it with the feature', async () => {
+    const { ctx, slots, setDeveloperTools } = await bench()
+    try {
+      slots.register({
+        name: 'root',
+        children: {
+          'settings.section': { kind: 'list', scope: 'root' },
+          conversation: { kind: 'single', scope: 'root' },
+          'plugins.add.actions': { kind: 'list', scope: 'root' },
+        },
+      } as never, () => null)
+      declareConversation(slots)
+      ctx.provide('conversation', {} as never)
+      ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+      const uiWorkspace = uiWorkspaceDouble()
+      ctx.provide('uiWorkspace', uiWorkspace as never)
+      const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+      await feature.await()
+
+      const entry = slots.entries('plugins.add.actions')[0]!
+      expect(entry.component).toBe(CreatePluginMenuItem)
+      const action: Partial<CreatePluginMenuItemInjected> | undefined = entry.inject?.()
+      if (action?.load === undefined || action.hooks === undefined || action.startCreatorDraft === undefined) {
+        throw new Error('expected the injected Create plugin actions')
+      }
+      await action.load()
+      expect(action.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard' }])
+
+      await setDeveloperTools(false)
+      action.startCreatorDraft()
+      expect(uiWorkspace.starts).toHaveLength(0)
+      await setDeveloperTools(true)
+      action.startCreatorDraft()
+      expect(uiWorkspace.starts).toHaveLength(1)
+
+      await feature.dispose()
+      expect(slots.entries('plugins.add.actions')).toHaveLength(0)
+      action.startCreatorDraft()
+      expect(uiWorkspace.starts).toHaveLength(1)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('stages the creator preset and starts a session from the section', async () => {
