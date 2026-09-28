@@ -132,8 +132,8 @@ describe('WelcomeNotice', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
-  it('completes only after the acknowledgement write commits', async () => {
-    const h = mount()
+  it('requires a fresh acknowledgement after the 0.1 notice', async () => {
+    const h = mount('2026-08-13.1')
     await screen.findByRole('dialog')
     fireEvent.click(screen.getByRole('button', { name: WELCOME_NOTICE_COPY.zh.continueLabel }))
     await act(async () => { await Promise.resolve() })
