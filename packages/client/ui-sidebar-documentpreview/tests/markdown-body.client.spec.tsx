@@ -173,6 +173,16 @@ describe('MarkdownBody', () => {
     expect(view.container.querySelector('hr')).not.toBeNull()
   })
 
+  it.each([
+    ['a leading blank line', '\n---\nname: pdf\n---\nBody.'],
+    ['leading text', 'Intro.\n\n---\nname: pdf\n---\nBody.'],
+    ['an indented opening rule', ' ---\nname: pdf\n---\nBody.'],
+  ])('treats a delimiter pair after %s as Markdown', (_, text) => {
+    const view = render(<MarkdownBody {...props(content([text], true))} />)
+    expect(view.container.querySelector('[data-document-frontmatter]')).toBeNull()
+    expect(view.getByText('Body.')).toBeDefined()
+  })
+
   it('renders empty text and leaves non-text deliveries to their selected implementation', () => {
     const view = render(<MarkdownBody {...props({ kind: 'text', text: '', pages: [], eof: true })} />)
     expect(view.container.querySelector('[data-document-markdown]')?.textContent).toBe('')

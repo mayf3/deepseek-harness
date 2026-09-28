@@ -6,8 +6,8 @@ export interface FrontmatterSplit {
   body: string
 }
 
-// Opening `---` on the first line, then the first closing `---` or `...` line; `??` lets an
-// empty block close on the line right after the opening.
+// Only an opening `---` on the first line (after an optional BOM) counts; the block ends at the
+// first closing `---` or `...` line, and `??` lets an empty block close on the next line.
 const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)??(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/u
 
 /**
