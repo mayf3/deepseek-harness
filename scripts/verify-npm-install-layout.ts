@@ -33,13 +33,21 @@ const DEPENDENCY_FIELDS = ['dependencies', 'optionalDependencies', 'peerDependen
 export const MAX_RESOLUTION_WORK_UNITS = 875_000
 
 /**
+ * Measured npm seconds per resolution work unit on the reference host: 180.66 s
+ * for the 699,148 units of the graph the budget was derived from.
+ */
+const SECONDS_PER_WORK_UNIT = 2.6e-4
+
+/**
  * Wall-clock guard for the npm child process. This is a hang guard, not the
  * gate's growth criterion: {@link MAX_RESOLUTION_WORK_UNITS} decides whether the
- * graph is too large to verify. A budgeted graph costs about 226 s at the
- * measured 2.6e-4 s per work unit, and the guard allows four times that, so a
- * slower runner can never decide this gate's outcome.
+ * graph is too large to verify, and a runner up to four times slower than the
+ * measured host cannot decide this gate's outcome. Derived from the budget so a
+ * raised budget cannot silently shrink the guard's headroom.
  */
-const NPM_HANG_GUARD_MS = 900_000
+const NPM_HANG_GUARD_MS = Math.round(
+  4 * MAX_RESOLUTION_WORK_UNITS * SECONDS_PER_WORK_UNIT * 1000,
+)
 
 /** Synthetic incompatible versions used to expose cross-release placement errors. */
 export const SYNTHETIC_DSH_VERSIONS = ['0.1.0', '0.2.0'] as const
