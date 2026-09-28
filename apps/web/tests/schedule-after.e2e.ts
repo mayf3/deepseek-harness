@@ -47,8 +47,6 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 const MODE = webSnapshotMode()
-/** The optional Schedule bundle is the switch these scenarios turn on. */
-const SCHEDULE_BUNDLE = fileURLToPath(new URL('../../../packages/experimental/schedule-bundle/cordis.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/schedule-after', import.meta.url))
 const AFTER_EXPECTED = join(SNAPSHOT_DIR, 'conversation.expected.md')
 const AT_EXPECTED = join(SNAPSHOT_DIR, 'at-conversation.expected.md')
@@ -82,8 +80,7 @@ const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(W
  * The shipped Web composition carries no `time-context` row and the `standard`
  * preset owns the clock, so an overlay naming a Host row reaches nothing. The
  * overlay therefore restates the shipped `preset-standard` row with its
- * `preset-time-context` plugin configured to re-read on every step; the scenario
- * inserts the Host Schedule service through the bundle layer beside it.
+ * `preset-time-context` plugin configured to re-read on every step.
  * @param dir - Directory that receives the overlay file.
  * @returns Absolute path of the written overlay.
  */
@@ -310,7 +307,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-every-step-'))
     overlayRoot = root
     scaffold = await launchWebScaffold({
-      extraOverlayPath: [SCHEDULE_BUNDLE, await writeEveryStepOverlay(root)],
+      extraOverlayPath: [await writeEveryStepOverlay(root)],
     })
     scaffold.ctx.effect(
       () => scaffold.ctx.llm.registerAdapter([AFTER_PROVIDER], afterAdapter),
@@ -766,7 +763,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-catalog-'))
     overlayRoot = root
     scaffold = await launchWebScaffold({
-      extraOverlayPath: [SCHEDULE_BUNDLE, await writeEveryStepOverlay(root)],
+      extraOverlayPath: [await writeEveryStepOverlay(root)],
     })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const records = foldScheduleEvents(fixture.trim().split('\n').slice(1).map(line => JSON.parse(line) as SessionEvent)).active
@@ -900,24 +897,16 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       ...WEB_PATCHES.map(file => loadOverlayPatches('Schedule catalog shipped roster', file)),
     ]
     const shipped = composeEntries(layers)
-    const withBundle = composeEntries([...layers, loadOverlayPatches('Schedule catalog bundle', SCHEDULE_BUNDLE)])
-    for (const row of [
-      { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
-      { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
-      { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
-    ]) {
-      expect(shipped.some(entry => entry.id === row.id)).toBe(false)
-    }
-    // The bundle inserts the Schedule service and its task page; the clock stays
-    // preset-level, so the bundle never inserts it.
+    // The delivered composition carries the Schedule service and its task page;
+    // the clock stays preset-level, so no Host row declares it.
     for (const row of [
       { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
       { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
     ]) {
-      expect(withBundle.filter(entry => entry.id === row.id && entry.name === row.name && entry.disabled !== true))
+      expect(shipped.filter(entry => entry.id === row.id && entry.name === row.name && entry.disabled !== true))
         .toHaveLength(1)
     }
-    expect(withBundle.some(entry => entry.id === 'time-context')).toBe(false)
+    expect(shipped.some(entry => entry.id === 'time-context')).toBe(false)
     // Each preset that offers reminders declares the clock and the tool package
     // in its own scope and ships them enabled; `minimal` declares neither.
     const presetPlugins = (id: string): Array<{ id?: string; name?: string; disabled?: boolean }> => {

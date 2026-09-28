@@ -1,4 +1,4 @@
-/** Every bundle the installation ships switched off composes over the shipped Web layers and carries display metadata. */
+/** The delivered Web composition's Schedule rows, the optional bundles it ships switched off, and their display metadata. */
 
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -64,17 +64,41 @@ describe('optional bundles', () => {
     }
   })
 
-  it('adds the Schedule service and task page the shipped Web composition leaves out', () => {
-    const { patches } = bundle('@deepseek-ai/dsh-experimental-schedule-bundle')
-    const scheduleRows = (entries: ReturnType<typeof composeEntries>) =>
-      entries.filter(entry => ['time-context', 'schedule', 'ui-schedule'].includes(entry.id))
-    expect(scheduleRows(composeEntries(shipped))).toEqual([])
-    // The clock stays preset-level: the bundle inserts the service and its page,
-    // and `time-context` reaches only the presets that declare it.
-    expect(scheduleRows(composeEntries([...shipped, patches]))).toEqual([
+  it('delivers the Schedule service and task page without a Host clock row', () => {
+    const composed = composeEntries(shipped)
+    // The delivered composition carries the Host Schedule service and its task
+    // page enabled; the clock stays preset-level, so no Host row declares it.
+    for (const row of [
       { id: 'schedule', name: '@deepseek-ai/dsh-schedule' },
       { id: 'ui-schedule', name: '@deepseek-ai/dsh-client-ui-schedule' },
-    ])
+    ]) {
+      expect(composed.filter(entry => entry.id === row.id && entry.name === row.name && entry.disabled !== true))
+        .toHaveLength(1)
+    }
+    expect(composed.some(entry => entry.id === 'time-context')).toBe(false)
+  })
+
+  it('keeps the clock and the reminder tools on the presets that declare them', () => {
+    const composed = composeEntries(shipped)
+    const presetPlugins = (id: string): Array<{ id?: string; name?: string; disabled?: boolean }> => {
+      const row = composed.find(entry => entry.id === id)
+      if (row === undefined) throw new Error(`missing delivered preset row ${id}`)
+      return (row.config as { plugins: Array<{ id?: string; name?: string; disabled?: boolean }> }).plugins
+    }
+    for (const id of ['preset-standard', 'preset-cordis', 'preset-ptc']) {
+      const plugins = presetPlugins(id)
+      for (const plugin of [
+        { id: 'preset-time-context', name: '@deepseek-ai/dsh-time-context' },
+        { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
+      ]) {
+        const matches = plugins.filter(row => row.id === plugin.id && row.name === plugin.name)
+        expect(matches).toHaveLength(1)
+        expect(matches[0]?.disabled).not.toBe(true)
+      }
+    }
+    // `minimal` declares neither, so it composes no clock reading and no reminder tool.
+    expect(presetPlugins('preset-minimal').some(row => row.name === '@deepseek-ai/dsh-time-context'
+      || row.name === '@deepseek-ai/dsh-tool-schedule')).toBe(false)
   })
 
   it.each(OPTIONAL_BUNDLES)('%s resolves a title, description, and icon in both shipped languages', (name) => {

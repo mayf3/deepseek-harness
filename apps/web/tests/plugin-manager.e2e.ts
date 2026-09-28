@@ -131,7 +131,7 @@ describe('web e2e: plugin manager', () => {
         if (aria === '') aria = loadingAria
         else expect(loadingAria).toBe(aria)
 
-        const measure = (group: Locator) => group.evaluate((element) => {
+        const measure = (group: Locator, rowSelector = ':scope > ul > li') => group.evaluate((element, selector) => {
           const rect = (node: Element | null | undefined) => {
             if (node === null || node === undefined) throw new Error('Missing plugin layout element')
             const { x, y, width, height } = node.getBoundingClientRect()
@@ -140,7 +140,7 @@ describe('web e2e: plugin manager', () => {
           return {
             pageHeader: rect(element.closest('[data-plugin-panel]')?.querySelector(':scope > header')),
             groupHeader: rect(element.firstElementChild),
-            rows: Array.from(element.querySelectorAll(':scope > ul > li')).slice(0, 4).map((row) => {
+            rows: Array.from(element.querySelectorAll(selector)).slice(0, 4).map((row) => {
               const head = row.firstElementChild
               const main = head?.children[1]
               return {
@@ -150,7 +150,7 @@ describe('web e2e: plugin manager', () => {
               }
             }),
           }
-        })
+        }, rowSelector)
         const loading = await measure(skeleton)
         const blankActions = await skeleton.locator(':scope > ul > li > div > div:last-child').evaluateAll(nodes => nodes.map(node => ({
           children: node.childElementCount,
@@ -184,8 +184,11 @@ describe('web e2e: plugin manager', () => {
         for (const action of await actions.all()) expect(await action.isDisabled()).toBe(false)
         const official = panel.locator('[data-plugin-group="official"]')
         await official.locator('[data-plugin-package]').first().waitFor()
-        const loaded = await measure(official)
-        expect(loaded.rows).toHaveLength(4)
+        // The Official group lists the shipped bundles and then the
+        // configuration-only items; an item card carries no action cell, so the
+        // placeholder rows model the bundle cards alone.
+        const loaded = await measure(official, ':scope > ul > li[data-plugin-package]')
+        expect(loaded.rows).toHaveLength(OPTIONAL_BUNDLES.length)
         const compare = (name: string, a: typeof loading.pageHeader, b: typeof loaded.pageHeader, axes: readonly (keyof typeof a)[] = ['x', 'y', 'width', 'height']) => {
           for (const axis of axes) {
             expect(Math.abs(a[axis] - b[axis]), `${width}px ${name}.${axis}: loading=${a[axis]}, loaded=${b[axis]}`).toBeLessThanOrEqual(0.1)
@@ -194,12 +197,13 @@ describe('web e2e: plugin manager', () => {
         compare('pageHeader', loading.pageHeader, loaded.pageHeader)
         compare('groupHeader', loading.groupHeader, loaded.groupHeader)
         for (const [index, row] of loading.rows.entries()) {
-          const real = loaded.rows[index]!
+          const real = loaded.rows[index]
+          if (real === undefined) break
           for (const part of ['row', 'head', 'icon', 'main', 'titleRow', 'actions'] as const) compare(`row ${index + 1} ${part}`, row[part], real[part])
           // Painted text bars are deliberately shorter than real copy; their line origins and heights align.
           for (const part of ['title', 'description'] as const) compare(`row ${index + 1} ${part}`, row[part], real[part], ['x', 'y', 'height'])
         }
-        facts.push(`${width}px: 4 rows; page/group headers, rows, icons, text lines and blank action spaces align within 0.1px`)
+        facts.push(`${width}px: ${loaded.rows.length} rows; page/group headers, rows, icons, text lines and blank action spaces align within 0.1px`)
         expect(consoleWatch.pageErrors).toEqual([])
       } finally {
         release.resolve(undefined)
@@ -584,8 +588,8 @@ describe('web e2e: plugin manager', () => {
       await panel.getByRole('button', { name: 'Back to plugins' }).click()
       await panel.getByRole('button', { name: 'View Agent Teams', exact: true }).waitFor()
       expect(await panel.getByRole('switch', { name: 'Enable Agent Teams', exact: true }).count()).toBe(1)
-      await panel.getByRole('button', { name: 'View Automation tasks', exact: true }).waitFor()
-      expect(await panel.getByText('Run tasks in your sessions at a set time or on a repeating schedule.', { exact: true }).count()).toBe(1)
+      // Schedule ships in the delivered composition, so no bundle card carries it in either language.
+      expect(await panel.getByRole('button', { name: 'View Automation tasks', exact: true }).count()).toBe(0)
       // The official configuration pages follow the language too, from their own dictionary.
       for (const title of ['Shell', 'Agent loop', 'Subagent', 'Web search']) {
         await panel.getByRole('button', { name: `View ${title}`, exact: true }).waitFor()
@@ -659,34 +663,18 @@ describe('web e2e: plugin manager', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('lists the Automation tasks rows and mounts them with the bundle switch', async () => {
+  it('mounts the delivered Automation tasks rows without a bundle switch', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-schedule'))
     const panel = await openPluginsPanel()
     const scheduleRows = () => [...scaffold.ctx.loader.entries()]
       .filter(entry => ['schedule', 'ui-schedule'].includes(entry.options.id))
-    const running = () => scheduleRows().filter(entry => entry.fiber?.state === FiberState.ACTIVE).length
-    expect(running()).toBe(0)
-    await panel.getByRole('button', { name: '查看 自动化任务', exact: true }).click()
-    const rows = panel.locator('[data-plugin-rows]')
-    for (const title of ['任务调度', '任务界面']) {
-      await rows.locator('[data-plugin-row]', { hasText: title }).waitFor()
-    }
-    // A bundle that is off offers no row switches.
-    expect(await rows.getByRole('switch').count()).toBe(0)
-    const toggle = panel.getByRole('switch', { name: '启用 自动化任务', exact: true })
-    await toggle.click()
-    try {
-      await expect.poll(running, { timeout: 20_000 }).toBe(2)
-      await expect.poll(() => rows.locator('[data-plugin-row]', { hasText: '运行中' }).count(), { timeout: 20_000 }).toBe(2)
-      for (const title of ['任务调度', '任务界面']) {
-        await rows.getByRole('switch', { name: `启用组件 ${title}`, exact: true }).waitFor()
-      }
-      await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
-    } finally {
-      if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
-      await expect.poll(running, { timeout: 20_000 }).toBe(0)
-      await panel.getByRole('button', { name: '返回插件列表' }).click()
-    }
+    // The delivered Web composition ships both rows enabled, so no bundle card
+    // offers a switch for them.
+    expect(scheduleRows()).toHaveLength(2)
+    expect(scheduleRows().every(entry => entry.fiber?.state === FiberState.ACTIVE)).toBe(true)
+    expect(await panel.getByRole('button', { name: '查看 自动化任务', exact: true }).count()).toBe(0)
+    expect(await panel.getByRole('switch', { name: '启用 自动化任务', exact: true }).count()).toBe(0)
+    await page.getByRole('navigation', { name: '全局面板' }).getByRole('button', { name: '自动化任务', exact: true }).waitFor()
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 

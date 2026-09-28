@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-tool-schedule`（`packages/schedule/tool-schedule`）以 preset 级 Consumer 的身份贡献这四个工具。它声明 `inject = ['tools']`，并在 `ctx.inject(['schedule'], …)` 内通过 `ctx.tools` 注册这些定义，因此拥有它们的是挂载它的作用域，而注册会等待同一作用域中的宿主 Schedule 服务。发布版 Web profile 在其 `standard`、`cordis` 和 `ptc` preset 中挂载该行，`minimal` 不挂载。Cordis 的 effect 所有权随挂载卸载而释放这些定义，而始终未解析出 `schedule` 的组合不会注册其中任何一个。[按需开启的 Schedule bundle](2026-09-24-schedule-opt-in-optional-bundle.zh.md)负责 `web` profile 挂载哪些宿主行与客户端界面；本记录负责提醒工具的 preset 归属。
+`@deepseek-ai/dsh-tool-schedule`（`packages/schedule/tool-schedule`）以 preset 级 Consumer 的身份贡献这四个工具。它声明 `inject = ['tools']`，并在 `ctx.inject(['schedule'], …)` 内通过 `ctx.tools` 注册这些定义，因此拥有它们的是挂载它的作用域，而注册会等待同一作用域中的宿主 Schedule 服务。发布版 Web profile 在其 `standard`、`cordis` 和 `ptc` preset 中挂载该行，`minimal` 不挂载。Cordis 的 effect 所有权随挂载卸载而释放这些定义，而始终未解析出 `schedule` 的组合不会注册其中任何一个。[Web bundle](../../../../packages/bundle/web-app/README.zh.md)负责随发行版交付的组合挂载的 `schedule` 与 `ui-schedule` 两行；本记录负责提醒工具的 preset 归属。
 
 `@deepseek-ai/dsh-schedule` 保留版本 1 storage domain、宿主定时器与串行队列、经由 Session controller 的宿主投递、自动化任务页面的读取来源，以及 `ctx.schedule` 接口。`dsh-tool-schedule` 是该接口面向模型的消费者：它在调用服务前校验选择器与身份约束，从 `exec.agent` 读取 Session 绑定，并把非 `ScheduleInputError` 的失败映射为 `internal_error`，使存储细节不会到达模型。
 
@@ -18,7 +18,7 @@ Status: implemented
 
 **继续在宿主服务中通过 `Config` 开关注册。** `exposeTools` 这类字段会把组合选择放进存储插件，而任何 preset 都无法在那里声明它，且每个 preset 仍要各自编辑才能改变结果。
 
-**只要 `ctx.schedule` 存在就注册这些工具。** 该可选 bundle 为整个部署打开 `schedule` 宿主行，包括 `minimal`，因此该条件会恢复本决策所移除的、存储与模型界面之间的耦合。
+**只要 `ctx.schedule` 存在就注册这些工具。** 随发行版交付的 Web 组合为整个部署挂载 `schedule` 宿主服务，包括 `minimal`，因此该条件会恢复本决策所移除的、存储与模型界面之间的耦合。
 
 ## Consequences
 
