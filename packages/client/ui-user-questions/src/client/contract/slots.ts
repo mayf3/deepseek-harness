@@ -100,6 +100,10 @@ export function planReviewOf(questions: readonly QuestionItem[]): PlanReview | u
   }
 }
 
+
+/** Reload-unique prefix so an unnamed legacy card cannot reuse a persisted draft. */
+const unnamedQuestionPrefix = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)),
+  byte => byte.toString(16).padStart(2, '0')).join('')
 let nextQuestionKey = 0
 
 /** Rejection codes a Client returns through the waterfall; the wire preserves `name` and `code`. */
@@ -282,9 +286,9 @@ export class PendingQuestion {
     this.review = review
     this.dismissal = callId === undefined ? 'cancel' : 'hide'
     this.#siblings = siblings
-    nextQuestionKey += 1
+    if (callId === undefined) nextQuestionKey += 1
     this.key = callId === undefined
-      ? `question:${String(nextQuestionKey)}`
+      ? `question:${unnamedQuestionPrefix}:${String(nextQuestionKey)}`
       : PendingQuestion.keyOf(sessionId, callId)
     this.#snapshot = this.createSnapshot()
   }

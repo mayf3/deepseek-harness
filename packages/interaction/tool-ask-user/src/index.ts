@@ -12,7 +12,7 @@ import z from '@deepseek-ai/schemastery'
 import { registerTimedAskUser } from './timed.ts'
 import '@deepseek-ai/dsh-user-questions'
 
-/** Default wait in seconds; -1 retains the blocking tool behavior. */
+/** Cordis row selecting the tool schema and its default foreground wait. */
 export interface Config {
   /** Tool definition selected by this Cordis row. Defaults to the blocking legacy tool. */
   mode?: 'legacy' | 'timed'

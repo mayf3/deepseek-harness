@@ -151,7 +151,7 @@ kind: "package-reference"
 
 这些限制说明该工具何时不合适。它们是当前包约束，不是 UI 积压事项。
 
-- **旧版工具不会报告 pending**：`mode: legacy` 保留阻塞式的内存等待，只返回回答或错误。它的调用永远不会进入 `userQuestions` projection，因为请求头记录的是 legacy schema，所以被进程丢失打断的旧版调用不会显示已继续的问题，也不接受迟到回答，与 timed 问题出现之前完全一致。
+- **旧版工具不会报告 pending**：`mode: legacy` 保留阻塞式的内存等待，只返回回答或错误。原生调用不会进入 `userQuestions` projection，因为请求头记录的是 legacy schema；PTC 子调用也不会产生 pending 结果。因此，被进程丢失打断的旧版调用不会显示已继续的问题，也不接受迟到回答，与 timed 问题出现之前完全一致。
 - **运行时中归属于其他 agent 的 subagent 不能向用户提问**：`ask_user_question` 会以 `DELEGATED_CALLER` 拒绝归属于另一个 agent 的存活子级；该子级必须在最终结果中包含尚未解决的问题或决定。持久谱系不能决定这一边界，因此带有谱系的会话恢复为运行时根后可以正常提问。
 - **Native 回答渲染为 JSON 文本**：规范值仍为结构化数据，但模型侧结果使用紧凑 JSON，而非更丰富的内容块词汇。
 
@@ -161,6 +161,6 @@ kind: "package-reference"
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-推广顺序是先在采用期间保留两种工具定义，再把 timed 工具设为默认，最后在现有 profile 完成迁移后移除 legacy 定义和 `mode: legacy`。移除旧工具的可执行代码不得改变历史 Session 的重放行为：[`userQuestions` projection](../user-questions/src/projection.ts) 必须继续根据每个 `request/header` 记录的 schema 区分调用；现有的[混合 schema 测试](../user-questions/tests/projection.spec.ts)已覆盖这一点。缺少 `timeout` 参数不能用来识别旧调用，因为 timed 调用也可以省略它。timed 模式下的 `timeout: -1` 提供无限期等待，但不会重现旧 schema 或卡片行为。如果移除过程中改变 projection 状态或折叠语义，应提高 `stateVersion`，让持久化缓存从日志重新折叠。
+两种工具定义由 `mode` 选择。[`userQuestions` projection](../user-questions/src/projection.ts) 按每个 `request/header` 记录的 schema 区分原生调用；[混合 schema 测试](../user-questions/tests/projection.spec.ts)覆盖此行为。缺少 `timeout` 参数不能识别 legacy 调用，因为 timed 调用也可以省略它。timed 模式下的 `timeout: -1` 提供无限期等待，但不会重现 legacy schema 或卡片行为。改变 projection 折叠语义时必须提高 `stateVersion`，让持久化缓存从日志重新折叠。
 
 </details>

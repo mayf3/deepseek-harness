@@ -448,9 +448,23 @@ describe('QuestionComposer', () => {
 describe('PendingQuestion domain face', () => {
   it('exposes its Client render identity and scoped request values', () => {
     const question = new PendingQuestion(SID, QUESTIONS)
-    expect(question.key).toMatch(/^question:\d+$/)
+    expect(question.key).toMatch(/^question:[0-9a-f]{32}:\d+$/)
+    expect(new PendingQuestion(SID, QUESTIONS).key).not.toBe(question.key)
     expect(question.sessionId).toBe(SID)
     expect(question.questions).toBe(QUESTIONS)
+  })
+
+  it('does not restore an old unnamed request draft into a new card', () => {
+    draftInstance.actions.replace('question:1', {
+      index: 7,
+      drafts: [{ selected: ['stale'], custom: '', skipped: false }],
+    })
+    const question = new PendingQuestion(SID, QUESTIONS)
+    render(<QuestionComposer matched={question} {...kit} />)
+
+    expect(question.key).not.toBe('question:1')
+    expect(screen.getByText('1 / 3')).toBeTruthy()
+    expect(screen.queryByText('stale')).toBeNull()
   })
 
   it('collapses the card to the header strip and expands it back', () => {

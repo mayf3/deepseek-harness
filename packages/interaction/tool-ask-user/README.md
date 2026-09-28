@@ -151,7 +151,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 These limits define when the tool is a poor fit. They are current package constraints, not a UI backlog.
 
-- **The legacy tool never reports pending** — `mode: legacy` keeps the blocking in-memory wait and returns only an answer or an error. Its calls never enter the `userQuestions` projection, because the request header records the legacy schema, so a legacy call interrupted by process loss shows no continued question and takes no late answer, exactly as before timed questions existed.
+- **The legacy tool never reports pending** — `mode: legacy` keeps the blocking in-memory wait and returns only an answer or an error. Its native calls never enter the `userQuestions` projection because the request header records the legacy schema; its PTC sub-calls never produce a pending result. A legacy call interrupted by process loss shows no continued question and takes no late answer, exactly as before timed questions existed.
 - **Runtime-owned subagents cannot ask the user** — `ask_user_question` rejects a live child owned by another agent with `DELEGATED_CALLER`; the child must include the unresolved question or decision in its final result. Durable lineage does not decide this boundary, so a lineage-bearing session resumed as a runtime root may ask normally.
 - **Native answers render as JSON text** — the canonical value remains structured, but the model-facing result uses compact JSON rather than a richer content-block vocabulary.
 
@@ -161,6 +161,6 @@ These limits define when the tool is a poor fit. They are current package constr
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The rollout keeps both definitions during adoption, then makes the timed tool the default, then removes the legacy definition and `mode: legacy` after existing profiles have migrated. Removing the old executable tool must not change historical Session replay: the [`userQuestions` projection](../user-questions/src/projection.ts) must keep distinguishing calls by the schema recorded in each `request/header`, as its [mixed-schema tests](../user-questions/tests/projection.spec.ts) do today. A missing `timeout` argument cannot identify an old call because timed calls may omit it too. `timeout: -1` provides an indefinite wait in timed mode but does not reproduce the old schema or card behavior. If the projection's state or fold changes during removal, bump its `stateVersion` so stored caches refold from the logs.
+Both definitions are selected by `mode`. The [`userQuestions` projection](../user-questions/src/projection.ts) distinguishes native calls by the schema recorded in each `request/header`, as its [mixed-schema tests](../user-questions/tests/projection.spec.ts) show. A missing `timeout` argument cannot identify a legacy call because timed calls may omit it too. `timeout: -1` provides an indefinite wait in timed mode but does not reproduce the legacy schema or card behavior. Changes to the projection fold require a `stateVersion` bump so stored caches refold from the logs.
 
 </details>

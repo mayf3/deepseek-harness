@@ -131,12 +131,13 @@ export function replyClipboardText(data: QuestionReplyData, t: PropsLocale<'ques
   }).join('\n\n')
 }
 
-/** The durable source of a late reply, read without depending on the merged source union. */
+/** Validate a late reply source at the persisted conversation boundary. */
 function replySource(
   event: Pick<SessionEvent<'user/message'>, 'data'>,
 ): { callId: string; outcome: QuestionReplyData['outcome'] } | null {
-  const source = event.data.source as { kind?: unknown; callId?: unknown; outcome?: unknown }
-  return source.kind === 'user-question-reply' && typeof source.callId === 'string' && source.outcome === 'answered'
+  const source: unknown = event.data.source
+  return isRecord(source) && source.kind === 'user-question-reply'
+    && typeof source.callId === 'string' && source.outcome === 'answered'
     ? { callId: source.callId, outcome: 'answered' }
     : null
 }

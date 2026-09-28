@@ -3466,7 +3466,7 @@ export type TokenMeterConfig = Record<string, never>
 - `source`: [`packages/interaction/tool-ask-user/src/index.ts:16`](../packages/interaction/tool-ask-user/src/index.ts)
 
 ```ts config-catalog
-/** Default wait in seconds; -1 retains the blocking tool behavior. */
+/** Cordis row selecting the tool schema and its default foreground wait. */
 export interface Config {
   /** Tool definition selected by this Cordis row. Defaults to the blocking legacy tool. */
   mode?: 'legacy' | 'timed'

@@ -136,10 +136,12 @@ describe('AskQuestionRow', () => {
 
   it('a pending row keeps the disclosure on its leading glyph while the body reopens the panel', () => {
     const revealPanel = vi.fn(() => true)
-    render(<AskQuestionRow {...rowProps(
+    const view = render(<AskQuestionRow {...rowProps(
       resultNode(READABLE_ARGS, PENDING_RESULT),
       { answerable: ['c1'], revealPanel },
     )} />)
+
+    expect(view.container.querySelector('[data-disclosure-row]')?.getAttribute('role')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { expanded: false }))
     expect(screen.getByRole('button', { expanded: true })).toBeTruthy()
@@ -190,6 +192,35 @@ describe('AskQuestionRow', () => {
     expect(screen.getByText('该问题已结束，结果见下方对话')).toBeTruthy()
     expect(screen.getByText('What do you want to accomplish?')).toBeTruthy()
     expect(screen.queryByText(/"pending"/)).toBeNull()
+  })
+
+  it('reopens a crash-repaired question while the projection still lists it', () => {
+    const revealPanel = vi.fn(() => true)
+    const repaired = resultNode(READABLE_ARGS, 'The tool call was interrupted after it was recorded.', {
+      isError: true, error: { name: 'SessionFormatError', code: 'TOOL_OUTCOME_UNKNOWN' },
+    })
+    render(<AskQuestionRow {...rowProps(repaired, { answerable: ['c1'], revealPanel })} />)
+
+    expect(screen.getByText('已继续工作，仍可回答')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: PILL.reopen }))
+    expect(revealPanel).toHaveBeenCalledWith('c1')
+  })
+
+  it('shows a late answer after crash repair through the read-only panel', () => {
+    const reviewPanel = vi.fn(() => true)
+    const batch = [
+      { id: 'goal', selected: ['Develop a feature'] },
+      { id: 'scope', selected: [], custom: 'the web app' },
+      { id: 'notes', selected: [] },
+    ]
+    const repaired = resultNode(READABLE_ARGS, 'The tool call was interrupted after it was recorded.', {
+      isError: true, error: { name: 'SessionFormatError', code: 'TOOL_OUTCOME_UNKNOWN' },
+    })
+    render(<AskQuestionRow {...rowProps(repaired, { settled: { c1: batch }, reviewPanel })} />)
+
+    expect(screen.getByText('2/3 已回答')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: PILL.review }))
+    expect(reviewPanel).toHaveBeenCalledWith('c1', expect.objectContaining({ answers: batch }))
   })
 
   it('a late reply makes its row read exactly like one answered in time', () => {

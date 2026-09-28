@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SessionLogOffset, SessionSeq, TOOL_OUTCOME_UNKNOWN, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { createToolResultMessage, createUserMessage, ToolCallId, type ToolSchema } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-tools/types'
 import {
   applyUserQuestionEvent, foldUserQuestions, isTimedAskUserQuestionSchema, questionsOf, TIMED_WAIT_PARAMETER,
   userQuestionProjectionDefinition,
@@ -144,13 +145,14 @@ describe('userQuestions projection fold', () => {
     ])).toEqual(continued)
   })
 
-  it('closes a continued question when its reply enters the inbox or is claimed', () => {
+  it('closes a continued question only when its reply is admitted as a user message', () => {
     const continued = [timedHeader, asked, resulted('{"pending":true,"callId":"call_ask_1"}')]
     const settled = { active: [], settled: [{ callId, answers: [] }] }
     expect(foldUserQuestions([
       ...continued,
       event(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [reply()] }),
-    ])).toEqual(settled)
+      event(4, 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' }),
+    ])).toEqual({ active: [{ callId, questions, state: 'continued' }], settled: [] })
     expect(foldUserQuestions([...continued, event(3, 'user/message', reply())])).toEqual(settled)
   })
 
@@ -164,6 +166,24 @@ describe('userQuestions projection fold', () => {
       event(3, 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [replied] }),
       event(4, 'user/message', replied),
     ])).toEqual(settled)
+  })
+
+  it('continues a pending PTC sub-call when only run_code appeared in the request header', () => {
+    const subCallId = ToolCallId('run_1:ptc:1')
+    const dispatchData: SessionEvent<'tool/ptc-dispatch'>['data'] = {
+      rootCallId: ToolCallId('run_1'), parentCallId: ToolCallId('run_1'), subCallId,
+      name: 'ask_user_question', arguments: JSON.parse(toolArguments), isError: false,
+      content: [{ type: 'text', text: JSON.stringify({ pending: true, callId: subCallId }) }],
+    }
+    const dispatch = event(2, 'tool/ptc-dispatch', dispatchData)
+    const runCodeHeader = header(0, [{ name: 'run_code', description: 'Run code.', parameters: { type: 'object' } }])
+    expect(foldUserQuestions([runCodeHeader, dispatch])).toEqual({
+      active: [{ callId: subCallId, questions, state: 'continued' }], settled: [],
+    })
+    expect(foldUserQuestions([runCodeHeader, event(2, 'tool/ptc-dispatch', { ...dispatchData, isError: true })])).toEqual(empty)
+    expect(foldUserQuestions([runCodeHeader, event(2, 'tool/ptc-dispatch', {
+      ...dispatchData, content: [{ type: 'text', text: '{"answers":[]}' }],
+    })])).toEqual(empty)
   })
 
   it('settles with no answers when the reply text carries none this reader can use', () => {
@@ -269,6 +289,6 @@ describe('userQuestions projection fold', () => {
     expect(userQuestionProjectionDefinition.wire.view(opened))
       .toEqual({ active: [{ callId, questions, state: 'open' }], settled: [] })
     expect(userQuestionProjectionDefinition.apply(opened, event(5, 'turn/start', { turn: 2 }))).toBe(opened)
-    expect(userQuestionProjectionDefinition.stateVersion).toBe(1)
+    expect(userQuestionProjectionDefinition.stateVersion).toBe(2)
   })
 })

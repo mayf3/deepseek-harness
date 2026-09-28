@@ -37,7 +37,7 @@ While the tool call is open, the only answer path is that request; a browser tha
 <a id="role"></a>
 ## Role
 
-`UserQuestionService` owns each `TimedQuestionWait`, its cancellable Client claims, and its unattended timer. A claimed wait leaves countdown and focus/edit decisions to the Client. An unattended timeout aborts only the foreground request signal and returns pending, never aborting the Turn. The `userQuestions` projection records open, continued, and settled timed calls from existing Session events; legacy calls are excluded by the logged tool schema. The `answer` RPC accepts only continued questions and validates one answer per question before steering the reply. A late batch stays in the projection because the original tool result contains the timeout, not that answer.
+`UserQuestionService` owns each `TimedQuestionWait`, its cancellable Client claims, and its unattended timer. A claimed wait leaves countdown and focus/edit decisions to the Client. An unattended timeout aborts only the foreground request signal and returns pending, never aborting the Turn. The `userQuestions` projection records open, continued, and settled timed calls from existing Session events: native calls use the logged tool schema, while PTC sub-calls enter when their result is pending. The `answer` RPC accepts only continued questions and validates one answer per question before steering the reply. A late batch stays in the projection because the original tool result contains the timeout, not that answer.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -67,4 +67,4 @@ None.
 
 </details>
 
-**Runtime invariant:** the `userQuestions` projection is derived from the tool and inbox events the agent loop already logs; no separate question state is stored. A continued question can create a new user turn, but it cannot resume a finished tool call. No runtime invariant companion is published because the projection fold and the continued-only Remote methods enforce this boundary at their owners.
+**Runtime invariant:** the `userQuestions` projection is derived from recorded tool calls, PTC dispatches, and admitted user messages; no separate question state is stored. A continued question can create a new user turn, but it cannot resume a finished tool call. No runtime invariant companion is published because the projection fold and the continued-only Remote methods enforce this boundary at their owners.

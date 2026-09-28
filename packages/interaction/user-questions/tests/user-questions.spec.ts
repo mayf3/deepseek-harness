@@ -626,7 +626,7 @@ describe('late replies', () => {
     }, { surfaceOp: 'append' })
   }
 
-  it('steers an answer into a continued question and closes it once the reply enters the inbox', async () => {
+  it('steers an answer into a continued question and closes it once the reply is admitted', async () => {
     const ctx = await timedContext()
     const agent = liveAgent('late-answer')
     ctx.agents.enter(agent, undefined)
@@ -644,6 +644,7 @@ describe('late replies', () => {
       questions: timedQuestions, answers: batch.answers,
     })
     agent.session.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [steered] })
+    agent.session.append('user/message', steered, { surfaceOp: 'append' })
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
     await ctx.fiber.dispose()
   })

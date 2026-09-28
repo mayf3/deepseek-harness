@@ -252,6 +252,25 @@ export function AskQuestionRow({
   } else if (model.state === 'running') {
     summary = t('ask.waiting')
     if (answerable) rowAction = reopen
+  } else if (code === 'TOOL_OUTCOME_UNKNOWN' && (answerable || settled !== undefined)) {
+    // Crash repair has no pending result text; the durable question projection
+    // still knows whether the interrupted call can take a late answer.
+    state = 'ok'
+    const questions = questionEntries(argsRaw)
+    if (answerable) {
+      summary = t('ask.pending')
+      if (questions !== null) transcript = { kind: 'unanswered', questions, verdict: t('ask.pendingDetail') }
+      rowAction = reopen
+    } else if (settled !== undefined) {
+      const presentation = answeredPresentation(questions, settled.answers, t)
+      summary = presentation.summary
+      transcript = presentation.transcript
+      const record = presentation.record
+      if (record !== undefined) {
+        rowAction = () => reviewPanel(callId, record)
+        rowActionLabel = t('ask.review')
+      }
+    }
   } else if ('kind' in block && model.state === 'ok') {
     const text = singleResultText(block)
     if (text !== undefined) {

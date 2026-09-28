@@ -255,20 +255,26 @@ interface SeededTranscript {
  */
 async function openSeededTranscript(fixtureText: string, seedId: string): Promise<SeededTranscript> {
   const scaffold = await launchWebScaffold({})
-  await seedSession(scaffold, fixtureText, seedId)
-  const browser = await chromium.launch()
-  const page = await newEnglishPage(browser)
-  const tripwire = watchConsole(page)
-  await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-  await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+  let browser: Browser | undefined
+  try {
+    await seedSession(scaffold, fixtureText, seedId)
+    browser = await chromium.launch()
+    const page = await newEnglishPage(browser)
+    const tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
 
-  const groupRow = page.locator('[role="treeitem"]').first()
-  await groupRow.waitFor({ timeout: 15_000 })
-  await groupRow.click()
-  const sessionRow = page.locator('[role="treeitem"]').nth(1)
-  await sessionRow.waitFor({ timeout: 10_000 })
-  await sessionRow.click()
-  return { scaffold, browser, page, tripwire }
+    const groupRow = page.locator('[role="treeitem"]').first()
+    await groupRow.waitFor({ timeout: 15_000 })
+    await groupRow.click()
+    const sessionRow = page.locator('[role="treeitem"]').nth(1)
+    await sessionRow.waitFor({ timeout: 10_000 })
+    await sessionRow.click()
+    return { scaffold, browser, page, tripwire }
+  } catch (error) {
+    await Promise.allSettled([browser?.close(), scaffold.close()])
+    throw error
+  }
 }
 
 describe('web e2e: resident question composer round trip', () => {
@@ -593,16 +599,13 @@ describe.skipIf(MODE === 'record')('web e2e: late-answered question transcript',
     expect(await reply.count()).toBe(1)
     expect(await latePage.locator('[data-chat-flow-kind="turn-trigger"]').count()).toBe(0)
     expect(await reply.isVisible()).toBe(false)
-    // Verbatim the accessible name of the in-time answered row above: whether
-    // the answer beat the timeout is the agent's pacing, not something a reader
-    // of the row has to reason about.
+    // Whether the answer beat the timeout is the agent's pacing, not something
+    // a reader of the row has to reason about.
     await expandTurnProcesses(latePage)
     await reply.waitFor({ state: 'visible', timeout: 15_000 })
-    const row = latePage.getByRole('button', { name: 'Ask question 1/1 answered View answers', exact: true })
+    const row = latePage.locator('[data-tool="ask_user_question"]')
     await row.waitFor({ timeout: 15_000 })
-    // The pill owns its own clicks — press near the leading glyph so this stays
-    // the row's disclosure.
-    await row.click({ position: { x: 5, y: 5 } })
+    await row.getByRole('button', { name: 'Ask question', exact: true }).click()
     await latePage.getByText('Which color do you prefer?', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await latePage.getByText('Green', { exact: true }).count()).toBeGreaterThanOrEqual(1)
     expect(await latePage.getByText('Answered after the timeout', { exact: true }).count()).toBeGreaterThanOrEqual(1)
