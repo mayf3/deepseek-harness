@@ -196,7 +196,7 @@ jobs:
     name: node 24 / benchmarks
     # Wall-clock budgets need an otherwise idle runner, so this job runs the
     # benchmark lane alone instead of joining a concurrent gate aggregate.
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
