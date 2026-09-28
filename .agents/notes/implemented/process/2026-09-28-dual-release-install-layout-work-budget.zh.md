@@ -14,6 +14,8 @@ Status: implemented
 
 npm 子进程仍保留墙钟上限 `NPM_HANG_GUARD_MS = 900_000`。它是挂起保护，不是增长判据：按实测每个工作量单位 2.6e-4 秒计算，预算内的图约需 226 秒，该保护给出四倍余量以覆盖更慢的 runner 和主机负载。
 
+这恢复了[发布依赖门面](2026-08-26-published-dependency-faces.zh.md)中「`verify-npm-install-layout` 不限制 resolver 耗时」的决定；300 秒期限与该决定相矛盾。
+
 ## What the resolution costs
 
 2026-09-28 在空闲的 M 系列主机上，针对 `origin/master`（每个发布 277 个 DSH 包、2524 条内部边），用 `--timing` 和 `--cpu-prof` 运行 lane 自身的 npm 调用测得：

@@ -14,6 +14,8 @@ The `Dependency layout` lane packs two incompatible synthetic DSH releases into 
 
 The npm child keeps a wall-clock limit, `NPM_HANG_GUARD_MS = 900_000`. It is a hang guard, not the growth criterion: the budgeted graph costs about 226 s at the measured 2.6e-4 s per work unit, and the guard allows four times that for slower runners and host load.
 
+This restores the [published dependency faces](2026-08-26-published-dependency-faces.md) decision that `verify-npm-install-layout` does not enforce resolver duration; the 300 s deadline had contradicted it.
+
 ## What the resolution costs
 
 Measured 2026-09-28 on an idle M-series host, against `origin/master` (277 DSH packages per release, 2524 internal edges), by running the lane's own npm invocation with `--timing` and `--cpu-prof`:
