@@ -45,6 +45,7 @@ async function bench() {
     name: 'root',
     children: {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'sidebar.right.tab.files.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.unpreviewable': { kind: 'list', scope: 'session' },
       'deliverables.file.actions': { kind: 'list', scope: 'session' },
@@ -193,14 +194,18 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(0)
   })
 
-  it('registers the header split button, and fiber teardown removes it (HMR safety)', async () => {
+  it('shares the directory control and controller across headers and removes both on teardown', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ apps: [] }), { status: 200 })))
     const { ctx, fiber } = await bench()
     const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
+    const files = ctx.slots.entries('sidebar.right.tab.files.actions')[0]
+    expect(files?.component).toBe(OpenInAppAction)
+    expect(files?.inject).toBe(entry?.inject)
     expect(entry?.component).toBe(OpenInAppAction)
     expect(entry?.options).toMatchObject({ id: 'open-in-app' })
     await fiber.dispose()
     expect(headerEntryIds(ctx)).not.toContain('open-in-app')
+    expect(ctx.slots.entries('sidebar.right.tab.files.actions')).toHaveLength(0)
   })
 
   it('injects the controller face: availability sources, launch carrier, choice, and icon URLs', async () => {

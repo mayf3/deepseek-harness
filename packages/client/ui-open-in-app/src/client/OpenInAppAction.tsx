@@ -7,7 +7,7 @@ import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/cli
 import { NS } from './locales.ts'
 import { OpenTargetButton } from './OpenTargetButton.tsx'
 
-/** Browser operations and state injected into the Session Header contribution. */
+/** Browser operations and state shared by the Session header and file tree contributions. */
 export interface OpenInAppActionInjected {
   hooks: {
     openInAppApps: ObservableSnapshot<readonly string[] | null>
@@ -20,9 +20,9 @@ export interface OpenInAppActionInjected {
   iconUrl: (appId: string) => string
 }
 
-/** Full props for the Session-header open-in-app split button. */
+/** Full props for the workspace directory split button. */
 export type OpenInAppActionProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'conversation.session.header.utilities' | 'sidebar.right.tab.files.actions'>
   & PropsLocale<typeof NS>
   & InjectFace<OpenInAppActionInjected>
 

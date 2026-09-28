@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-files/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
@@ -39,8 +40,8 @@ export type { OpenPathEmptyActionProps } from './OpenPathEmptyAction.tsx'
 export const inject = ['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts', 'layout']
 
 /**
- * Client plugin body: register the dictionaries, the header split button, and
- * the document preview's path controls.
+ * Client plugin body: register dictionaries, workspace directory controls, and
+ * document preview path controls.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -77,22 +78,24 @@ export function apply(ctx: ClientContext): void {
       } }
     },
   }), 'open-in-app: workspace command')
+  const directoryInjected = (): OpenInAppActionInjected => ({
+    hooks: {
+      openInAppApps: controller.apps,
+      openInAppChoice: controller.choice,
+      openInAppLaunch: controller.operation,
+      shortcuts: ctx.shortcuts.catalog,
+    },
+    launch: (appId, path) => controller.launch(appId, path),
+    choose: (appId) => { controller.choose(appId) },
+    iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX_ROUTE}/${appId}`,
+  })
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
-    id: 'open-in-app',
-    order: -10,
-    locale: NS,
-    inject: (): OpenInAppActionInjected => ({
-      hooks: {
-        openInAppApps: controller.apps,
-        openInAppChoice: controller.choice,
-        openInAppLaunch: controller.operation,
-        shortcuts: ctx.shortcuts.catalog,
-      },
-      launch: (appId, path) => controller.launch(appId, path),
-      choose: (appId) => { controller.choose(appId) },
-      iconUrl: appId => `${OPEN_IN_APP_ICON_PREFIX_ROUTE}/${appId}`,
-    }),
+    id: 'open-in-app', order: -10, locale: NS, inject: directoryInjected,
+  }, OpenInAppAction))
+  ctx.slots.inject('sidebar.right.tab.files.actions', () => ctx.slots.register({
+    name: 'sidebar.right.tab.files.actions',
+    id: 'open-in-app', locale: NS, inject: directoryInjected,
   }, OpenInAppAction))
   const applications: OpenPathInjected['applications'] = (path, signal) => paths.applications(path, signal)
   const pathInjected = (): OpenPathInjected => ({
