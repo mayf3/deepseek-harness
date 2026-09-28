@@ -6,6 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
  * proving removal (HMR safety) and the injected controller faces.
  */
 
+import type { PropsRuntime, SlotComponent } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -18,7 +19,7 @@ import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply, inject, type OpenInAppActionInjected, type OpenPathInjected } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
-import { DirectoryOpenInAppAction, OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
+import { OpenInAppAction } from '../src/client/OpenInAppAction.tsx'
 import { OpenPathAction } from '../src/client/OpenPathAction.tsx'
 import { OpenPathEmptyAction } from '../src/client/OpenPathEmptyAction.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
@@ -194,16 +195,29 @@ describe('open-in-app browser half', () => {
     expect(ctx.slots.entries('deliverables.file.actions')).toHaveLength(0)
   })
 
-  it('shares the directory control and controller across headers and removes both on teardown', async () => {
+  it('adapts the Session directory, shares the controller with the file tree, and removes both on teardown', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ apps: [] }), { status: 200 })))
-    const { ctx, fiber } = await bench()
-    const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
-    const files = ctx.slots.entries('sidebar.right.tab.files.actions')[0]
-    expect(files?.component).toBe(DirectoryOpenInAppAction)
-    expect(files?.inject).toBe(entry?.inject)
-    expect(entry?.component).toBe(OpenInAppAction)
-    expect(entry?.options).toMatchObject({ id: 'open-in-app' })
-    await fiber.dispose()
+    const { ctx, fiber, list } = await bench()
+    try {
+      const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
+      const files = ctx.slots.entries('sidebar.right.tab.files.actions')[0]
+      expect(files?.component).toBe(OpenInAppAction)
+      expect(files?.inject).toBe(entry?.inject)
+      expect(entry?.options).toMatchObject({ id: 'open-in-app' })
+      const header = entry?.component as SlotComponent<Pick<
+        PropsRuntime<'conversation.session.header.utilities'>, 'sessionId' | 'useSessions'
+      >>
+      const id = 'main' as SessionId
+      const props = { sessionId: id, useSessions: <T>(select: (state: SessionListState) => T) => select(list.getSnapshot()) }
+      expect(header(props)).toBeNull()
+      for (const cwd of ['', '/first', '/second']) {
+        list.set({ ...list.getSnapshot(), ids: [id], byId: {
+          [id]: { id, displayTitle: 'Main', cwd, running: false, blank: false, updatedAt: 0, retainedBy: {} },
+        } })
+        if (cwd === '') expect(header(props)).toBeNull()
+        else expect(header(props)).toMatchObject({ type: OpenInAppAction, props: { absolutePath: cwd } })
+      }
+    } finally { await fiber.dispose() }
     expect(headerEntryIds(ctx)).not.toContain('open-in-app')
     expect(ctx.slots.entries('sidebar.right.tab.files.actions')).toHaveLength(0)
   })

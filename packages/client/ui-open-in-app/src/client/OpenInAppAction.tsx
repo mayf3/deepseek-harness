@@ -1,6 +1,5 @@
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { APP_LABEL_KEY } from './applications.ts'
 import type { OpenInAppLaunchState } from './controller.ts'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
@@ -20,34 +19,18 @@ export interface OpenInAppActionInjected {
   iconUrl: (appId: string) => string
 }
 
-/** Full props for the Session-header directory split button. */
+/** Directory path, installed applications, and launch operations for the split button. */
 export type OpenInAppActionProps =
-  PropsRuntime<'conversation.session.header.utilities'>
-  & PropsLocale<typeof NS>
+  PropsLocale<typeof NS>
   & InjectFace<OpenInAppActionInjected>
-
-/** Full props for a directory split button targeting the file tree's displayed path. */
-export type DirectoryOpenInAppActionProps =
-  PropsRuntime<'sidebar.right.tab.files.actions'>
-  & PropsLocale<typeof NS>
-  & InjectFace<OpenInAppActionInjected>
-
-/**
- * Open the Session header's workspace through the shared directory control.
- * @param props - Session state, installed catalog, and launch operations.
- * @returns the directory control, or null without a workspace.
- */
-export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element | null {
-  const cwd = props.useSessions(state => state.byId[props.sessionId]?.cwd)
-  return cwd === undefined || cwd === '' ? null : <DirectoryOpenInAppAction {...props} absolutePath={cwd} />
-}
+  & { absolutePath: string }
 
 /**
  * Adapt the installed directory catalog to the shared opening control.
  * @param props - displayed directory, installed catalog, and launch operations.
  * @returns the shared control, or null without an eligible application.
  */
-export function DirectoryOpenInAppAction(props: DirectoryOpenInAppActionProps): React.JSX.Element | null {
+export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element | null {
   const { absolutePath, useOpenInAppApps, useOpenInAppChoice, t } = props
   const available = useOpenInAppApps(apps => apps)
   const choice = useOpenInAppChoice(id => id)

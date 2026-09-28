@@ -1497,7 +1497,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
+      'client-ui-open-in-app SessionOpenInAppAction id \'open-in-app\'',
       'client-ui-schedule ScheduleCatalogAction id \'schedule-catalog\'',
       'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
     ],
@@ -3503,7 +3503,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.right.pane.tab\' (client-ui-sidebar-files), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-open-in-app DirectoryOpenInAppAction id \'open-in-app\'',
+      'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.right.tab.files.actions\', () => ctx.slots.register(\n      { name: \'sidebar.right.tab.files.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
