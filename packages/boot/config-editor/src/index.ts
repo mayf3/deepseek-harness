@@ -49,12 +49,16 @@ export class ConfigEditor extends Service {
   configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }> {
     const profile = this.ownerContext.profileContext
     const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
+    const entries = this.entries()
+    // An own config key can replace inherited config even when its value is undefined.
     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
     const composed = new Map<string, EntryOptions>()
-    for (const row of flatten(composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))) {
-      if (!composed.has(row.id)) composed.set(row.id, row)
+    if (entries.some(entry => !overridden.has(entry.options.id))) {
+      for (const row of flatten(composeEntries([...loaded.layers.map(layer => layer.patches), loaded.patches]))) {
+        if (!composed.has(row.id)) composed.set(row.id, row)
+      }
     }
-    return this.entries().map(entry => ({
+    return entries.map(entry => ({
       entry,
       inherited: overridden.has(entry.options.id)
         ? this.inherited(entry, loaded)

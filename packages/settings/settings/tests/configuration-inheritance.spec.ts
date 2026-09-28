@@ -1,4 +1,6 @@
-/** Shared profile composition preserves per-entry inheritance and detached results. */
+/** Shared profile composition preserves per-entry inheritance and detached results.
+ * Work-count spies require Vite-transformed source exports; native ESM namespaces are immutable.
+ */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -63,18 +65,18 @@ it('recomposes unoverridden entries after bundle changes and returns empty confi
   expect(read().find(row => row.entry.options.id === 'second')!.inherited).toEqual({ ordinary: 'new bundle value' })
 })
 
-it.each([0, 13])('bounds composition work for 190 entries with %i config overrides', async (overrideCount) => {
+it.each([0, 13, 190])('bounds composition work for 190 entries with %i config overrides', async (overrideCount) => {
   const { ctx, profile, start } = await configurationFixture({ hmr: false })
   await ctx.fiber.dispose()
   const bundlePath = join(profile.dir, 'node_modules', 'test-bundle', 'cordis.patch.yml')
-  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: object[] }>
+  const patches = JSON.parse(readFileSync(bundlePath, 'utf8')) as Array<{ insert: Array<{ id: string; config?: object }> }>
   const entries = Array.from({ length: 185 }, (_, index) => ({
     id: `generated-${index}`, name: 'cordis:probe', config: { ordinary: `value-${index}` },
   }))
   patches[0]!.insert.push(...entries)
   writeFileSync(bundlePath, JSON.stringify(patches))
-  writeFileSync(profile.patchPath, JSON.stringify(entries.slice(0, overrideCount).map(entry => ({
-    id: entry.id, config: { ...entry.config, count: 7 },
+  writeFileSync(profile.patchPath, JSON.stringify(patches[0]!.insert.slice(0, overrideCount).map(entry => ({
+    id: entry.id, config: entry.config ?? {},
   }))))
   const restored = await start()
   const compose = vi.spyOn(appBoot, 'composeEntries')
@@ -82,7 +84,7 @@ it.each([0, 13])('bounds composition work for 190 entries with %i config overrid
     const rows = restored.configEditor.configuration()
     expect(rows).toHaveLength(190)
     expect(rows.find(row => row.entry.options.id === 'generated-0')!.inherited).toEqual({ ordinary: 'value-0' })
-    expect(compose).toHaveBeenCalledTimes(overrideCount + 1)
+    expect(compose).toHaveBeenCalledTimes(overrideCount + Number(overrideCount < rows.length))
   } finally {
     compose.mockRestore()
   }
