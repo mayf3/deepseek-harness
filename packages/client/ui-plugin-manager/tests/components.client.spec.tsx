@@ -504,10 +504,10 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
+  it('renders bundle icons with decode recovery and generic artwork for ordinary rows', () => {
     const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
     const updatedIcon = 'data:image/png;base64,cG5n'
-    const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
+    const bundle = pkg({ meta: { icon }, rows: [row(), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
     const { set } = renderTab({ packages: [bundle] }, { rows: new Set(['dsh-better-sidebar#sidebar']) })
     const image = () => document.querySelector<HTMLImageElement>('[data-plugin-package] img, [data-plugin-detail] img')!
     expect(image().getAttribute('src')).toBe(icon)
@@ -522,18 +522,11 @@ describe('PluginManagerPage', () => {
     expect(image().getAttribute('src')).toBe(icon)
     fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
     expect(image().getAttribute('src')).toBe(icon)
-    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
-    expect(rowImage.getAttribute('src')).toBe(icon)
-    expect(rowImage.width).toBe(30)
-    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
-    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
-    fireEvent.error(rowImage)
     expect(document.querySelector('[data-plugin-row] img')).toBeNull()
     expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
-    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
-    expect(detailImage.getAttribute('src')).toBe(icon)
-    expect(detailImage.width).toBe(36)
+    expect(document.querySelector('[data-plugin-row-detail] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row-detail] svg')).not.toBeNull()
   })
 
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {
@@ -679,13 +672,11 @@ describe('PluginManagerPage', () => {
   })
 
   it('translates row text, searches current copy and technical identities, and keeps configuration keys unchanged', () => {
-    const error = 'locale/zh.json: invalid description'
     const localized = row({
       moduleName: '@acme/dsh-sidebar-widget',
       meta: {
         title: { en: 'Sidebar component', zh: '导航组件' },
         description: { en: 'Sidebar navigation', zh: '侧边导航' },
-        error,
       },
     })
     const rows = [localized, ...Array.from({ length: 10 }, (_, index) => row({
@@ -707,7 +698,6 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText('sidebar')).toBeTruthy()
     expect(screen.getByText('@acme/dsh-sidebar-widget')).toBeTruthy()
     expect(screen.getByText('侧边导航')).toBeTruthy()
-    expect(screen.getByText(zh.metadataError.replace('{error}', error))).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh.partToggle.replace('{name}', '导航组件') })
     expect(toggle).toHaveProperty('disabled', false)
     fireEvent.click(toggle)
@@ -728,7 +718,6 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText('侧边导航')).toBeTruthy()
     expect(screen.getByText('sidebar')).toBeTruthy()
     expect(screen.getByText('@acme/dsh-sidebar-widget')).toBeTruthy()
-    expect(screen.getByText(zh.metadataError.replace('{error}', error))).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh.backToPackage.replace('{name}', '个人工具') }))
     expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('个人工具')
   })

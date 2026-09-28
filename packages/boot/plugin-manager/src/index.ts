@@ -12,7 +12,7 @@ import z from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
-  readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
+  readLoadedPluginMeta, readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
   reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
   evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
@@ -633,23 +633,21 @@ export class PluginManager extends TypertRemoteService {
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     const patches: PatchOptions[] = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
-    const live = new Map<string, { entryId: PluginEntryId; baseUrl: string | undefined }>()
+    const live = new Map<string, { entryId: PluginEntryId; moduleName: string; meta: ReturnType<typeof readLoadedPluginMeta> }>()
     for (const entry of this.ctx.loader.entries()) {
+      if (entry.parent.tree.ctx.fiber.entry?.id !== 'include') continue
       /* v8 ignore next -- the Loader gives every entry an id before it is listed */
       if (typeof entry.options.id === 'string') live.set(entry.options.id, {
-        entryId: pluginEntryId(entry.id), baseUrl: entry.parent.tree.ctx.baseUrl,
+        entryId: pluginEntryId(entry.id), moduleName: entry.options.name, meta: readLoadedPluginMeta(entry.plugin),
       })
     }
     const rows: BundleRowInfo[] = []
-    const packages = this.ctx.get('pluginPackages')
     for (const row of flatten(composeEntries([patches.filter(item => item.insert !== undefined)]))) {
       if (typeof row.id !== 'string' || typeof row.name !== 'string') continue
-      const active = live.get(row.id)
-      const entryId = active?.entryId
-      const base = active?.baseUrl ?? pathToFileURL(join(dir, 'package.json')).href
-      const meta = packages?.metaOf(row.name, base)
+      const entry = live.get(row.id)
       rows.push({ rowId: row.id, moduleName: row.name,
-        ...entryId === undefined ? {} : { entryId }, ...meta === undefined ? {} : { meta } })
+        ...entry === undefined ? {} : { entryId: entry.entryId },
+        ...entry?.moduleName !== row.name || entry.meta === undefined ? {} : { meta: entry.meta } })
     }
     const declared = new Set(rows.map(row => row.rowId))
     const overrides = [...new Set(patches.flatMap(item =>

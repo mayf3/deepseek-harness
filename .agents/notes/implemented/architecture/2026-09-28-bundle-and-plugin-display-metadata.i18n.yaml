@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-09-28-bundle-and-plugin-display-metadata.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-28-bundle-and-plugin-display-metadata.md
+/agent-note-bundle-and-plugin-display-metadata:
+  en: b3f0a481c93acf93
+  zh: 57e0fa9916be587c
+/agent-note-bundle-and-plugin-display-metadata/problem:
+  en: ee48e0ca6ba41a43
+  zh: 0379f5fc07cf0868
+/agent-note-bundle-and-plugin-display-metadata/decision:
+  en: ba0a80d999293a66
+  zh: 16fc59cdb0ed8402
+/agent-note-bundle-and-plugin-display-metadata/alternatives-considered:
+  en: fd988b4e7087367e
+  zh: 3f95780616902ddc
+/agent-note-bundle-and-plugin-display-metadata/verification:
+  en: 8697240eaab4f194
+  zh: 63be8785d292217b
+/agent-note-bundle-and-plugin-display-metadata/consequences:
+  en: 3c6dd2f752f9d68f
+  zh: 668e0332a4046bd7

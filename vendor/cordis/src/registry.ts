@@ -327,7 +327,7 @@ export class RegistryService {
       this._internal.set(callback, runtime)
     }
 
-    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
+    const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack, plugin)
     const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
     wrapped.then = (onFulfilled, onRejected) => {
       return fiber.await().then(onFulfilled, onRejected)

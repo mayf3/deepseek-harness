@@ -166,15 +166,12 @@ describe('PluginInventorySettingsTab', () => {
   })
 
   it('localizes global and preset metadata at render time while preserving identities and query state', async () => {
-    const globalError = 'locale/zh.json: invalid title'
-    const presetError = 'locale/fr.json: invalid description'
     const snapshot: Snapshot = {
       entries: [{
         entryId: 'include:global-navigation' as PluginEntryId, moduleName: '@acme/navigation', enabled: true, fiberPhase: 'active',
         meta: {
           title: { en: 'Navigation', zh: '导航' },
           description: { en: 'Global navigation controls', zh: '全局导航控件' },
-          error: globalError,
         },
       }],
       agentPresets: [{
@@ -184,7 +181,6 @@ describe('PluginInventorySettingsTab', () => {
           meta: {
             title: { en: 'Session runner', zh: '会话执行器' },
             description: { en: 'Run per session', zh: '运行会话命令' },
-            error: presetError,
           },
         }],
       }],
@@ -198,8 +194,6 @@ describe('PluginInventorySettingsTab', () => {
     const preset = screen.getByRole('button', { name: 'Session runner, include:preset-runner, Enabled' })
     expect(document.getElementById(global.getAttribute('aria-describedby')!)?.textContent).toBe('Global navigation controls')
     expect(document.getElementById(preset.getAttribute('aria-describedby')!)?.textContent).toBe('Run per session')
-    expect(screen.getByText(en.metadataError.replace('{error}', globalError))).toBeTruthy()
-    expect(screen.getByText(en.metadataError.replace('{error}', presetError))).toBeTruthy()
     expect(global.closest('li')?.getAttribute('data-failed')).toBeNull()
     fireEvent.click(global)
     expect(screen.getByText(en.moduleLabel).nextElementSibling?.textContent).toBe('@acme/navigation')
@@ -213,7 +207,6 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByRole('button', { name: '会话执行器, include:preset-runner, 已启用' })).toBeTruthy()
     expect(screen.getByText('全局导航控件')).toBeTruthy()
     expect(screen.getByText('运行会话命令')).toBeTruthy()
-    expect(screen.getByText(zh.metadataError.replace('{error}', presetError))).toBeTruthy()
     expect(view.container.querySelector('[data-loader-entry]')?.textContent).toBe('include:preset-runner')
     const search = screen.getByRole('searchbox', { name: zh.search })
     for (const query of ['导航', '全局导航控件', '@acme/navigation', 'include:global-navigation']) {
@@ -291,16 +284,13 @@ describe('PluginInventorySettingsTab', () => {
     expect(list).toHaveBeenCalledOnce()
   })
 
-  it('keeps metadata-error-only rows inspectable by their full module specifier', async () => {
-    const error = 'locale/zh.json: invalid title'
+  it('keeps disabled rows without metadata inspectable by their full module specifier', async () => {
     await renderReady({
       entries: [{
         entryId: 'include:legacy' as PluginEntryId, moduleName: '@acme/dsh-legacy', enabled: false, fiberPhase: null,
-        meta: { error },
       }],
     })
     fireEvent.click(globalToggle())
-    expect(screen.getByText(en.metadataError.replace('{error}', error))).toBeTruthy()
     const card = screen.getByRole('button', { name: 'legacy, Disabled' })
     expect(card).toHaveProperty('disabled', false)
     expect(card.closest('li')?.getAttribute('data-failed')).toBeNull()

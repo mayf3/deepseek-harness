@@ -27,6 +27,7 @@ export {
 import { prepareProfilePatches } from './compatibility-preflight.ts'
 export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
 export { readPluginMeta } from './package-meta.ts'
+export { readLoadedPluginMeta, type LoadedPluginMeta } from './loaded-plugin-meta.ts'
 export { generateConfigSchema, type ConfigSchemaDump, type NativeConfigSchema } from './config-schema/index.ts'
 export { createConfigProjector, LOADER_EXPRESSION_SCHEMA, type ConfigProjection } from './config-schema/projector.ts'
 export { isNativeConfigSchema } from './config-schema/native.ts'

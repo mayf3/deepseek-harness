@@ -122,13 +122,12 @@ function presetLabel(preset: AgentPresetGroup, t: Translate, presetName: (preset
 
 /** One expandable plugin card; the caller owns the trailing status content. */
 function PluginCard({
-  rowKey, moduleName, title, description, metadataError, entryId, trailing, ariaLabel, failed, expanded, onToggle, children,
+  rowKey, moduleName, title, description, entryId, trailing, ariaLabel, failed, expanded, onToggle, children,
 }: {
   readonly rowKey: string
   readonly moduleName: string
   readonly title: string
   readonly description: string | undefined
-  readonly metadataError: string | undefined
   readonly entryId: string | null
   readonly trailing: ReactNode
   readonly ariaLabel: string
@@ -171,7 +170,6 @@ function PluginCard({
           </span>
         ) : null}
       </button>
-      {metadataError === undefined ? null : <p className={css.brokenNote} role="status" data-package-meta-error>{metadataError}</p>}
       {open ? <div className={css.cardDetails} id={detailId}>{children}</div> : null}
     </li>
   )
@@ -342,7 +340,6 @@ export function PluginInventorySettingsTab(
         moduleName={row.moduleName}
         title={title}
         description={description}
-        metadataError={row.meta?.error === undefined ? undefined : t('metadataError', { error: row.meta.error })}
         entryId={row.entryId}
         failed={failed}
         expanded={expanded}
@@ -391,7 +388,6 @@ export function PluginInventorySettingsTab(
         moduleName={entry.moduleName}
         title={title}
         description={description}
-        metadataError={entry.meta?.error === undefined ? undefined : t('metadataError', { error: entry.meta.error })}
         entryId={entry.entryId}
         failed={failed}
         expanded={expanded}

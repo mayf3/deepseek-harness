@@ -1,25 +1,28 @@
 - button "返回插件列表": 插件列表
 - button "卸载 @fixture/bundle": 卸载
-- switch "启用 @fixture/bundle"
+- switch "启用 @fixture/bundle" [checked]
 - heading "@fixture/bundle" [level=3]
 - text: v0.0.1
 - paragraph:
   - code: "@fixture/bundle"
 - paragraph: Registry description for the fixture bundle.
 - heading "包含的组件" [level=4]
-- text: 共 3 个 · 3 已停用
+- text: 共 3 个 · 3 运行中
 - list:
   - listitem:
-    - text: "@fixture/bundle Registry description for the fixture bundle."
+    - text: "@fixture/bundle"
     - code: fixture-row
-    - text: 已关闭
+    - text: 运行中
+    - switch "启用组件 @fixture/bundle" [checked]
   - listitem:
     - text: 文件搜索 搜索工作区中的文件。
     - code: fixture-search
     - code: "@fixture/bundle/search"
-    - text: 已关闭
+    - text: 运行中
+    - switch "启用组件 文件搜索" [checked]
   - listitem:
     - text: 代码审查 审查工作区中的改动。
     - code: fixture-review
     - code: "@fixture/bundle/review"
-    - text: 已关闭
+    - text: 运行中
+    - switch "启用组件 代码审查" [checked]

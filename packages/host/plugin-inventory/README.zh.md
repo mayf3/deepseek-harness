@@ -31,7 +31,7 @@ kind: "package-reference"
 
 每一行是一个非组 Loader 条目：其条目 id、精确模块标识、有效启用状态（含被禁用的祖先组）与当前根 Fiber 阶段。`pending` 表示条目等待加载，`loading` 表示正在读取，`active` 表示正在运行，`failed` 表示其 fiber 被拒绝，`unloading` 表示正在拆除；`null` 表示完全不存在存活的根 Fiber。结构性的 group 行会被跳过。
 
-Loader 行与预设行可以携带可选的 `meta`，其中包含标题、描述或元信息诊断。Host 返回可用翻译与字面回退文本，由 Client 选择语言。元信息诊断不改变启停状态或 fiber 阶段。
+已加载的插件行可以携带可选的 `meta`，包含插件对象提供的标题与描述。函数插件的命名空间导出 `meta`；默认导出的服务类声明静态 `meta`。Client 选择语言。只有组合包拥有自定义图标。未加载的行使用模块名。
 
 ### 每个预设的组合
 
@@ -53,7 +53,7 @@ Loader 行与预设行可以携带可选的 `meta`，其中包含标题、描述
 
 网关是一层没有第二个生命周期真源的直接投影：每次 `list()` 调用都读取 `ctx.loader.entries()`，并把每个非组条目映射为公共行。Cordis 内部的 `plugin/status` 事件已经维护了 `Entry.fiber` 与 `Fiber.state`，因此再加缓存只会多出一个需要同步的生命周期真源。agent preset roster 是每次调用经 `ctx.get('agentPresets')` 解析的可选伙伴：预设组合读取由它的 `compositionInventory()` 负责，本包把根 Fiber 状态映射到公共阶段。
 
-展示元信息来自可选的 `pluginPackages` 服务：Loader 行使用其所属树的解析基准，预设行使用网关上下文的基准。服务或对应基准不存在时，`meta` 缺席。读取元信息不会加载或激活插件。
+展示元信息从已加载的插件对象投影。清单读取不会导入模块，也不读取插件 manifest 或 locale 文件；因此，仅有声明的预设行不携带展示元信息。
 
 ### 阶段映射
 

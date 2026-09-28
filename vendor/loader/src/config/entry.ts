@@ -1,4 +1,4 @@
-import { Context, Fiber, FiberState, Inject, resolveConfig } from '@deepseek-ai/cordis'
+import { Context, Fiber, FiberState, Inject, resolveConfig, type Plugin } from '@deepseek-ai/cordis'
 import { deepEqual, isNullable, updateVolatile, volatileEntries, type Volatile } from '@deepseek-ai/cosmokit'
 import { Loader } from '../index.ts'
 import { EntryGroup } from './group.ts'
@@ -45,6 +45,11 @@ export class Entry {
 
   public ctx: Context
   public fiber?: Fiber
+
+  /** Already-loaded plugin; absent when the root fiber is absent or disposed. */
+  get plugin(): Plugin | undefined {
+    return this.fiber?.uid ? this.fiber.plugin : undefined
+  }
   public parent!: EntryGroup
   // safety: call `entry.update()` immediately after creating an entry
   public options = {} as EntryOptions

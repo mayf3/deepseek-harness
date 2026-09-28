@@ -1,24 +1,28 @@
 - button "Back to plugins": Plugins
 - button "Uninstall @fixture/bundle": Uninstall
-- switch "Enable @fixture/bundle"
+- switch "Enable @fixture/bundle" [checked]
 - heading "@fixture/bundle" [level=3]
 - text: v0.0.1
 - paragraph:
   - code: "@fixture/bundle"
 - paragraph: Registry description for the fixture bundle.
 - heading "Components" [level=4]
-- text: 3 total · 3 off
+- text: 3 total · 3 running
 - list:
   - listitem:
-    - text: "@fixture/bundle Registry description for the fixture bundle."
+    - text: "@fixture/bundle"
     - code: fixture-row
-    - text: "Off"
+    - text: Running
+    - switch "Enable component @fixture/bundle" [checked]
   - listitem:
     - text: File Search Search package introduction.
     - code: fixture-search
     - code: "@fixture/bundle/search"
-    - text: "Off"
+    - text: Running
+    - switch "Enable component File Search" [checked]
   - listitem:
-    - text: "@fixture/bundle/review"
+    - text: Code Review Review workspace changes.
     - code: fixture-review
-    - text: "Off"
+    - code: "@fixture/bundle/review"
+    - text: Running
+    - switch "Enable component Code Review" [checked]

@@ -225,6 +225,8 @@ export class Fiber {
     public inject: Dict<any>,
     public runtime: Plugin.Runtime | null,
     getOuterStack: () => string[],
+    /** Original plugin object for this fiber, including module namespace exports. */
+    public readonly plugin?: Plugin,
   ) {
     this._config = config
     const collect = (dispose: Disposable) => {

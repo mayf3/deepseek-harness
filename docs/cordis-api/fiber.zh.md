@@ -36,7 +36,7 @@ effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
 
 **返回**一个用于撤销该作用的清理函数，并在清理完成后结算。
 
-[源码](../../vendor/cordis/src/fiber.ts#L415)
+[源码](../../vendor/cordis/src/fiber.ts#L417)
 
 ### ctx.fiber
 
@@ -143,7 +143,7 @@ get name()
 
 插件的显示名称，继承自最近的具名祖先；如果不存在，则为 `'root'`。
 
-[源码](../../vendor/cordis/src/fiber.ts#L336)
+[源码](../../vendor/cordis/src/fiber.ts#L338)
 
 ### fiber.assertActive()
 
@@ -161,7 +161,7 @@ assertActive()
 
 **返回**：fiber 仍处于活动状态时不返回任何内容。
 
-[源码](../../vendor/cordis/src/fiber.ts#L351)
+[源码](../../vendor/cordis/src/fiber.ts#L353)
 
 ### fiber.effect(execute, label?)
 
@@ -192,7 +192,7 @@ effect(execute: () => Effect, label?: string): AsyncDisposable<Promise<void>>
 
 **返回**一个用于撤销该作用的清理函数，并在清理完成后结算。
 
-[源码](../../vendor/cordis/src/fiber.ts#L415)
+[源码](../../vendor/cordis/src/fiber.ts#L417)
 
 ### fiber.getEffects()
 
@@ -209,7 +209,7 @@ getEffects()
 
 **返回**：每个带标签的活动作用对应一棵 `EffectMeta` 树。
 
-[源码](../../vendor/cordis/src/fiber.ts#L568)
+[源码](../../vendor/cordis/src/fiber.ts#L570)
 
 ### fiber.await()
 
@@ -227,7 +227,7 @@ async await()
 
 **返回**：进入稳定状态后的此 fiber。
 
-[源码](../../vendor/cordis/src/fiber.ts#L704)
+[源码](../../vendor/cordis/src/fiber.ts#L706)
 
 ### fiber.restart()
 
@@ -245,7 +245,7 @@ dispose 此插件，并立即使用其当前配置重新加载。
 
 **返回**一个在重新加载完成后兑现的 promise。
 
-[源码](../../vendor/cordis/src/fiber.ts#L718)
+[源码](../../vendor/cordis/src/fiber.ts#L720)
 
 ### fiber.update(config, noSave?)
 
@@ -273,7 +273,7 @@ update(config: any, noSave = false)
 
 **返回**无返回值；重启由 `internal/update` waterfall 执行。
 
-[源码](../../vendor/cordis/src/fiber.ts#L736)
+[源码](../../vendor/cordis/src/fiber.ts#L738)
 
 ## Effect
 

@@ -1,6 +1,24 @@
 import { expect, it } from 'vitest'
-import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
-import { definitionComposition } from '../src/composition-inventory.ts'
+import { Context } from '@deepseek-ai/cordis'
+import Loader, { evaluate } from '@deepseek-ai/cordis-plugin-loader'
+import { definitionComposition, mountedCompositionRows } from '../src/composition-inventory.ts'
+
+it('reads mounted preset metadata from each live entry and omits disabled metadata', async () => {
+  const ctx = new Context()
+  try {
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.named = { meta: { title: 'Preset child' }, apply() {} }
+    await ctx.loader.root.update([
+      { id: 'live', name: 'cordis:named' },
+      { id: 'off', name: 'cordis:named', disabled: true },
+    ])
+    const rows = mountedCompositionRows(ctx.loader)
+    expect(rows[0]?.meta).toEqual({ title: 'Preset child' })
+    expect(rows[1]?.meta).toBeUndefined()
+  } finally {
+    await ctx.fiber.dispose()
+  }
+})
 
 it('reports evaluated and unresolved conditions with ancestor enablement', () => {
   const js = (code: string) => ({ __jsExpr: code })

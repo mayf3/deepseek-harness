@@ -62,11 +62,11 @@ it.each(['v1', 'v2'] as const)('replaces a %s module and retains the latest Load
   const { ctx, module, imports, reload } = await fixture(version)
   const mounted: string[] = []
   const disposed: string[] = []
-  const before = { apply(ctx: Context, config: { value: string }) {
+  const before = { meta: { title: 'Before' }, apply(ctx: Context, config: { value: string }) {
     mounted.push(`before:${config.value}`)
     ctx.effect(() => () => { disposed.push('before') })
   } }
-  const after = { apply(ctx: Context, config: { value: string }) {
+  const after = { meta: { title: 'After' }, apply(ctx: Context, config: { value: string }) {
     mounted.push(`after:${config.value}`)
     ctx.effect(() => () => { disposed.push('after') })
   } }
@@ -80,6 +80,7 @@ it.each(['v1', 'v2'] as const)('replaces a %s module and retains the latest Load
   ctx.on('hmr/reload', event)
   reload.stashed.add(job.url)
   await reload.partialReload()
+  expect(entry.plugin).toBe(after)
   expect(mounted.at(-1)).toBe('after:current')
   expect(disposed).toEqual(['before', 'before'])
   expect(event).toHaveBeenCalledOnce()
@@ -215,6 +216,7 @@ it('rejects failed replacement activation and restores the prior plugin', async 
   expect(cache.get(job.url)).toBe(job)
   expect(mounted).toEqual(['original', 'original'])
   expect(entry.fiber?.runtime?.callback).toBe(original.apply)
+  expect(entry.plugin).toBe(original)
   expect(event).not.toHaveBeenCalled()
 })
 

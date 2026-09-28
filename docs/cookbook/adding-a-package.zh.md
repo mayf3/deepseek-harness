@@ -14,7 +14,7 @@ packages/<group>/<pkg>/
                    # ../../../vendor/cordis (+ ../../../vendor/schemastery if
                    # you use Config, + ../../<group>/<dep> for each dsh dep)
   src/index.ts     # service default export or plugin (name/inject/apply/Config)
-  locale/en.json   # optional display metadata: meta.title and meta.description
+  locale/en.json   # optional bundle display text: meta.title and meta.description
   locale/zh.json   # translations using the same fields
   README.md        # service API, events, extension points, design notes,
                    # + gated Model Experience context blocks or short form
@@ -111,9 +111,20 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 
 <a id="plugin-display-metadata"></a>
 
-## 5. 添加可选的插件展示元信息
+## 5. 添加可选的展示元信息
 
-对于 npm 包插件，在 `locale/en.json` 中定义标题和描述。其他语言文件（如 `locale/zh.json`）使用相同字段：
+普通函数插件从插件命名空间导出 `meta`；默认导出的服务类使用静态 `meta` 属性。每个可选字段可以是字面字符串，也可以是包含英文回退值的语言映射：
+
+```typescript
+export const meta = {
+  title: { en: 'File Search', zh: '文件搜索' },
+  description: 'Search workspace files.',
+}
+```
+
+清单仅从已加载的插件读取此属性，包括运行中的预设组合。它不会为了展示而导入插件。未加载的插件使用模块名。普通插件没有自定义图标，展示元信息也不使用包 manifest 或 locale 资源。
+
+对于组合包，在 `locale/en.json` 中定义标题和描述。其他语言文件（如 `locale/zh.json`）使用相同字段：
 
 ```json
 {
@@ -136,7 +147,7 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 }
 ```
 
-语言文件统一放在 `locale/`，并保留 `en.json` 作为发现入口。字段可选，填写时必须是非空字符串。文件或字段缺失时允许回退，JSON 损坏或字段无效时显示单插件诊断。
+语言文件统一放在 `locale/`，并保留 `en.json` 作为发现入口。字段可选，填写时必须是非空字符串。文件或字段缺失时允许回退，JSON 损坏或字段无效时显示单组合包诊断。
 
 各字段先独立回退，再按页面规则格式化技术名称；回退优先经过现有 locale 语言链：
 
@@ -145,9 +156,9 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 
 导出 `<包名>/locale/en.json` 供 locale 查询；需要包字段回退或声明图标时，开放 `<包名>/package.json`。
 
-要在组合包卡片、详情和组件行显示图片，在该导出清单顶层设置 `"icon": "./icon.svg"`，并将图片加入 `files`。路径相对于声明清单所在目录，独立导出的插件清单也遵循此规则。支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP 文件。绝对路径、URL、目录外路径，以及解析到目录外的符号链接均被拒绝。图片不需要单独导出，且必须自包含；SVG 作为图片渲染，不作为内联 HTML。Host 返回 data URL，不激活插件。声明无效或文件不可读时，显示元信息诊断并保留有效文本；图片缺失或无法解码时使用面板的默认插画。
+要在组合包卡片和详情显示图片，在该导出清单顶层设置 `"icon": "./icon.svg"`，并将图片加入 `files`。路径相对于组合包清单所在目录。支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP 文件。绝对路径、URL、目录外路径，以及解析到目录外的符号链接均被拒绝。图片不需要单独导出，且必须自包含；SVG 作为图片渲染，不作为内联 HTML。Host 返回 data URL，不激活插件。声明无效或文件不可读时，显示元信息诊断并保留有效文本；图片缺失或无法解码时使用面板的默认插画。
 
-已安装 bundle 的卡片和详情、组件列表与配置详情、设置中的插件清单都展示这些元信息，包括禁用插件和预设内插件。读取时不激活插件。
+组合包卡片和详情展示这些资源元信息，包括已禁用的组合包。组件列表、插件配置详情与设置页则使用已加载插件的 `meta`。两种读取都不会激活插件。
 
 仅设置页会移除字面包名和模块名回退值的 npm scope 与 Cordis/DSH 前缀；插件管理页保留完整名称。locale 标题和描述保持原样。插件没有展示描述时，行配置页可以使用注册组件的摘要。
 
@@ -158,7 +169,7 @@ Install 界面仍使用 `pnpm view` 返回的 npm registry 信息，不用 local
 1. 在仓库根目录运行 `pnpm run verify-package-meta`，检查字段、资源 exports 和发布文件覆盖。
 2. 对已安装插件，在适用的插件管理页与设置条目中切换中英文，检查标题、描述、逐字段回退，以及仅设置页使用的技术短名。
 
-资源归属与不激活插件的原因见[插件元信息 Agent Note](../../.agents/notes/implemented/architecture/2026-09-18-localized-package-metadata.zh.md)。
+资源归属与不激活插件的原因见[插件元信息 Agent Note](../../.agents/notes/implemented/architecture/2026-09-28-bundle-and-plugin-display-metadata.zh.md)。
 
 ## 6. 验证
 
