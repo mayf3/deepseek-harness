@@ -581,6 +581,9 @@ exit $LASTEXITCODE
     if (explicitChild) icacls(child, '/grant', '*S-1-15-2-4-3-2-1:(OI)(CI)(RX)')
     const paths = [parent, child, leaf]
     const before = paths.map(sddlOf)
+    // The fixture's owner is the host token's default owner, which is not the invoking user on an
+    // elevated runner; the repair must preserve whatever owner the fixture has.
+    const ownersBefore = paths.map(ownerOf)
     const run = runScript(['-Path', leaf, '-AllowRoot', scratch, '-Out', outDir, '-Fix'])
     expect(run.code, run.output).toBe(0)
     const entries = reports(run)
@@ -589,8 +592,8 @@ exit $LASTEXITCODE
     expect(entries.filter(entry => entry.kind === 'verification' && entry.operation === 'fix').map(entry => entry.path)).toEqual([leaf, child, parent])
     for (const path of paths) {
       expect(aclLines(path).join('\n')).not.toContain('S-1-15-2-')
-      expect(ownerOf(path)).toBe(meSid)
     }
+    expect(paths.map(ownerOf)).toEqual(ownersBefore)
     const commands = entries.at(-1)!.details.rollbackCommands as string[]
     for (const command of commands) expect(runPowerShell(['-Command', command]).code).toBe(0)
     expect(paths.map(sddlOf)).toEqual(before)
