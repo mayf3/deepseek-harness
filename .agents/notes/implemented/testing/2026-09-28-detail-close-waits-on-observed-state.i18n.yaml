@@ -6,14 +6,17 @@
   en: ffb94d33eb1c162c
   zh: 32845a4113ab27c1
 /agent-note-the-task-detail-close-waits-on-the-observed-state/problem:
-  en: 824fc78e18bfc576
-  zh: 26a24d5b2e0ae953
+  en: 0a3fa08f242a0f7e
+  zh: fb8c39531405952b
 /agent-note-the-task-detail-close-waits-on-the-observed-state/decision:
-  en: 60526246262bec75
-  zh: 7938b252e8734935
+  en: 3e4c20e32e3e9445
+  zh: 157750a7e1f1fd59
 /agent-note-the-task-detail-close-waits-on-the-observed-state/alternatives-considered:
-  en: 84790efb006dda93
-  zh: 1ee2ca953457b732
+  en: 8b32159dc9b5d2a6
+  zh: 407061ebe4f81fdb
 /agent-note-the-task-detail-close-waits-on-the-observed-state/consequences:
-  en: 4c9e3aeb93686221
-  zh: 399cd871ce3c46fd
+  en: c0993f90f7af9c41
+  zh: 6a877cb1287000e3
+/agent-note-the-task-detail-close-waits-on-the-observed-state/related:
+  en: f35c1fe1c2ff83b3
+  zh: 56a3357ab5a67822
