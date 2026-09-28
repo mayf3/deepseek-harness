@@ -180,6 +180,12 @@ describe('userQuestions projection fold', () => {
     expect(foldUserQuestions([runCodeHeader, dispatch])).toEqual({
       active: [{ callId: subCallId, questions, state: 'continued' }], settled: [],
     })
+    expect(foldUserQuestions([runCodeHeader, dispatch, dispatch])).toEqual({
+      active: [{ callId: subCallId, questions, state: 'continued' }], settled: [],
+    })
+    expect(foldUserQuestions([runCodeHeader, event(2, 'tool/ptc-dispatch', {
+      ...dispatchData, arguments: { questions: 'invalid' },
+    })])).toEqual(empty)
     expect(foldUserQuestions([runCodeHeader, event(2, 'tool/ptc-dispatch', { ...dispatchData, isError: true })])).toEqual(empty)
     expect(foldUserQuestions([runCodeHeader, event(2, 'tool/ptc-dispatch', {
       ...dispatchData, content: [{ type: 'text', text: '{"answers":[]}' }],
