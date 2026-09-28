@@ -86,9 +86,13 @@ export function useFloatGestures(state: LayoutState, intents: DockIntents) {
     // The press stops here: the panel's own press-to-focus would record a focus
     // entry before the drag's, and the release below decides which one it is.
     event.stopPropagation()
-    const panel = event.currentTarget.closest('[data-dockkit-float]') as HTMLElement
-    // Window chrome can push a saved rectangle below its recorded top.
-    const rect = { ...floatRect(getPane(state, paneId)), y: panel.getBoundingClientRect().y }
+    const root = document.documentElement
+    const windows = root.hasAttribute('data-windows-titlebar')
+    // Desktop publishes the caption height in pixels on the root's inline style.
+    const caption = windows && !root.hasAttribute('data-fullscreen')
+      ? Number.parseFloat(root.style.getPropertyValue('--dsh-windows-titlebar-height')) : 0
+    const saved = floatRect(getPane(state, paneId))
+    const rect = { ...saved, y: Math.max(saved.y, windows ? caption + 20 : 0) }
     const start: FloatDrag = { mode, originX: event.clientX, originY: event.clientY, rect }
     begin(event.currentTarget, event.pointerId, {
       move: (moved) => { setPreview({ paneId, rect: draggedRect(start, moved.clientX, moved.clientY) }) },

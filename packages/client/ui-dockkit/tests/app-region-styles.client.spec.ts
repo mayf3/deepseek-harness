@@ -25,10 +25,10 @@ const regionRules = [...css.matchAll(/(?<sel>[^{}]+)\{(?<body>[^{}]*)\}/g)]
     /-webkit-app-region:\s*([^;]+);/.exec(body)?.[1]?.trim(),
   ] as const)
 
-it('keeps Windows floating headers 8px below the caption, including restored positions', () => {
+it('keeps Windows floating headers 20px below the caption, including restored positions', () => {
   const captionRule = css.split(':global(html[data-windows-titlebar]) .float')[1]?.split('}')[0]
-  expect(captionRule).toContain('--dsh-dockkit-float-top: calc(var(--dsh-windows-titlebar-height) + 8px);')
-  expect(css).toMatch(/:global\(html\[data-windows-titlebar\]\[data-fullscreen\]\) \.float\s*\{\s*--dsh-dockkit-float-top: 8px;/)
+  expect(captionRule).toContain('--dsh-dockkit-float-top: calc(var(--dsh-windows-titlebar-height) + 20px);')
+  expect(css).toMatch(/:global\(html\[data-windows-titlebar\]\[data-fullscreen\]\) \.float\s*\{\s*--dsh-dockkit-float-top: 20px;/)
 })
 
 describe('macOS app-region ownership', () => {

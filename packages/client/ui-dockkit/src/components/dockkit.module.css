@@ -740,11 +740,11 @@
 }
 
 :global(html[data-windows-titlebar]) .float {
-  --dsh-dockkit-float-top: calc(var(--dsh-windows-titlebar-height) + 8px);
+  --dsh-dockkit-float-top: calc(var(--dsh-windows-titlebar-height) + 20px);
 }
 
 :global(html[data-windows-titlebar][data-fullscreen]) .float {
-  --dsh-dockkit-float-top: 8px;
+  --dsh-dockkit-float-top: 20px;
 }
 
 .float {

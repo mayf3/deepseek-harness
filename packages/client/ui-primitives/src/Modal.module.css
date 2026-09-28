@@ -14,6 +14,10 @@
   padding: max(24px, var(--dsh-frame-top-clearance, 24px)) 24px;
 }
 
+:global(html[data-windows-titlebar]:not([data-fullscreen])) .root {
+  padding-block: calc(var(--dsh-windows-titlebar-height) + 20px);
+}
+
 /* The mask dims the page; dark theme raises its opacity. */
 .mask {
   position: absolute;
@@ -31,6 +35,7 @@
 
 /* Dialogs use the prominent elevation on the secondary layer. */
 .dialog {
+  box-sizing: border-box;
   position: relative;
   z-index: 1;
   display: flex;
