@@ -412,8 +412,8 @@ describe('web e2e: agent-preset selection', () => {
   })
 })
 
-it('starts one real Creator composition from Plugins with Coding Tools off and keeps the next task on Standard', async () => {
-  const scaffold = await launchWebScaffold({ developerTools: false, agentPresets: { default: 'standard' } })
+it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without changing drafts or defaults', async (developerTools) => {
+  const scaffold = await launchWebScaffold({ developerTools, agentPresets: { default: 'standard' } })
   let browser: Browser | undefined
   try {
     browser = await chromium.launch()
@@ -426,6 +426,9 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     if (creator === undefined) throw new Error('Connecting the workspace did not create a Session')
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('standard')
     await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    const draft = 'Keep this unsent plugin idea.'
+    await writeComposerDraft(page, composer, draft)
 
     await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
     await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
@@ -435,6 +438,8 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     ])
     const picker = page.getByTitle('Choose the agent preset for your new task', { exact: true }).filter({ hasText: 'Creator mode' })
     await picker.waitFor()
+    await composer.filter({ hasText: draft }).waitFor()
+    expect(await composer.innerText()).toBe(draft)
     expect(await picker.getAttribute('aria-haspopup')).toBe('menu')
     expect(await page.getByRole('dialog', { name: 'Add plugin', exact: true }).count()).toBe(0)
     expect(scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
@@ -444,13 +449,13 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     expect(creator.session.snapshotEvents().some(event => event.type === 'agent-preset/selected'
       && event.data.agentPreset === 'cordis')).toBe(true)
     expect(creator.session.snapshotEvents().some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: false })
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: developerTools })
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
 
     await picker.click()
     await page.getByRole('menu').waitFor()
     expect(await page.getByRole('menuitem', { name: /^Standard mode|^Creator mode/ }).count()).toBe(2)
-    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
+    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(developerTools ? 2 : 0)
     await page.keyboard.press('Escape')
     const newSession = page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' })
     await Promise.all([page.waitForResponse('**/api/session/create'), newSession.click()])
@@ -460,6 +465,7 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('cordis')
 
     // Close a fixture turn on the real Creator Session without requesting a model.
+    await writeComposerDraft(page, composer, '')
     creator.session.append('turn/start', { turn: 1 })
     const user = creator.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Creator fixture completed without a model call.' }], source: { kind: 'user' },
@@ -480,8 +486,37 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     await openSettings(page, 'en')
     const settings = page.getByRole('dialog', { name: 'Settings' })
     await settings.getByRole('button', { name: 'General', exact: true }).click()
-    expect(await settings.getByRole('switch', { name: 'Coding Tools' }).getAttribute('aria-checked')).toBe('false')
-    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: false })
+    expect(await settings.getByRole('switch', { name: 'Coding Tools' }).getAttribute('aria-checked')).toBe(String(developerTools))
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: developerTools })
+    expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
+    await settings.getByRole('button', { name: 'Close', exact: true }).last().click()
+
+    // A completed source stays intact; the entry reuses the workspace's remaining blank task.
+    await page.getByRole('treeitem').filter({ has: page.getByText('Creator fixture', { exact: true }) }).click()
+    await page.getByText('Creator fixture completed without a model call.', { exact: true }).waitFor()
+    const source = scaffold.ctx.agents.get(creator.id)
+    if (source === undefined) throw new Error('The completed source Session did not reopen')
+    const sourceEvents = source.session.snapshotEvents()
+    await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
+    await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
+    await Promise.all([
+      page.waitForResponse('**/api/agentPresets/select'),
+      page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
+    ])
+    await picker.waitFor()
+    const reentered = scaffold.ctx.agents.get(next.id)
+    if (reentered === undefined) throw new Error('Creator did not reuse the blank Session')
+    expect(scaffold.ctx.agentPresets.composedPreset(reentered.ctx)).toBe('cordis')
+    expect(reentered.session.snapshotEvents().some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
+    expect(source.session.snapshotEvents()).toEqual(sourceEvents)
+
+    await page.reload({ waitUntil: 'load' })
+    await picker.waitFor()
+    const resumed = scaffold.ctx.agents.get(next.id)
+    if (resumed === undefined) throw new Error('Creator did not survive the page reload')
+    expect(scaffold.ctx.sessionProjections.stateOf(resumed.session, 'agentPreset')).toBe('cordis')
+    expect(scaffold.ctx.agentPresets.composedPreset(resumed.ctx)).toBe('cordis')
+    expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: developerTools })
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
