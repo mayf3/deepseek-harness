@@ -578,7 +578,7 @@ function CapabilitiesSummary({ rows, resolveText, t }: {
 }): ReactNode {
   const seen = new Set<string>()
   const capabilities = rows.flatMap((row) => {
-    const metadataTitle = row.meta?.title === undefined ? undefined : resolveText(row.meta.title).trim() || undefined
+    const metadataTitle = row.meta?.title === undefined ? undefined : resolveText(row.meta.title).trim()
     const title = metadataTitle === row.moduleName || metadataTitle === row.rowId ? undefined : metadataTitle
     const description = row.meta?.description === undefined ? undefined : resolveText(row.meta.description).trim() || undefined
     if (title === undefined && description === undefined) return []

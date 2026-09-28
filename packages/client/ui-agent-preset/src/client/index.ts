@@ -12,9 +12,9 @@
  * edited where the roster is visible — the settings section's "make default"
  * — so General settings carries no duplicate control for the same field.
  *
- * Developer tools (General settings) are the single gate over selection: with
- * them off the chip disappears and the card actions are disabled, while the
- * saved default keeps composing new sessions.
+ * Developer tools (General settings) gate ordinary selection. With them off,
+ * the picker and card selection stay unavailable; an explicit Creator entry
+ * still starts one Creator task without changing the saved default.
  */
 
 // Type-only: pulls the Session Controller service merge (ctx.sessions).
@@ -102,12 +102,10 @@ export function apply(ctx: ClientContext): void {
     return seat
   }
   const section = new AgentPresetSectionController(ctx)
-  // Turning Developer tools off clears the shared stage before any apply can compose it.
+  // Let the seat's source-aware rule retire ordinary picks when Coding Tools turn off.
   const developerTools = ctx.configForms.developerTools.enabled
   ctx.effect(() => developerTools.subscribe(() => {
     if (developerTools.getSnapshot()) return
-    staged.id = undefined
-    staged.introduce = false
     void unboundSeat.apply()
     for (const seat of seats.values) void seat.apply()
   }), 'ui-agent-preset: Developer tools gate')
@@ -172,7 +170,7 @@ export function apply(ctx: ClientContext): void {
     scope.effect(() => {
       creatorDraft = () => {
         const seat = mainBlankSeat() ?? unboundSeat
-        seat.stage('cordis', true)
+        seat.stageCreator()
         scope.uiWorkspace.startSession()
         void seat.apply()
       }
@@ -201,10 +199,10 @@ export function apply(ctx: ClientContext): void {
       id: 'create-plugin',
       locale: 'settings.agentPreset',
       inject: () => ({
-        hooks: { developerTools, agentPresets: controller.store },
+        hooks: { agentPresets: controller.store },
         load: () => controller.load(),
         startCreatorDraft: () => {
-          if (developerTools.getSnapshot()) creatorDraft?.()
+          creatorDraft?.()
         },
       }),
     }, CreatePluginMenuItem))

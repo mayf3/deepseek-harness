@@ -48,6 +48,8 @@ export interface AgentPresetStage {
   id: string | undefined
   /** Whether the receiving chip should announce the applied choice once. */
   introduce: boolean
+  /** Explicit Creator entry can stage cordis while the preset picker is hidden. */
+  source?: 'creator'
 }
 
 /** Stages the next session's preset and applies it when one appears. */
@@ -83,11 +85,13 @@ export class AgentPresetSeatController {
   private clearStage(): void {
     this.staged.id = undefined
     this.staged.introduce = false
+    delete this.staged.source
   }
 
-  /** Developer tools are the single gate over preset selection. */
+  /** Ordinary selection needs Coding Tools; an explicit Creator entry does not. */
   private selectionAvailable(): boolean {
     return this.ctx.configForms.developerTools.enabled.getSnapshot()
+      || (this.staged.source === 'creator' && this.staged.id === 'cordis')
   }
 
   /**
@@ -103,7 +107,7 @@ export class AgentPresetSeatController {
       return
     }
     const { presets } = roster.value
-    // A stage outlives the screen that made it; Developer tools may have gone off since.
+    // Recheck the current source and preference after the roster request settles.
     if (!this.selectionAvailable()) this.clearStage()
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
@@ -154,7 +158,16 @@ export class AgentPresetSeatController {
   stage(id: string, introduce = false): void {
     this.staged.id = id
     this.staged.introduce = introduce
+    delete this.staged.source
     this.set({ current: id, error: null, introduce })
+  }
+
+  /** Stage one Creator task without changing the Coding Tools preference. */
+  stageCreator(): void {
+    this.staged.id = 'cordis'
+    this.staged.introduce = true
+    this.staged.source = 'creator'
+    this.set({ current: 'cordis', error: null, introduce: true })
   }
 
   /**
@@ -202,7 +215,7 @@ export class AgentPresetSeatController {
   async apply(): Promise<string | undefined> {
     if (this.store.getSnapshot().busy) return
     const available = this.selectionAvailable()
-    // A stage made while Developer tools were on must not outlive them.
+    // Only an explicit Creator entry survives hiding the ordinary preset picker.
     if (!available) this.clearStage()
     const staged = this.staged.id
     const session = this.currentSession()

@@ -105,6 +105,39 @@ describe('the new-session chip', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('offers only read-only Creator help while Developer tools are off', () => {
+    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }, { id: 'standard' }] },
+      undefined, undefined, false)
+    expect(screen.getByText(en.presetCordisName)).toBeTruthy()
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.querySelector('[aria-haspopup="menu"]')).toBeNull()
+    const trigger = screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetCordisName}` })
+    trigger.focus()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog', { name: en.presetCordisName })).toBeTruthy()
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(actions.select).not.toHaveBeenCalled()
+    expect(actions.developerTools.getSnapshot()).toBe(false)
+
+    act(() => { actions.store.set({ ...actions.store.getSnapshot(), current: 'standard' }) })
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryByText(en.presetCordisName)).toBeNull()
+  })
+
+  it('removes the Creator picker when Coding Tools turn off but keeps read-only help', () => {
+    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }, { id: 'standard' }] })
+    fireEvent.click(seatTrigger())
+    expect(screen.getByRole('menu')).toBeTruthy()
+    act(() => { actions.developerTools.set(false) })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.querySelector('[aria-haspopup="menu"]')).toBeNull()
+    expect(screen.getByText(en.presetCordisName)).toBeTruthy()
+    expect(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetCordisName}` })).toBeTruthy()
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
   it('renders only for a Session retained by the main view', () => {
     renderSeat({}, undefined, {
       id: 's1', retainInfo: { referenceCount: 1, retainedBy: { mainView: 1 } },
@@ -232,6 +265,16 @@ describe('the new-session chip', () => {
     expect(actions.select).not.toHaveBeenCalled()
   })
 
+  it('explains a custom preset with no description without offering built-in guidance', () => {
+    const actions = renderSeat({ current: 'mine' })
+    fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: mine` }))
+    expect(screen.getByRole('dialog', { name: 'mine' }).textContent).toContain(en.noDescription)
+    expect(screen.queryByRole('tab')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
   it('forgets open help when developer tools turn off', () => {
     const actions = renderSeat()
     fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: ${en.presetStandardName}` }))
@@ -309,6 +352,23 @@ describe('the chip introduce cue', () => {
   function delayedChars(): HTMLElement[] {
     return Array.from(seatTrigger().querySelectorAll<HTMLElement>('[style]'))
   }
+
+  it('announces a read-only Creator entry without exposing a picker or changing Coding Tools', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
+    vi.useFakeTimers()
+    const actions = renderSeat({ current: 'cordis', options: [{ id: 'cordis' }], introduce: true },
+      undefined, undefined, false)
+    const label = screen.getByTitle(en.presetCordisDescription)
+    expect(label.textContent).toBe(en.presetCordisName)
+    expect(label.querySelectorAll('[style]').length).toBeGreaterThan(0)
+    expect(document.querySelector('[aria-haspopup="menu"]')).toBeNull()
+
+    act(() => { vi.advanceTimersByTime(750) })
+    expect(actions.introduced).toHaveBeenCalledOnce()
+    expect(label.querySelectorAll('[style]')).toHaveLength(0)
+    expect(actions.developerTools.getSnapshot()).toBe(false)
+    expect(actions.select).not.toHaveBeenCalled()
+  })
 
   it('reveals a long Latin name inside the shared window, then acknowledges', () => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })))
@@ -421,6 +481,18 @@ describe('the session-header label', () => {
     fireEvent.click(screen.getByRole('button', { name: `${en.modeExplanation}: Review only` }))
     expect(screen.getByRole('dialog', { name: 'Review only' }).textContent).toContain('Describe changes for review')
     expect(screen.queryByRole('tab')).toBeNull()
+  })
+
+  it('opens and closes help for a custom session preset that has no description', () => {
+    renderLabel({ blank: false, projectionValues: { agentPreset: 'mine' } })
+    const trigger = screen.getByRole('button', { name: `${en.modeExplanation}: mine` })
+    trigger.focus()
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog', { name: 'mine' }).textContent).toContain(en.noDescription)
+    expect(screen.queryByRole('tab')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('keeps help closed when the session preset returns after leaving the roster', () => {

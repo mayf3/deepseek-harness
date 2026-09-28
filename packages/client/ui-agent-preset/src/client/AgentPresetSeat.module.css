@@ -67,7 +67,7 @@
   cursor: pointer;
 }
 
-.seat:not(:disabled):hover,
+button.seat:not(:disabled):hover,
 .seat[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -75,6 +75,10 @@
 .seat:disabled {
   cursor: default;
   color: var(--dsw-alias-label-quaternary);
+}
+
+.readOnly {
+  cursor: default;
 }
 
 .seatIcon {

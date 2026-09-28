@@ -509,6 +509,85 @@ describe('the new-session chip controller', () => {
     })
   })
 
+  it('keeps a Creator stage without a workspace, consumes it once, and leaves later tasks on the default', async () => {
+    const writes: Recorded[] = []
+    const developerTools = createSnapshotStore(false)
+    let current: SeatSession | undefined
+    const controller = chip([...ROSTER, { id: 'cordis', isDefault: false }], () => current, { writes, developerTools })
+    controller.stageCreator()
+    controller.introduced()
+    await controller.load()
+    await controller.apply()
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'cordis', introduce: false })
+    expect(writes).toEqual([])
+
+    current = { id: 'creator' as SessionId, blank: true, projectionValues: { agentPreset: 'standard' } }
+    await controller.apply()
+    expect(writes).toEqual([{ ns: 'select', ops: 'cordis' }])
+    expect(controller.store.getSnapshot().current).toBe('cordis')
+
+    current = { id: 'ordinary' as SessionId, blank: true, projectionValues: { agentPreset: 'standard' } }
+    await controller.load()
+    await controller.apply()
+    expect(writes).toEqual([{ ns: 'select', ops: 'cordis' }])
+    expect(controller.store.getSnapshot().current).toBe('standard')
+    expect(developerTools.getSnapshot()).toBe(false)
+  })
+
+  it('does not change a started session or carry its rejected Creator stage into another task', async () => {
+    const writes: Recorded[] = []
+    let current: SeatSession = { id: 'running' as SessionId, blank: false, projectionValues: { agentPreset: 'standard' } }
+    const controller = chip(ROSTER, () => current, { writes, developerTools: createSnapshotStore(false) })
+    await controller.load()
+    controller.stageCreator()
+    await controller.apply()
+    expect(writes).toEqual([])
+
+    current = { id: 'ordinary' as SessionId, blank: true, projectionValues: { agentPreset: 'standard' } }
+    await controller.apply()
+    expect(writes).toEqual([])
+    expect(controller.store.getSnapshot().current).toBe('standard')
+  })
+
+  it('does not let an ordinary pick inherit a pending Creator stage exemption', async () => {
+    const writes: Recorded[] = []
+    let current: SeatSession | undefined = undefined
+    const controller = chip(ROSTER, () => current, { writes, developerTools: createSnapshotStore(false) })
+    await controller.load()
+    controller.stageCreator()
+    await controller.select('cordis')
+    expect(controller.store.getSnapshot().current).toBe('standard')
+
+    current = { id: 'blank' as SessionId, blank: true, projectionValues: { agentPreset: 'standard' } }
+    await controller.apply()
+    expect(writes).toEqual([])
+  })
+
+  it('keeps a Settings default synchronization gated after an explicit Creator stage', async () => {
+    const writes: Recorded[] = []
+    const current: SeatSession = { id: 'blank' as SessionId, blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = chip(ROSTER, current, { writes, developerTools: createSnapshotStore(false) })
+    await controller.load()
+    controller.stageCreator()
+    await controller.syncBlankSession(current.id, 'minimal')
+    await controller.apply()
+    expect(writes).toEqual([])
+    expect(controller.store.getSnapshot().current).toBe('standard')
+  })
+
+  it('rechecks a Creator stage made while its roster request was pending', async () => {
+    const reply = Promise.withResolvers<ReturnType<typeof remoteRoster>>()
+    const developerTools = createSnapshotStore(false)
+    const controller = chip(ROSTER, undefined, { developerTools, list: () => reply.promise })
+    const loaded = controller.load()
+    controller.stageCreator()
+    controller.introduced()
+    reply.resolve({ ok: true, value: { presets: [...ROSTER, { id: 'cordis', isDefault: false }] } })
+    await loaded
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'cordis', introduce: false })
+    expect(developerTools.getSnapshot()).toBe(false)
+  })
+
   it('leaves the introduction cue to the chip while Developer tools stay on', async () => {
     const developerTools = createSnapshotStore(true)
     const session = {

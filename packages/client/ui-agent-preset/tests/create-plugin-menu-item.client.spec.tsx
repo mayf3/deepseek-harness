@@ -16,8 +16,7 @@ function unusedHook(): never {
   throw new Error('Create plugin does not read this slot source')
 }
 
-function view(enabled = true, roster: Partial<AgentPresetSettingsState> = {}, inMenu = false) {
-  const developerTools = createSnapshotStore(enabled)
+function view(roster: Partial<AgentPresetSettingsState> = {}, inMenu = false) {
   const agentPresets = createSnapshotStore<AgentPresetSettingsState>({
     status: 'ready', error: null, options: [{ id: 'standard' }, { id: 'cordis' }], ...roster,
   })
@@ -27,7 +26,6 @@ function view(enabled = true, roster: Partial<AgentPresetSettingsState> = {}, in
   const load = vi.fn(async () => {})
   const props: ComponentProps<typeof CreatePluginMenuItem> = {
     t: key => translations.get(key) ?? key,
-    useDeveloperTools: bindSnapshotSelector(developerTools),
     useAgentPresets: bindSnapshotSelector(agentPresets),
     usePanelInfo: unusedHook, useSessions: unusedHook, useSessionStatus: unusedHook,
     useSessionRetainInfo: unusedHook, useWorkspaces: unusedHook, useResource: unusedHook,
@@ -42,7 +40,7 @@ function view(enabled = true, roster: Partial<AgentPresetSettingsState> = {}, in
     </Menu>
   }
   render(inMenu ? <TestMenu /> : <CreatePluginMenuItem {...props} />)
-  return { developerTools, agentPresets, load, startCreatorDraft, onDismiss, calls }
+  return { agentPresets, load, startCreatorDraft, onDismiss, calls }
 }
 
 function item(): HTMLElement {
@@ -67,7 +65,7 @@ describe('Create plugin menu item', () => {
   })
 
   it('supports keyboard selection through the shared menu and closes before navigation', () => {
-    const actions = view(true, {}, true)
+    const actions = view({}, true)
     const trigger = item()
     trigger.focus()
     fireEvent.keyDown(trigger, { key: 'Tab' })
@@ -75,30 +73,8 @@ describe('Create plugin menu item', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('explains disabled Developer tools and enables the same entry after the preference changes', () => {
-    const actions = view(false)
-    expect(item()).toHaveProperty('disabled', true)
-    expect(item().textContent).toContain(en.enableDevToolsToCreate)
-    fireEvent.click(item())
-    expect(actions.calls).toEqual([])
-
-    act(() => { actions.developerTools.set(true) })
-    expect(item()).toHaveProperty('disabled', false)
-    expect(item().textContent).toContain(en.createPluginDescription)
-    fireEvent.click(item())
-    expect(actions.calls).toEqual(['dismiss', 'start'])
-  })
-
-  it('honors Developer tools turning off while the menu is open', () => {
-    const actions = view()
-    act(() => { actions.developerTools.set(false) })
-    expect(item()).toHaveProperty('disabled', true)
-    fireEvent.click(item())
-    expect(actions.calls).toEqual([])
-  })
-
   it.each(['idle', 'loading', 'error', 'unavailable'] as const)('keeps a disabled entry while the roster is %s', (status) => {
-    const actions = view(true, { status })
+    const actions = view({ status })
     expect(item()).toHaveProperty('disabled', true)
     const description = status === 'idle' || status === 'loading' ? en.createPluginChecking : en.createPluginUnavailable
     expect(item().textContent).toContain(description)
@@ -107,7 +83,7 @@ describe('Create plugin menu item', () => {
   })
 
   it('explains why the entry is disabled when the deployment has no cordis preset', () => {
-    const actions = view(true, { options: [{ id: 'standard' }] })
+    const actions = view({ options: [{ id: 'standard' }] })
     expect(item()).toHaveProperty('disabled', true)
     expect(item().textContent).toContain(en.createPluginMissing)
     fireEvent.click(item())
@@ -126,7 +102,7 @@ describe('Create plugin menu item', () => {
   })
 
   it('keeps the same second menu item through ready, loading, and ready states', () => {
-    const actions = view(true, {}, true)
+    const actions = view({}, true)
     const menu = screen.getByRole('menu')
     const before = screen.getAllByRole('menuitem')
     const original = item()

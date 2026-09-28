@@ -21,7 +21,7 @@ import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSection.tsx'
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
-import { AgentPresetSeatController } from '../src/client/seat-store.ts'
+import { AgentPresetSeatController, type AgentPresetStage } from '../src/client/seat-store.ts'
 import { CreatePluginMenuItem, type CreatePluginMenuItemInjected } from '../src/client/CreatePluginMenuItem.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -29,7 +29,7 @@ import { apply as hostApply } from '../src/index.ts'
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); each bench stages zh explicitly on the locale instead.
 
-/** The Developer tools half of `ctx.configForms`, which gates all selection. */
+/** The Developer tools half of `ctx.configForms`, which gates ordinary selection. */
 function developerTools(enabled = true): { configForms: { developerTools: { enabled: ObservableSnapshot<boolean> } } } {
   return { configForms: { developerTools: { enabled: createSnapshotStore(enabled) } } }
 }
@@ -843,10 +843,8 @@ describe('ui-agent-preset apply', () => {
 
       await setDeveloperTools(false)
       action.startCreatorDraft()
-      expect(uiWorkspace.starts).toHaveLength(0)
-      await setDeveloperTools(true)
-      action.startCreatorDraft()
       expect(uiWorkspace.starts).toHaveLength(1)
+      expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(false)
 
       await feature.dispose()
       expect(slots.entries('plugins.add.actions')).toHaveLength(0)
@@ -857,8 +855,9 @@ describe('ui-agent-preset apply', () => {
     }
   })
 
-  it('stages the creator preset and starts a session from the section', async () => {
-    const { ctx, slots } = await bench()
+  it.each([false, true])('stages Creator without a workspace (Coding Tools: %s)', async (enabled) => {
+    const { ctx, slots, setDeveloperTools } = await bench()
+    await setDeveloperTools(enabled)
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -889,11 +888,19 @@ describe('ui-agent-preset apply', () => {
     expect(acknowledged.introduce).toBe(false)
     seat.introduced()
     expect(seat.hooks.agentPresetSeat.getSnapshot()).toBe(acknowledged)
+    await seat.load()
+    expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(enabled)
+    if (enabled) {
+      await setDeveloperTools(false)
+      expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    }
     conversation()
   })
 
-  it('applies the creator preset to an existing blank main Session', async () => {
-    const { ctx, slots, calls } = await bench()
+  it.each([false, true])('applies Creator to an existing blank main Session (Coding Tools: %s)', async (enabled) => {
+    const { ctx, slots, calls, setDeveloperTools } = await bench()
+    await setDeveloperTools(enabled)
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -917,6 +924,7 @@ describe('ui-agent-preset apply', () => {
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
     expect(uiWorkspace.starts).toHaveLength(1)
+    expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(enabled)
     conversation()
   })
 
@@ -977,6 +985,31 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
+  it('consumes the Creator source before its RPC settles and keeps a waiting Settings choice gated', async () => {
+    const reply = Promise.withResolvers<{ ok: true; value: string }>()
+    const select = vi.fn(() => reply.promise)
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const staged: AgentPresetStage = { id: undefined, introduce: false }
+    const preference = developerTools(false)
+    const controller = new AgentPresetSeatController({
+      ...preference, remote: { agentPresets: { select } },
+    } as never, () => session, staged)
+    controller.stageCreator()
+    const started = controller.apply()
+    expect(select).toHaveBeenCalledExactlyOnceWith(session.id, 'cordis')
+    expect(staged).toEqual({ id: undefined, introduce: false })
+
+    const settings = controller.syncBlankSession(session.id, 'minimal')
+    session.projectionValues.agentPreset = 'cordis'
+    reply.resolve({ ok: true, value: 'cordis' })
+    await Promise.all([started, settings])
+    await controller.apply()
+    expect(select).toHaveBeenCalledOnce()
+    expect(controller.store.getSnapshot().current).toBe('cordis')
+    expect(staged).toEqual({ id: undefined, introduce: false })
+    expect(preference.configForms.developerTools.enabled.getSnapshot()).toBe(false)
+  })
+
   it.each([
     { refuseFirst: false, refuseLatest: false },
     { refuseFirst: false, refuseLatest: true },

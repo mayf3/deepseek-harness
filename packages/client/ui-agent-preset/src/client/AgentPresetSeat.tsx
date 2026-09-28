@@ -75,8 +75,8 @@ export type AgentPresetSeatProps =
 /**
  * Render the new-session agent-preset chip.
  * @param props - composed slot props.
- * @returns The chip, or null outside the main view, with Developer tools off,
- * or before the roster provides a preset choice.
+ * @returns the picker, read-only Creator details with Coding Tools off, or null
+ * outside the main view and before a preset choice is available.
  */
 export function AgentPresetSeat({
   sessionId, useSessionRetainInfo, load, select, introduced, useAgentPresetSeat, useDeveloperTools, t,
@@ -138,7 +138,7 @@ export function AgentPresetSeat({
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
-  if (!main || !developerTools || !ready) return null
+  if (!main || !ready || (!developerTools && state.current !== 'cordis')) return null
 
   // One wrapper span: the chip is a flex row with a gap, so loose character
   // spans would each pick up the gap between them.
@@ -162,7 +162,7 @@ export function AgentPresetSeat({
 
   return (
     <div className={css.controls}>
-      <Menu
+      {developerTools ? <Menu
         open={open}
         onClose={() => { setOpen(false) }}
         items={state.options.map((option) => {
@@ -214,7 +214,12 @@ export function AgentPresetSeat({
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>
         )}
-      />
+      /> : (
+        <span className={`${css.seat} ${css.readOnly}`} title={state.error ?? chosenText?.description}>
+          <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
+          <span className={css.seatLabel}>{shownLabel}</span>
+        </span>
+      )}
       {chosen === undefined ? null : (
         <Tooltip label={t('modeExplanation')} portal>
           <button
