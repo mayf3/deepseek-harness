@@ -4,7 +4,7 @@
 
 ## 概述
 
-在合成语料上测量 Web Host 的 Session 列表、内容搜索和 fork；语料中每个 Session 的长度都不短于一份实测本地 DSH 语料在同一分位上的长度。列表用例运行 1,000 和 5,000 个 Session；搜索和 fork 用例运行 1,000 个 Session。所有用例均不使用网络服务、录制的 Session 或浏览器。
+在合成语料上测量 Web Host 的 Session 列表、内容搜索和 fork；语料中每个 Session 的长度都不短于一份实测本地 DSH 语料在同一分位上的长度。搜索和 fork 用例运行 1,000 个 Session；列表用例运行 3,000 个 Session，这是在标准托管 CI 上让此文件五分钟内完成的最大数量。所有用例均不使用网络服务、录制的 Session 或浏览器。
 
 ## 目录
 
@@ -16,9 +16,9 @@
 
 ## 运行
 
-在仓库根目录使用 `pnpm run build:bench` 构建库和 worker，然后运行 `pnpm exec vitest run --config vitest.bench.config.ts benchmarks/session-corpus/session-corpus.bench.ts`。不要让计时运行与构建或其他基准重叠。播种过程会在私有临时根目录下写入约 1.9 GB 的 Zstandard 日志，测试成功或失败后都会删除该目录。
+在仓库根目录使用 `pnpm run build:bench` 构建库和 worker，然后运行 `pnpm exec vitest run --config vitest.bench.config.ts benchmarks/session-corpus/session-corpus.bench.ts`。不要让计时运行与构建或其他基准重叠。播种过程会在私有临时根目录下写入约 1.2 GB 的 Zstandard 日志，测试成功或失败后都会删除该目录。
 
-测试报告每个新进程样本、CPU 型号、可用并行度、平台和 Node 版本，并约束中位数预算。worker 失败时报告退出状态、信号、超时和 stderr 末尾。必需基准通道自动发现此文件。
+测试报告每个新进程样本、CPU 型号、可用并行度、平台和 Node 版本，并约束中位数预算。当整个文件（包括播种）超过五分钟时，最后一个用例失败。worker 失败时报告退出状态、信号、超时和 stderr 末尾。必需基准通道自动发现此文件。
 
 <a id="measurements"></a>
 
@@ -28,7 +28,7 @@
 
 | 用例 | 语料 | 计时终点 |
 |---|---|---|
-| 列表 | 1,000 和 5,000 个 Session | Host 启动；首次和重复的 `session.list`，每次都返回全部 Session 及其缓存投影 |
+| 列表 | 3,000 个 Session | Host 启动；首次和重复的 `session.list`，每次都返回全部 Session 及其缓存投影 |
 | 内容搜索 | 1,000 个 Session | 构建内存索引的首次 `session.search`；在已构建索引上的第二次查询 |
 | Fork | 1,000 个 Session | 十个长度分层、p99 Session 和最长 Session 的 `session.fork` 返回 |
 

@@ -29,7 +29,7 @@ Other measured aggregates also set the fixture: 19 Sessions per project director
 
 ### Corpus construction
 
-The seed worker authors one event body per anchor, compresses it once, and writes each Session as its own header frame followed by the anchor's body. Frame compression and file writes run eight at a time: each pending compression holds a native Zstandard context, and unbounded compression peaked at 7.7 GB RSS, more than a standard hosted runner provides. Sessions sharing an anchor differ only in header identity, creation time, project directory, and parent link. Creation time is a fixed permutation of rank, so list order does not follow length. Events carry the fields that `Session.append` records, compact streams come from the production `AssistantStreamAccumulator`, and rows are encoded with the persistence package's `eventLines`. A verification worker replays each distinct body through `sessionQuery.readSession`.
+The seed worker authors one event body per anchor, compresses it once, and writes each Session as its own header frame followed by the anchor's body. Frame compression and file writes run eight at a time: each pending compression holds a native Zstandard context, and unbounded compression peaked at 7.7 GB RSS, more than a standard hosted runner provides. Sessions sharing an anchor differ only in header identity, creation time, project directory, and parent link. Creation time is a fixed permutation of rank, so list order does not follow length. Events carry the fields that `Session.append` records, compact streams come from the production `AssistantStreamAccumulator`, and rows are encoded with the persistence package's `eventLines`. Before writing, the seed replays each authored body through `Session.create`, as `sessionQuery.readSession` does.
 
 The projection cache is part of the list endpoint: each cold row carries cached projection values. The seed folds each anchor once through the public `sessionProjectionCache.coldSnapshot` write-back. It then writes per-record documents for every Session with `serializeRecord`, rebinding identity to each header. Writing through the domain API costs one fsync per record, which took 89 s for 10,000 Sessions. The list worker requires every returned row to carry projections, so a storage layout change fails the benchmark instead of silently removing that work.
 
@@ -39,11 +39,11 @@ Workers are compiled plain-Node processes, each started fresh against a seeded r
 
 | Case | Corpus | Samples | Endpoint |
 |---|---|---:|---|
-| List | 1,000 and 5,000 | 5 | Host boot; first `session.list`; repeated `session.list` in the same process |
+| List | 3,000 | 3 | Host boot; first `session.list`; repeated `session.list` in the same process |
 | Content search | 1,000 | 1 | First `session.search`, including the index build; a second query with a different term |
-| Fork | 1,000 | 3 | `session.fork` return for rank midpoints of ten equal length strata, rank 990, and rank 999 |
+| Fork | 1,000 | 3, then 1 | `session.fork` return for rank midpoints of ten equal length strata and rank 990; then rank 999 once |
 
-Budgets enforce medians: list boot, first, and repeat; search first and repeat; fork median over strata, rank 990, and rank 999. One search sample is enforced because a cold index build takes over two minutes on standard hosted CI. Reports include peak RSS and heap after the endpoint, but no memory budget applies.
+The file must finish within five minutes on standard hosted CI, including seeding, and its last case asserts that limit. Search over 1,000 Sessions and one fork of the longest Session take about 170 s of it, so each has one sample. The list corpus is the largest that fits the remainder. Budgets enforce medians of list boot, first, and repeat, and of the fork median over strata and rank 990; search and the longest fork enforce their single samples. Reports include peak RSS and heap after the endpoint, but no memory budget applies.
 
 ## Calibration evidence
 
@@ -51,8 +51,7 @@ Budgets use standard two-CPU hosted CI expectations (AMD EPYC 7763, Linux x64, N
 
 | Endpoint | Hosted medians | Expectation | Budget |
 |---|---|---:|---:|
-| List 1,000: boot / first / repeat | 830.3 / 1,155.3 / 876.7 ms | 850 / 1,200 / 900 ms | 1,063 / 1,500 / 1,125 ms |
-| List 5,000: boot / first / repeat | 3,569.5 / 5,143.5 / 4,290.5 ms | 3,600 / 5,200 / 4,300 ms | 4,500 / 6,500 / 5,375 ms |
+| List 3,000: boot / first / repeat | interpolated between 1,000 (830.3 / 1,155.3 / 876.7 ms) and 5,000 (3,569.5 / 5,143.5 / 4,290.5 ms) | 2,200 / 3,200 / 2,600 ms | 2,750 / 4,000 / 3,250 ms |
 | Search 1,000: first / repeat (one sample) | 139,470 / 3,369 ms | 140,000 / 3,400 ms | 175,000 / 4,250 ms |
 | Fork: strata median / p99 / longest | 89.6 / 1,485.7 / 17,538.1 ms | 90 / 1,500 / 17,600 ms | 113 / 1,875 / 22,000 ms |
 
@@ -63,10 +62,11 @@ On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 m
 - **Sanitized copies of real Sessions.** Rejected: benchmarks never use recorded user material.
 - **Authoring every Session through `Session.append`.** Rejected: per-append validation and freezing, repeated per Session, made seeding take minutes.
 - **Omitting the projection cache.** Rejected: rows would lack the values the Web list shows, which understates list work.
-- **A separate CI job.** Rejected: benchmarks share one idle standard runner. The file adds 6.6 minutes to that job, including 68 s of seeding, and the job timeout rises from 15 to 25 minutes.
+- **A separate CI job.** Rejected: benchmarks share one idle standard runner. This file is limited to five minutes, and the job timeout rises from 15 to 20 minutes.
+- **Listing 5,000 Sessions with five samples, and two list sizes.** Rejected: with the other cases the file took 6.6 minutes on standard hosted CI.
 
 ## Consequences
 
-The gate covers corpus-scale list, search, and fork costs that single-Session gates cannot see. On standard hosted CI it already shows that content search spends 139 s building its index on first use, that the first list takes 5.1 s at 5,000 Sessions, and that forking the longest Session takes 17.5 s. Seeding writes about 1.9 GB.
+The gate covers corpus-scale list, search, and fork costs that single-Session gates cannot see. On standard hosted CI it already shows that content search spends 139 s building its index on first use, that the first list took 5.1 s at 5,000 Sessions in calibration, and that forking the longest Session takes 17.5 s. Seeding writes about 1.2 GB.
 
 Exclusions: the corpus is current-generation only, although most real Sessions are stored in older generations, which list revision hashing and migration-on-read would add. Only 22 distinct bodies exist, so search indexes repeated text. Fork runs without Agent presets or Workspace attachment. Calls are in-process, without Typert transport or a browser. Filesystem caches are not evicted, so cold means a fresh process, not cold storage.

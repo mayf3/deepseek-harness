@@ -9,7 +9,8 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import { currentSessionMessageProjections } from '@deepseek-ai/dsh-session-format-catalog/message-projections'
+import { Session, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionCache, { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
@@ -46,7 +47,9 @@ export interface CorpusMemory {
 /** Seeding report: facts of every corpus and the time spent building them. */
 export interface SeedReport {
   readonly mode: 'seed'
-  readonly corpora: readonly SyntheticCorpusFacts[]
+  readonly corpora: readonly (SyntheticCorpusFacts & { readonly writeMs: number })[]
+  /** Authoring, replay validation, and projection folding of every distinct body. */
+  readonly authorMs: number
   readonly seedMs: number
 }
 
@@ -84,14 +87,8 @@ export interface ForkReport {
   readonly memory: CorpusMemory
 }
 
-/** Verification report: replay-validated event counts of every distinct body. */
-export interface VerifyReport {
-  readonly mode: 'verify'
-  readonly anchors: readonly { readonly anchor: number; readonly rank: number; readonly events: number }[]
-}
-
 /** Any worker report. */
-export type SessionCorpusReport = SeedReport | ListReport | SearchReport | ForkReport | VerifyReport
+export type SessionCorpusReport = SeedReport | ListReport | SearchReport | ForkReport
 
 const BENCH_MODEL = { provider: 'bench', model: 'bench' } as const
 /** Bound on waiting for fire-and-forget projection-cache write-backs after seeding. */
@@ -178,7 +175,10 @@ async function seed(root: string, counts: readonly number[]): Promise<SeedReport
   try {
     for (const [anchor, header] of folded) {
       // The production cold-read write-back folds each shared body once.
-      host.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), await writer.author(anchor))
+      const log = await writer.author(anchor)
+      // Replay validation, as in `sessionQuery.readSession`, rejects an invalid authored body before any write.
+      Session.create(header.id, log, header, SessionLogOffset(0), currentSessionMessageProjections)
+      host.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), log)
     }
     // Write-backs are fire-and-forget; the cache serves a record only after it is durable.
     const deadline = performance.now() + SEED_DRAIN_TIMEOUT_MS
@@ -189,12 +189,14 @@ async function seed(root: string, counts: readonly number[]): Promise<SeedReport
   } finally {
     await host.ctx.fiber.dispose()
   }
+  const authorMs = performance.now() - started
   const records = await withCacheTable(foldRoot, table => Promise.resolve(new Map(
     [...folded].map(([anchor, header]) => [anchor, table.get(header.id) as CheckpointRecord]),
   )))
-  const corpora: SyntheticCorpusFacts[] = []
+  const corpora: SeedReport['corpora'][number][] = []
   for (const count of counts) {
     const corpusRoot = join(root, `corpus-${String(count)}`)
+    const writeStarted = performance.now()
     const written = await writer.writeCorpus(join(corpusRoot, 'sessions'), count)
     // Sessions of one anchor share events, so their records differ only in the header-bound identity.
     // Per-record documents are written directly: the domain's one-fsync-per-put chain would dominate seeding,
@@ -209,9 +211,9 @@ async function seed(root: string, counts: readonly number[]): Promise<SeedReport
         rows: source.rows,
       }))
     })
-    corpora.push(written.facts)
+    corpora.push({ ...written.facts, writeMs: performance.now() - writeStarted })
   }
-  return { mode: 'seed', corpora, seedMs: performance.now() - started }
+  return { mode: 'seed', corpora, authorMs, seedMs: performance.now() - started }
 }
 
 async function measureList(root: string, expected: number): Promise<ListReport> {
@@ -288,23 +290,6 @@ async function measureFork(root: string, ranks: readonly number[]): Promise<Fork
   }
 }
 
-async function verify(root: string, count: number): Promise<VerifyReport> {
-  const { ctx } = await mountHost(root)
-  try {
-    const anchors: VerifyReport['anchors'][number][] = []
-    for (let rank = 0; rank < count; rank++) {
-      const { anchor } = sessionShape(rank, count)
-      if (anchors.some(entry => entry.anchor === anchor)) continue
-      // Exact reads replay the log through Session validation.
-      const { events } = await ctx.sessionQuery.readSession(corpusSessionId(rank))
-      anchors.push({ anchor, rank, events: events.length })
-    }
-    return { mode: 'verify', anchors }
-  } finally {
-    await ctx.fiber.dispose()
-  }
-}
-
 assertBuiltBenchmarkRuntime(import.meta.url, Object.fromEntries([
   '@deepseek-ai/dsh-api-session-controller',
   '@deepseek-ai/dsh-session-persistence-jsonl',
@@ -315,7 +300,7 @@ assertBuiltBenchmarkRuntime(import.meta.url, Object.fromEntries([
 const [root, mode, ...rest] = process.argv.slice(2)
 const numbers = rest.map(Number)
 if (root === undefined || numbers.some(value => !Number.isSafeInteger(value) || value < 0)) {
-  throw new Error('usage: session-corpus.worker.js <root> <seed counts...|list count|search|fork ranks...|verify count>')
+  throw new Error('usage: session-corpus.worker.js <root> <seed counts...|list count|search|fork ranks...>')
 }
 let report: SessionCorpusReport
 switch (mode) {
@@ -330,9 +315,6 @@ switch (mode) {
     break
   case 'fork':
     report = await measureFork(root, numbers)
-    break
-  case 'verify':
-    report = await verify(root, numbers[0] ?? 0)
     break
   default:
     throw new Error(`unknown Session corpus mode ${String(mode)}`)

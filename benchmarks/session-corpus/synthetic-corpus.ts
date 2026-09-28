@@ -341,8 +341,8 @@ export async function forEachConcurrently(count: number, operation: (index: numb
 export class SyntheticCorpusWriter {
   private readonly pool = new TextPool()
   private readonly bodies = new Map<number, AnchorBody>()
-  /** Stored bytes per payload character, measured by the previous anchor's final secant step. */
-  private bytesPerChar = 4
+  /** Stored-byte model from the previous anchor: fixed system prompt, bytes per event, and bytes per payload character. */
+  private model = { bytesPerEvent: 0, bytesPerChar: 4 }
 
   /**
    * Author one anchor's body; its body bytes alone reach the anchor's logical-byte target.
@@ -351,8 +351,11 @@ export class SyntheticCorpusWriter {
    */
   async author(anchor: number): Promise<readonly SessionEvent[]> {
     const shape = anchorShape(anchor)
-    // Secant steps from below: stored bytes grow linearly with payload characters.
-    let payloadChars = 0
+    // Start from the previous anchor's model, then take secant steps from below.
+    const { bytesPerEvent, bytesPerChar } = this.model
+    let payloadChars = Math.max(0, Math.ceil(
+      (1.01 * (shape.logicalBytes - SYSTEM_PROMPT_CHARS - bytesPerEvent * shape.events)) / bytesPerChar,
+    ))
     let previous: { readonly payloadChars: number; readonly bytes: number } | undefined
     for (let attempt = 0; attempt < 8; attempt++) {
       const authored = authorEvents(shape, payloadChars, this.pool, anchor + 1)
@@ -361,12 +364,14 @@ export class SyntheticCorpusWriter {
       }
       const frames = frameTexts(authored.events, authored.frameStarts)
       const bytes = frames.reduce((sum, text) => sum + Buffer.byteLength(text), 0)
+      if (previous !== undefined && payloadChars > previous.payloadChars) {
+        this.model.bytesPerChar = (bytes - previous.bytes) / (payloadChars - previous.payloadChars)
+      }
+      this.model.bytesPerEvent = (bytes - SYSTEM_PROMPT_CHARS - this.model.bytesPerChar * payloadChars) / authored.events.length
       if (bytes < shape.logicalBytes) {
-        if (previous !== undefined) this.bytesPerChar = (bytes - previous.bytes) / (payloadChars - previous.payloadChars)
         previous = { payloadChars, bytes }
-        const bytesPerChar = this.bytesPerChar
         // Every message rounds its share up, so each step adds at least one character per event.
-        payloadChars += Math.ceil((1.01 * (shape.logicalBytes - bytes)) / bytesPerChar) + shape.events
+        payloadChars += Math.ceil((1.01 * (shape.logicalBytes - bytes)) / this.model.bytesPerChar) + shape.events
         continue
       }
       // Each pending compression owns a native Zstandard context, so compression is bounded like writes.
