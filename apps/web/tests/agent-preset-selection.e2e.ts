@@ -419,12 +419,15 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
 
     await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
     await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
-    await page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click()
+    await Promise.all([
+      page.waitForResponse('**/api/agentPresets/select'),
+      page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
+    ])
     const label = page.getByRole('button', { name: 'Mode details: Creator mode', exact: true })
     await label.waitFor()
     expect(await label.getAttribute('aria-haspopup')).toBe('dialog')
     expect(await page.getByRole('dialog', { name: 'Add plugin', exact: true }).count()).toBe(0)
-    await expect.poll(() => scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
+    expect(scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
     expect(scaffold.ctx.agentPresets.composedPreset(creator.ctx)).toBe('cordis')
     expect(scaffold.ctx.tools.schemas(creator).map(tool => tool.name))
       .toEqual(expect.arrayContaining(['cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager']))
@@ -453,15 +456,15 @@ it('starts one real Creator composition from Plugins with Coding Tools off and k
     creator.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     await scaffold.ctx.sessions.flush(creator.session)
     await page.getByText('Creator fixture completed without a model call.', { exact: true }).waitFor()
-    await newSession.click()
-    await expect.poll(() => scaffold.ctx.agents.list().find(agent => agent.id !== creator.id)).toBeDefined()
+    await Promise.all([page.waitForResponse('**/api/session/create'), newSession.click()])
+    expect(scaffold.ctx.agents.list().find(agent => agent.id !== creator.id)).toBeDefined()
     const next = scaffold.ctx.agents.list().find(agent => agent.id !== creator.id)!
     expect(next.id).not.toBe(creator.id)
     expect(next.session.header.agentPreset).toBe('standard')
     expect(scaffold.ctx.sessionProjections.stateOf(next.session, 'agentPreset')).toBe('standard')
     expect(scaffold.ctx.agentPresets.composedPreset(next.ctx)).toBe('standard')
     expect(scaffold.ctx.sessionProjections.stateOf(creator.session, 'agentPreset')).toBe('cordis')
-    await expect.poll(() => label.count()).toBe(0)
+    await label.waitFor({ state: 'hidden' })
     await openSettings(page, 'en')
     const settings = page.getByRole('dialog', { name: 'Settings' })
     await settings.getByRole('button', { name: 'General', exact: true }).click()
