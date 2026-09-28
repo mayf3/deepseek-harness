@@ -82,9 +82,9 @@ profile 导入插件前，DSH 会检查其 `peerDependencies` 中对 `@deepseek-
 
 ### 读取插件展示元信息
 
-`readLoadedPluginMeta(plugin)` 仅从已加载插件的 `meta` 属性投影标题与描述。清单调用方传入 Loader 条目的当前插件对象；未加载条目返回无元信息。此路径不读取 manifest 或 locale 资源。普通插件元信息不包含图标。
+使用 `readPluginMeta(specifier, parentURL)` 或 `ctx.pluginPackages.metaOf(specifier, parentURL)` 读取导出的 locale 展示文本，无需导入或激活插件。查询使用完整包标识与调用方的解析基准，并遵循 Node exports。普通插件不探查包清单或图标。文件路径与文件 URL 不解析资源，直接返回无元信息。格式错误的 locale 元信息返回 `error` 诊断；有效结果保留翻译，由 Client 选择语言。
 
-使用 `readPluginMeta(specifier, parentURL)` 读取已安装组合包的展示文本，无需导入或激活其中的插件。查询使用完整包标识与调用方的解析基准，并遵循 Node exports。文件路径与文件 URL 不解析资源，直接返回无元信息。缺失的 locale 字段回退到该地址下可访问的 `package.json`；格式错误的元信息返回 `error` 诊断。结果保留翻译，由 Client 选择语言。即使 locale 文本完整，读取器也会将 `package.json.icon` 加载为图片 data URL；图标出错时，保留有效文本并附上诊断。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。
+对于组合包，将已解析的包目录作为 `{ bundleDirectory }` 传给 `readPluginMeta` 的第三个参数。这会启用导出的 `package.json` 文本回退和独立的 `./icon` 资源。图标解析不要求导出清单；选中的图片路径受包的真实目录约束。图标出错时，保留有效文本并附上诊断。作者格式见[插件展示元信息](../../../docs/cookbook/adding-a-package.zh.md#plugin-display-metadata)。
 
 <a id="startup-and-reload-failures"></a>
 ### 启动与重载失败

@@ -2,7 +2,6 @@
   "name": "@deepseek-ai/dsh-experimental-auto-review",
   "description": "Per-tool LLM authorization review for the DeepSeek Harness Auto permission preset",
   "version": "0.1.7-rc.2",
-  "icon": "./icon.svg",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
@@ -12,6 +11,7 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
+    "./icon": "./icon.svg",
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"

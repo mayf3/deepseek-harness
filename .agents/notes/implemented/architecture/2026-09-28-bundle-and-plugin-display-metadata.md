@@ -6,36 +6,32 @@ English | [中文](2026-09-28-bundle-and-plugin-display-metadata.zh.md)
 
 ## Problem
 
-A Cordis plugin can be a module namespace, function, or service class. It need not own an npm package. Reading a manifest for every plugin assigns package-level introductions and icons to entries that may represent unrelated functions in the same package.
+One package can export several plugins. Its npm introduction and image identify the package, not every exported plugin. Display text must also remain available before activation and after a plugin fails to load.
 
 ## Decision
 
-Bundles own package display resources and custom icons. Ordinary plugins provide optional title and description through the loaded plugin object's `meta` property: a named export for a function-plugin namespace, or a static property on a default-exported service class. Each field uses the existing literal-string or language-map representation with an English fallback. The [package cookbook](../../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) owns authoring examples.
+Ordinary plugins reuse `meta.title` and `meta.description` in their exported locale JSON. They do not read package manifests for display text or custom images. The [localized metadata decision](2026-09-18-localized-package-metadata.md) retains ownership of locale resource identity, English discovery, per-field language fallback, diagnostics, and non-activation; this decision supersedes its ordinary-plugin package fallback.
 
-Each Cordis fiber retains the unwrapped plugin supplied at registration. Loader exposes the current live root fiber's plugin, so HMR replacement and rollback expose the corresponding metadata. Inventory reads project only title and description from that object, including mounted preset entries. Reads never import plugins, resolve their locale resources, or open their manifests. An unloaded entry has no metadata; its module name remains available as the display fallback. Loaded entries waiting for dependencies or retaining an activation error can still supply text. Icons are omitted from ordinary plugin responses and rows.
+Bundles use the same locale resources and can additionally read exported package-manifest text and an independent `./icon` resource. Node exports select both locale and icon paths, so authors can relocate assets without changing public resource addresses. An icon needs neither a top-level manifest field nor an exported `package.json`. The [package cookbook](../../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) owns the authoring format and image restrictions.
 
-Bundle metadata remains readable while the bundle is disabled. Exported `locale/en.json` anchors language discovery; fields fall back independently to the accessible bundle manifest, then its complete name without a description. Resource resolution respects package exports and the caller's resolution base. File-addressed metadata requests do not probe neighboring resources. Invalid locale or icon files retain diagnostics and management controls. The icon reader returns a data URL for a supported image contained in the manifest directory, including after symlink resolution.
+The manager passes the bundle directory it already resolved. Confinement uses that real package root, not the icon's directory or the locale directory: sibling asset directories are valid, while symlinks outside the package are not. A missing icon export is optional; an invalid target or unreadable selected file reports a diagnostic without discarding valid text. Ordinary plugin rows and their details use generic artwork.
 
-The Client uses its existing language selection. Full module names, entry ids, search identities, and operation targets remain technical identities. Settings may shorten literal technical-name fallbacks; translated titles remain unchanged. Configuration summaries remain available when a plugin has no description. Registry installation previews, model-facing management output, and Session events do not receive multilingual UI dictionaries.
-
-This decision replaces the ordinary-plugin resource lookup in the [partially superseded metadata decision](2026-09-18-localized-package-metadata.md) and retains its bundle resource rules. Built-in bundle copy stays in exported locale files rather than a manager-owned dictionary. Publication checks validate bundle metadata resources and icons only.
+No metadata lookup evaluates a plugin entry. Disabled and failed plugins retain locale text, and each full plugin specifier and resolution parent keeps its own resource identity. Publication checks validate ordinary plugin locales as well as bundle locales, selected image resources, and publication coverage.
 
 ## Alternatives considered
 
-**Require one manifest per plugin.** Subpaths and local modules are valid Cordis plugins; package ownership is not part of their loading interface.
+**Export a JavaScript `meta` value.** Reading it requires module evaluation and makes metadata depend on loading. Existing locale JSON already supports disabled plugins and independent subpath metadata.
 
-**Import disabled plugins to read exports.** Importing executes module initialization. Opening or refreshing a management page must not execute an otherwise disabled plugin.
+**Use package metadata for every plugin.** A package-wide introduction or image need not describe each plugin it exports. Ordinary plugins own their locale text; bundles own package-level display resources.
 
-**Read sibling locale files or cache package metadata for plugin rows.** Compiled layout and package names do not identify individual plugin behavior. Retaining the actual loaded object preserves per-entry identity and avoids a separate cache invalidation policy.
+**Keep a top-level `icon` path.** It adds a separate path declaration outside the existing resource-export mechanism. The fixed `./icon` address allows the same Node resolution and remapping as locale resources.
 
-**Register display text during activation.** Pending plugins would lack metadata even though their module is already loaded. A passive exported value is available independently of service readiness.
-
-**Add a second language fallback policy or download packages for previews.** Existing locale selection covers display text, and registry previews need no additional package execution or downloads.
+**Require a manifest export for icons.** Text fallback and image publication are independent. The already-resolved bundle root provides confinement without exposing another resource.
 
 ## Verification
 
-Focused tests cover loaded namespace and service metadata, pending and failed entries, disable/re-enable replacement, HMR replacement and rollback, preset projection, profile-tree row identity, and absent manifest reads for ordinary rows. Bundle tests retain locale fallback and icon validation. Client and browser tests distinguish bundle artwork from ordinary plugin rows. Publication tests reject invalid bundle resources while ignoring unrelated plugin resources.
+Focused reader and publication tests cover remapped and conditional targets, absent exports, invalid resources, size limits, confinement, and locale-only ordinary reads. Consumer and browser tests cover localized disabled rows, bundle images, generic ordinary artwork, and retained diagnostics.
 
 ## Consequences
 
-Disabled or otherwise unloaded plugins display their module names even when their source exports metadata. Authors move ordinary plugin introductions from JSON resources to `meta`; only bundles can supply custom icons.
+Bundle authors replace top-level `icon` declarations with `exports["./icon"]` and include the target in `files`. Ordinary authors who want package-description text on their plugin rows publish it in locale `meta.description`; otherwise the description is absent. The Host reads no extra JavaScript and needs no Cordis or Loader metadata API. Session logs and management-tool display exclusions remain unchanged.

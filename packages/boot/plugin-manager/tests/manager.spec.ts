@@ -83,23 +83,6 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   return { ctx, dir, manager: ctx.pluginManager, bundle, profile, stopHmr, overlays, connection }
 }
 
-it('joins bundle rows to loaded plugin text without copying ordinary icons', async () => {
-  const { manager, ctx } = await fixture('startup', false, undefined, {}, undefined, (dir) => {
-    writeFileSync(join(dir, 'node_modules', 'extra', 'plugin.mjs'), `
-      export const meta = { title: { en: 'Loaded child' }, description: 'Explicit child description', icon: 'ignored.svg' };
-      export function apply() {}
-    `)
-  })
-  const row = (await manager.listBundles()).find(bundle => bundle.name === 'extra')!.rows[0]!
-  expect(row.meta).toEqual({ title: { en: 'Loaded child' }, description: 'Explicit child description' })
-  await ctx.loader.root.update([...ctx.loader.root.data, { id: 'managed', name: row.moduleName }])
-  expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')!.rows[0]).toEqual(row)
-  ctx.loader.builtins.replacement = { meta: { title: 'Different module' }, apply() {} }
-  await ctx.loader.resolve(row.entryId!).update({ name: 'cordis:replacement' })
-  await ctx.loader.await()
-  expect((await manager.listBundles()).find(bundle => bundle.name === 'extra')!.rows[0]?.meta).toBeUndefined()
-})
-
 it.each(['network', 'timeout'] as const)('stops a GitHub %s before pnpm and attributes it to the repository', async (kind) => {
   const { manager, dir, connection } = await fixture()
   const before = readFileSync(join(dir, 'package.json'), 'utf8')
@@ -353,7 +336,7 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([{ rowId: 'described-row', moduleName }])
 })
 
-it.each(['native', 'runtime'] as const)('reads disabled bundle metadata without reading plugin locale metadata with %s resolution', async (mode) => {
+it.each(['native', 'runtime'] as const)('reads a disabled bundle and its independent exported plugins without running them with %s resolution', async (mode) => {
   const { ctx, manager, dir, bundle, profile } = await fixture('startup')
   bundle('localized', [{ id: 'first', name: 'local-child/first' }, { id: 'second', name: 'local-child/second' }])
   const root = join(dir, 'node_modules', 'localized')
@@ -403,10 +386,9 @@ it.each(['native', 'runtime'] as const)('reads disabled bundle metadata without 
   await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
   const result = (await manager.listBundles()).find(row => row.name === 'localized')
   expect(result).toMatchObject({ enabled: false, meta: { title: { en: 'Local bundle', zh: '本地组合包' } }, rows: [
-    { rowId: 'first', moduleName: 'local-child/first' },
-    { rowId: 'second', moduleName: 'local-child/second' },
+    { rowId: 'first', moduleName: 'local-child/first', meta: { title: { en: 'First plugin' } } },
+    { rowId: 'second', moduleName: 'local-child/second', meta: { title: { en: 'Second plugin' } } },
   ] })
-  expect(result?.rows.every(row => row.meta === undefined)).toBe(true)
   expect(result?.rows[0]?.entryId).toBeUndefined()
   expect(readPluginMeta('local-child/private', parentURL)).toBeUndefined()
   if (mode === 'runtime') {

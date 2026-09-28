@@ -105,32 +105,44 @@ describe('plugin locale display metadata', () => {
     })
   })
 
+  it('uses only locales for ordinary plugins even when manifest and icon exports are broken', () => {
+    manifest({ './locale/*.json': './locale/*.json', './package.json': './broken.json', './icon': './missing.svg' })
+    file(join(dir, 'broken.json'), '{')
+    dictionary('en', { meta: { title: 'Ordinary' } })
+    expect(readPluginMeta('localized', parentURL)).toEqual({ title: { en: 'Ordinary' } })
+  })
+
+  it.each([undefined, null])('keeps a bundle with exports=%j manageable without an icon', (exports) => {
+    file(join(dir, 'package.json'), JSON.stringify({ name: 'localized', description: 'Plain bundle', type: 'module', exports }))
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({ title: 'localized', description: 'Plain bundle' })
+  })
+
   it('falls back to package fields when locale resources are absent', () => {
     manifest({ '.': './index.js', './package.json': './package.json' }, { description: 'Package introduction' })
-    expect(readPluginMeta('localized', parentURL)).toEqual({ title: 'localized', description: 'Package introduction' })
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({ title: 'localized', description: 'Package introduction' })
   })
 
   it('falls back per field without replacing available locale translations', () => {
     manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { description: 'Package introduction' })
     dictionary('en', { meta: { title: 'English title' } })
     dictionary('zh', { meta: { description: '中文介绍' } })
-    expect(readPluginMeta('localized', parentURL)).toEqual({
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
       title: { en: 'English title' }, description: { en: 'Package introduction', zh: '中文介绍' },
     })
     dictionary('en', { meta: { description: 'English introduction' } })
     dictionary('zh', { meta: { title: '中文标题' } })
-    expect(readPluginMeta('localized', parentURL)).toEqual({
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
       title: { en: 'localized', zh: '中文标题' }, description: { en: 'English introduction' },
     })
     dictionary('en', {})
     dictionary('zh', {})
-    expect(readPluginMeta('localized', parentURL)).toEqual({ title: 'localized', description: 'Package introduction' })
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({ title: 'localized', description: 'Package introduction' })
   })
 
   it('retains non-English descriptions with an empty final English fallback', () => {
     dictionary('en', { meta: { title: 'Plugin' } })
     dictionary('zh', { meta: { description: '中文介绍' } })
-    expect(readPluginMeta('localized', parentURL)).toEqual({
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
       title: { en: 'Plugin' }, description: { en: '', zh: '中文介绍' },
     })
   })
@@ -141,33 +153,33 @@ describe('plugin locale display metadata', () => {
       './search/package.json': './search-manifest.json',
     }, { description: 'Whole package' })
     file(join(dir, 'search-manifest.json'), JSON.stringify({ name: 'Search plugin', description: 'Search introduction' }))
-    expect(readPluginMeta('localized/search', parentURL)).toEqual({ title: 'Search plugin', description: 'Search introduction' })
-    expect(readPluginMeta('localized/review', parentURL)).toBeUndefined()
+    expect(readPluginMeta('localized/search', parentURL, { bundleDirectory: dir })).toEqual({ title: 'Search plugin', description: 'Search introduction' })
+    expect(readPluginMeta('localized/review', parentURL, { bundleDirectory: dir })).toBeUndefined()
   })
 
   it.each([{}, { name: '', description: ' ' }, { name: false, description: null }])('ignores unavailable package text: %j', (fields) => {
     manifest({ './feature/package.json': './feature.json' })
     file(join(dir, 'feature.json'), JSON.stringify(fields))
-    expect(readPluginMeta('localized/feature', parentURL)).toBeUndefined()
+    expect(readPluginMeta('localized/feature', parentURL, { bundleDirectory: dir })).toBeUndefined()
   })
 
   it('reports malformed fallback files', () => {
     manifest({ './feature/package.json': './feature.json' })
     file(join(dir, 'feature.json'), '{')
-    expect(readPluginMeta('localized/feature', parentURL)?.error).toContain('feature.json')
+    expect(readPluginMeta('localized/feature', parentURL, { bundleDirectory: dir })?.error).toContain('feature.json')
   })
 
   it('does not hide invalid locale fields behind package text', () => {
     manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { description: 'Package description' })
     dictionary('en', { meta: { title: false } })
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('meta.title must be a non-empty string')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error).toContain('meta.title must be a non-empty string')
   })
 
-  it('reads the manifest icon even when both English fields are supplied', () => {
-    manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { icon: './art/team.svg' })
+  it('reads the exported bundle icon even when both English fields are supplied', () => {
+    manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json', './icon': './art/team.svg' })
     file(join(dir, 'art', 'team.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
     dictionary('en', { meta: { title: 'Plugin', description: 'Locale introduction' } })
-    expect(readPluginMeta('localized', parentURL)).toEqual({
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
       title: { en: 'Plugin' }, description: { en: 'Locale introduction' },
       icon: `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64')}`,
     })
@@ -177,67 +189,54 @@ describe('plugin locale display metadata', () => {
     ['svg', 'image/svg+xml'], ['png', 'image/png'], ['jpg', 'image/jpeg'],
     ['jpeg', 'image/jpeg'], ['webp', 'image/webp'], ['SVG', 'image/svg+xml'],
   ])('encodes a package-local %s icon without executing the plugin', (extension, mediaType) => {
-    manifest({ '.': './index.js', './package.json': './package.json' }, { icon: `./icon.${extension}` })
+    manifest({ '.': './index.js', './package.json': './package.json', './icon': `./icon.${extension}` })
     const bytes = Buffer.from([0, 1, 127, 128, 255])
     writeFileSync(join(dir, `icon.${extension}`), bytes)
-    expect(readPluginMeta('localized', parentURL)).toEqual({
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
       title: 'localized', icon: `data:${mediaType};base64,${bytes.toString('base64')}`,
     })
   })
 
-  it('reads an icon-only subexport relative to its own manifest without inheriting the package icon', () => {
-    manifest({ './package.json': './package.json', './search/package.json': './search/manifest.json' }, { icon: './root.png' })
-    file(join(dir, 'root.png'), 'root')
-    file(join(dir, 'search', 'manifest.json'), JSON.stringify({ icon: './icon.webp' }))
-    file(join(dir, 'search', 'icon.webp'), 'search')
-    expect(readPluginMeta('localized/search', parentURL)).toEqual({
-      icon: `data:image/webp;base64,${Buffer.from('search').toString('base64')}`,
+  it.each(['./assets/logo.webp', { import: './assets/logo.webp', default: './missing.gif' }])('reads an independent icon using the Node-selected export %j', (icon) => {
+    manifest({ './icon': icon })
+    file(join(dir, 'assets', 'logo.webp'), 'image')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })).toEqual({
+      icon: `data:image/webp;base64,${Buffer.from('image').toString('base64')}`,
     })
-    expect(readPluginMeta('localized/review', parentURL)).toBeUndefined()
   })
 
-  it.each([null, false, 1, {}, [], '', '  '])('retains localized text while rejecting malformed icon %j', (icon) => {
-    manifest({ './locale/*.json': './locale/*.json', './package.json': './package.json' }, { icon })
-    dictionary('en', { meta: { title: 'Plugin', description: 'Introduction' } })
-    dictionary('zh', { meta: { title: '插件' } })
-    const { error, ...meta } = readPluginMeta('localized', parentURL)!
-    expect(meta).toEqual({ title: { en: 'Plugin', zh: '插件' }, description: { en: 'Introduction' } })
-    expect(error).toContain('icon must be a non-empty string')
+  it.each([false, 1, '', '/tmp/icon.svg', '../icon.svg', 'https://example.test/icon.svg'])('reports invalid exported icon target %j while retaining text', (icon) => {
+    manifest({ './locale/*.json': './locale/*.json', './icon': icon })
+    dictionary('en', { meta: { title: 'Plugin' } })
+    const meta = readPluginMeta('localized', parentURL, { bundleDirectory: dir })
+    expect(meta?.title).toEqual({ en: 'Plugin' })
+    expect(meta?.error).toBeDefined()
   })
 
-  it.each(['/tmp/icon.svg', 'C:\\icon.png', 'C:icon.png', '\\\\server\\share\\icon.png', 'https://example.test/icon.svg', 'data:image/svg+xml,<svg/>'])('rejects non-relative icon %s', (icon) => {
-    manifest({ './package.json': './package.json' }, { icon, description: 'Introduction' })
-    const { error, ...meta } = readPluginMeta('localized', parentURL)!
-    expect(meta).toEqual({ title: 'localized', description: 'Introduction' })
-    expect(error).toContain('icon must be a relative file path')
+  it.each(['icon.gif', 'icon.html', 'icon'])('rejects unsupported icon file %s', (icon) => {
+    manifest({ './package.json': './package.json', './icon': `./${icon}` })
+    file(join(dir, icon), 'unsupported')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error).toContain('icon must be SVG, PNG, JPEG, or WebP')
   })
 
-  it.each(['icon.gif', 'icon.html', 'icon', 'icon.svg?query'])('rejects unsupported icon file %s', (icon) => {
-    manifest({ './package.json': './package.json' }, { icon })
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must be SVG, PNG, JPEG, or WebP')
-  })
-
-  it('reports missing files, directories, and paths outside the manifest directory', () => {
-    manifest({ './package.json': './package.json' }, { icon: './missing.svg' })
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('missing.svg')
-    mkdirSync(join(dir, 'missing.svg'))
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must be a regular file')
-    manifest({ './package.json': './package.json' }, { icon: '../localized-other/icon.svg' })
-    file(join(root, 'node_modules', 'localized-other', 'icon.svg'), 'outside')
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must remain inside its manifest directory')
+  it.each(['missing', 'directory'])('reports a %s icon target', (kind) => {
+    manifest({ './icon': './missing.svg' })
+    if (kind === 'directory') mkdirSync(join(dir, 'missing.svg'))
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error)
+      .toContain(kind === 'directory' ? 'Directory import' : 'Cannot find module')
   })
 
   it('accepts an icon at the byte limit and rejects one byte more', () => {
-    manifest({ './package.json': './package.json' }, { icon: './icon.png' })
+    manifest({ './package.json': './package.json', './icon': './icon.png' })
     const bytes = Buffer.alloc(256 * 1024)
     writeFileSync(join(dir, 'icon.png'), bytes)
-    expect(readPluginMeta('localized', parentURL)?.icon).toBe(`data:image/png;base64,${bytes.toString('base64')}`)
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.icon).toBe(`data:image/png;base64,${bytes.toString('base64')}`)
     writeFileSync(join(dir, 'icon.png'), Buffer.alloc(bytes.length + 1))
-    expect(readPluginMeta('localized', parentURL)?.error).toContain('icon exceeds 256 KiB')
+    expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error).toContain('icon exceeds 256 KiB')
   })
 
-  it('rejects an icon that grows beyond the limit after its size check', () => {
-    manifest({ './package.json': './package.json' }, { icon: './icon.png' })
+  it.each(['growth', 'directory'])('rejects an icon changed after resolution: %s', (change) => {
+    manifest({ './package.json': './package.json', './icon': './icon.png' })
     const icon = join(dir, 'icon.png')
     file(icon, 'small')
     const original = fs.statSync
@@ -245,35 +244,35 @@ describe('plugin locale display metadata', () => {
     try {
       stat.mockImplementation(new Proxy(original, {
         apply(target, receiver: unknown, args: unknown[]): unknown {
+          const ownIcon = String(args[0]).endsWith(join('localized', 'icon.png'))
+          if (ownIcon && change === 'directory') {
+            unlinkSync(icon)
+            mkdirSync(icon)
+          }
           const result: unknown = Reflect.apply(target, receiver, args)
-          if (String(args[0]).endsWith(join('localized', 'icon.png'))) writeFileSync(icon, Buffer.alloc(256 * 1024 + 1))
+          if (ownIcon && change === 'growth') writeFileSync(icon, Buffer.alloc(256 * 1024 + 1))
           return result
         },
       }))
       syncBuiltinESMExports()
-      expect(readPluginMeta('localized', parentURL)?.error).toContain('icon exceeds 256 KiB')
+      expect(readPluginMeta('localized', parentURL, { bundleDirectory: dir })?.error)
+        .toContain(change === 'growth' ? 'icon exceeds 256 KiB' : 'icon must be a regular file')
     } finally {
       stat.mockRestore()
       syncBuiltinESMExports()
     }
   })
 
-  it('rejects icons reached through an external directory link and accepts internal links', () => {
-    manifest({ './package.json': './package.json' }, { icon: './art/icon.svg' })
-    const outside = join(root, 'outside')
-    file(join(outside, 'icon.svg'), 'outside')
+  it.each(['inside', 'outside'])('checks an icon reached through a directory link %s the bundle', (location) => {
+    manifest({ './icon': './art/icon.svg' })
+    const destination = join(location === 'inside' ? dir : root, 'art-target')
+    file(join(destination, 'icon.svg'), location)
     const link = join(dir, 'art')
-    symlinkSync(outside, link, 'junction')
+    symlinkSync(destination, link, 'junction')
     try {
-      expect(readPluginMeta('localized', parentURL)?.error).toContain('icon must remain inside its manifest directory')
-    } finally {
-      unlinkSync(link)
-    }
-    const inside = join(dir, 'images')
-    file(join(inside, 'icon.svg'), 'inside')
-    symlinkSync(inside, link, 'junction')
-    try {
-      expect(readPluginMeta('localized', parentURL)?.icon).toBe(`data:image/svg+xml;base64,${Buffer.from('inside').toString('base64')}`)
+      const meta = readPluginMeta('localized', parentURL, { bundleDirectory: dir })
+      if (location === 'outside') expect(meta?.error).toContain('icon must remain inside its bundle directory')
+      else expect(meta?.icon).toBe(`data:image/svg+xml;base64,${Buffer.from(location).toString('base64')}`)
     } finally {
       unlinkSync(link)
     }
@@ -394,9 +393,8 @@ describe('plugin locale display metadata', () => {
     })
     const specifier = 'localized/locale/en.json'
     expect(resolveSync.mock.calls).toEqual(version === 'v1'
-      ? [[specifier, parentURL, {}], [specifier, parentURL, {}], ['localized/package.json', parentURL, {}]]
-      : [[parentURL, { specifier, attributes: {} }], [parentURL, { specifier, attributes: {} }],
-        [parentURL, { specifier: 'localized/package.json', attributes: {} }]])
+      ? [[specifier, parentURL, {}], [specifier, parentURL, {}]]
+      : [[parentURL, { specifier, attributes: {} }], [parentURL, { specifier, attributes: {} }]])
   })
 
   it('rejects case-equivalent language names in a directory listing', () => {
@@ -476,7 +474,7 @@ describe('plugin display metadata with read-only resolver stacks', () => {
   }
 
   it.each(['profile', 'native'] as const)('falls back to package fields when %s resolution finds no locale resources', (lookup) => {
-    expect(readPluginMeta('plain', parentFor(lookup))).toEqual({ title: 'plain', description: 'Plain introduction' })
+    expect(readPluginMeta('plain', parentFor(lookup), { bundleDirectory: join(bundle, 'node_modules', 'plain') })).toEqual({ title: 'plain', description: 'Plain introduction' })
   })
 
   it.each(['profile', 'native'] as const)('reads exported locale resources through %s resolution', (lookup) => {

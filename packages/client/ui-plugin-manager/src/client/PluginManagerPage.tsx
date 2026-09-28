@@ -136,13 +136,15 @@ function itemArtwork(id: string): ReactNode {
 }
 
 /** Manifest images remain isolated from the page DOM; a failed decode keeps the position's default artwork. */
-function PackageArtwork({ src }: {
+function PackageArtwork({ src, row = false, size = row ? ROW_ARTWORK_SIZE : CARD_ARTWORK_SIZE }: {
   readonly src: string | undefined
+  readonly row?: boolean
+  readonly size?: number
 }): ReactNode {
   const [failedSource, setFailedSource] = useState<string>()
-  const size = CARD_ARTWORK_SIZE
+  const Fallback = row ? PluginArtworkSubagent : PluginArtworkDefault
   return src === undefined || src === failedSource
-    ? <PluginArtworkDefault size={size} />
+    ? <Fallback size={size} />
     : <img className={css.packageImage} src={src} width={size} height={size} alt="" onError={() => { setFailedSource(src) }} />
 }
 
@@ -233,7 +235,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><PluginArtworkSubagent size={ROW_ARTWORK_SIZE} /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PackageArtwork src={undefined} row /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
@@ -258,6 +260,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
                       onChange={(enabled) => { toggle.onSetEnabled(row, enabled) }}
                     />}
                 </div>
+                <MetadataError error={row.meta?.error} t={t} />
               </li>
             ))}
           </ul>
@@ -508,7 +511,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
         crumbLabel={t('backToPackage', { name: title })}
         crumbText={title}
         onBack={onBack}
-        icon={<PluginArtworkSubagent size={CARD_ARTWORK_SIZE} />}
+        icon={<PackageArtwork src={undefined} row size={CARD_ARTWORK_SIZE} />}
         actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
       />
       <div className={css.detailMain}>
@@ -520,6 +523,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
         <p className={css.detailName}><code>{row.moduleName}</code></p>
         <p className={css.detailDesc}>{description ?? renderSlot('plugins.row.config', { view: 'summary' }, { entryKey: key })}</p>
       </div>
+      <MetadataError error={row.meta?.error} t={t} />
       <div className={css.detailSections} data-plugin-config>
         {renderSlot('plugins.row.config', { view: 'page', form }, { entryKey: key })}
         {renderSlot('plugins.detail.section', { subject })}

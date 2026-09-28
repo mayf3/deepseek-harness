@@ -37,8 +37,8 @@ export interface BundleRowInfo {
   rowId: string
   /** The module the row names. */
   moduleName: string
-  /** Optional display metadata published for this plugin. */
-  meta?: Pick<PluginLocalizedMeta, 'title' | 'description'>
+  /** Local package display metadata, including rows whose bundle is disabled. */
+  meta?: PluginLocalizedMeta
   /** The Loader entry carrying this row, when exactly one live entry has its id. */
   entryId?: PluginEntryId
 }

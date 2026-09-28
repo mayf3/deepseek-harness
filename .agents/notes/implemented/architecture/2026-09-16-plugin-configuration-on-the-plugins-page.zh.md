@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-**插件页承载配置；设置只保留清单。** 页面在其 `main` 条目下声明三个子 slot。`plugins.item`（list）按 `label` 把官方插件列在官方分组里。`plugins.bundle.config`（以组合包的包名为键）渲染在组合包页面的描述与行之间。`plugins.row.config`（以 `<包名>#<行 id>` 为键）给这一行一个配置控件，打开它自己的页面。该页面的标题与描述遵循[插件元信息决策](2026-09-28-bundle-and-plugin-display-metadata.zh.md)；slot 键和技术身份不随展示文本改变。
+**插件页承载配置；设置只保留清单。** 页面在其 `main` 条目下声明三个子 slot。`plugins.item`（list）按 `label` 把官方插件列在官方分组里。`plugins.bundle.config`（以组合包的包名为键）渲染在组合包页面的描述与行之间。`plugins.row.config`（以 `<包名>#<行 id>` 为键）给这一行一个配置控件，打开它自己的页面。该页面的标题与描述遵循[插件元信息决策](2026-09-18-localized-package-metadata.zh.md)；slot 键和技术身份不随展示文本改变。
 
 页面通过 `view: 'page'` 渲染每个表单。官方插件卡片与详情还使用 `view: 'summary'`；行详情页只在插件没有展示描述时使用它。组合包配置仅渲染 `page`。页面负责画标题、图标与面包屑，把三份账本投影成一个可观察对象（`configLedgerSource`）绑在 store 旁边，自身从不点名任何可配置插件。侧栏导航与安装请求归属遵循[侧栏管理决策](2026-09-09-plugin-management-in-the-web-sidebar.zh.md)。
 

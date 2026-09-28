@@ -11,7 +11,6 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 
 interface Manifest {
   name?: string
-  icon?: string
   private?: boolean
   publishConfig?: { access?: string }
   exports?: Record<string, unknown>
@@ -26,7 +25,7 @@ describe('experimental Schedule bundle', () => {
     expect(manifest.name).toBe('@deepseek-ai/dsh-experimental-schedule-bundle')
     expect(manifest.private).toBeUndefined()
     expect(manifest.publishConfig?.access).toBe('public')
-    expect(manifest.icon).toBe('./icon.svg')
+    expect(manifest.exports?.['./icon']).toBe('./icon.svg')
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports?.['./locale/*.json']).toBe('./locale/*.json')
     expect(manifest.exports?.['./cordis.patch.yml']).toBe('./cordis.patch.yml')

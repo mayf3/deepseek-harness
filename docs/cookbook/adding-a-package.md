@@ -14,7 +14,7 @@ packages/<group>/<pkg>/
                    # ../../../vendor/cordis (+ ../../../vendor/schemastery if
                    # you use Config, + ../../<group>/<dep> for each dsh dep)
   src/index.ts     # service default export or plugin (name/inject/apply/Config)
-  locale/en.json   # optional bundle display text: meta.title and meta.description
+  locale/en.json   # optional display metadata: meta.title and meta.description
   locale/zh.json   # translations using the same fields
   README.md        # service API, events, extension points, design notes,
                    # + gated Model Experience context blocks or short form
@@ -111,20 +111,9 @@ A package with no context effect or one consumer-owned path uses the audited `No
 
 <a id="plugin-display-metadata"></a>
 
-## 5. Add optional display metadata
+## 5. Add optional plugin display metadata
 
-Ordinary function plugins export `meta` from their plugin namespace; default-exported service classes use a static `meta` property. Each optional field is a literal string or a language map with an English fallback:
-
-```typescript
-export const meta = {
-  title: { en: 'File Search', zh: '文件搜索' },
-  description: 'Search workspace files.',
-}
-```
-
-The inventory reads this property only from already-loaded plugins, including live preset compositions. It never imports a plugin for display. Unloaded plugins use their module names. Ordinary plugins have no custom icon and do not use package manifests or locale resources for display metadata.
-
-For a bundle, define its title and description in `locale/en.json`. Other language files, such as `locale/zh.json`, use the same fields:
+For an npm package plugin, define its title and description in `locale/en.json`. Other language files, such as `locale/zh.json`, use the same fields:
 
 ```json
 {
@@ -140,25 +129,32 @@ Merge these entries into `package.json`, retaining existing runtime exports and 
 ```json
 {
   "exports": {
-    "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": ["locale/*.json"]
 }
 ```
 
-Keep language files together in `locale/`, with `en.json` as the discovery entry. Fields are optional; present values must be non-empty strings. Missing files or fields permit fallback, while malformed JSON or invalid fields produce a per-bundle diagnostic.
+Keep language files together, with `locale/en.json` as the exported discovery entry. An exports mapping can redirect `./locale/*.json` to another directory; all language files for that plugin must share the selected directory. Fields are optional; present values must be non-empty strings. Missing files or fields permit fallback, while malformed JSON or invalid fields produce a per-plugin diagnostic.
 
-Fields fall back independently before view-specific name formatting, using the existing locale language chain first:
+Ordinary plugins read only these locale resources. Fields fall back independently through the existing locale language chain, then use the complete Cordis plugin name for a missing title and no description for a missing description. No JavaScript `meta` export is needed.
 
-- Title: locale `meta.title` → `package.json.name` → complete Cordis plugin name.
-- Description: locale `meta.description` → `package.json.description` → no description.
+Only bundles additionally use `name` and `description` from an accessible `<bundle name>/package.json` as text fallback. Export `./package.json` when the bundle needs that fallback; ordinary plugin display reads never probe it.
 
-Export `<package name>/locale/en.json` for locale lookup; expose `<package name>/package.json` for package-field fallback or an icon declaration.
+Only bundles can customize artwork. Export an `./icon` resource and include its target in `files`, retaining existing entries:
 
-For an image on bundle cards and details, set top-level `"icon": "./icon.svg"` in that exported manifest and include the image in `files`. The path is relative to the bundle manifest's directory. SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP files are supported up to 256 KiB. Absolute paths, URLs, paths outside that directory, and symlinks resolving outside it are rejected. Images need no separate export and must be self-contained; SVG is rendered as an image, not inline HTML. The Host returns a data URL without activating the plugin. Invalid declarations or unreadable files produce a metadata diagnostic while retaining valid text; missing or undecodable images use the panel's default artwork.
+```json
+{
+  "exports": {
+    "./icon": "./assets/logo.webp"
+  },
+  "files": ["assets/logo.webp"]
+}
+```
 
-Bundle cards and details display this resource metadata even for disabled bundles. Component lists, plugin configuration details, and Settings use the loaded plugin's `meta` instead. Neither read activates plugins.
+The icon uses Node exports resolution just like locale resources; no top-level `icon` field or `./package.json` export is required. SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP files are supported up to 256 KiB. Node rejects invalid export targets; the Host also rejects paths and symlinks resolving outside the bundle directory. Images must be self-contained; SVG is rendered as an image, not inline HTML. The Host returns a data URL without activating the bundle. Invalid targets or unreadable files produce a metadata diagnostic while retaining valid text; absent exports or undecodable images use default artwork. Ordinary plugin rows and details always use generic artwork.
+
+Installed bundle cards and details, component lists and configuration details, and Settings' plugin inventory display this metadata, including disabled and preset plugins. Reads do not activate plugins.
 
 Only Settings shortens literal package-name and module-name fallbacks by removing npm scope and Cordis/DSH prefixes; Plugin Manager keeps complete names. Locale titles and descriptions remain unchanged. A row configuration page can use its registered summary when the plugin has no display description.
 
@@ -169,7 +165,7 @@ Verify the result:
 1. Run `pnpm run verify-package-meta` from the repository root to check fields, resource exports, and publication coverage.
 2. Switch an installed plugin's applicable Plugin Manager and Settings entries between English and Chinese; check the title, description, per-field fallback, and Settings-only compact technical names.
 
-See the [plugin metadata Agent Note](../../.agents/notes/implemented/architecture/2026-09-28-bundle-and-plugin-display-metadata.md) for resource ownership and non-activation rationale.
+See the [plugin metadata Agent Note](../../.agents/notes/implemented/architecture/2026-09-18-localized-package-metadata.md) for resource ownership and non-activation rationale.
 
 ## 6. Verify
 

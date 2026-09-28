@@ -31,7 +31,7 @@ Call `pluginInventory/list` when a client or settings page needs to show what is
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
 
-Loaded plugin rows can carry optional `meta` with a title and description from the plugin object. Function plugin namespaces export `meta`; default-exported service classes declare static `meta`. The Client selects its language. Only bundles own custom icons. Unloaded rows use their module names.
+Loader and preset rows can carry optional `meta` with a title, description, or metadata diagnostic. The Host returns available translations and literal fallbacks; the Client selects its language. Metadata diagnostics do not change enablement or fiber phase.
 
 ### Per-preset compositions
 
@@ -53,7 +53,7 @@ The inventory is a snapshot for display and diagnostics: a client can render the
 
 The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal `plugin/status` events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns preset composition reads, and this package maps root-fiber states onto the public phases.
 
-Display metadata is projected from the already-loaded plugin object. Inventory reads do not import modules or read plugin manifests or locale files; declaration-only preset rows therefore carry no display metadata.
+Display metadata comes from the optional `pluginPackages` service using each Loader tree's resolution base, or the gateway context's base for preset rows. Without the service or the applicable base, `meta` is absent. Metadata reads use exported locale JSON only, without package-manifest fallback or icons, and do not load or activate plugins.
 
 ### The phase mapping
 

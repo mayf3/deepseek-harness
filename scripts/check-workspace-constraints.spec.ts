@@ -255,10 +255,18 @@ describe('dsh family version coherence', () => {
 })
 
 describe('package payload constraints', () => {
-  it.each(['./art/icon.svg', 'art/icon.svg'])('includes declared icon %s in the canonical payload', (icon) => {
-    expect(expectedDshPackageFiles({ icon, exports: { './locale/*.json': './locale/*.json' } })).toEqual([
-      'art/icon.svg', 'locale/*.json', 'lib/index.js', 'lib/types/**/*.d.ts',
+  it.each([
+    ['./art/icon.svg', ['art/icon.svg']],
+    [{ import: './art/icon.svg', default: './art/fallback.svg' }, ['art/icon.svg', 'art/fallback.svg']],
+    [['./art/icon.svg', './art/icon.svg'], ['art/icon.svg']],
+  ] as const)('includes exported bundle icon targets in the canonical payload: %j', (icon, expected) => {
+    expect(expectedDshPackageFiles({ dsh: { bundle: { patch: './cordis.patch.yml' } }, exports: { './icon': icon } })).toEqual([
+      ...expected, 'lib/index.js', 'cordis.patch.yml', 'lib/types/**/*.d.ts',
     ])
+  })
+
+  it('ignores ordinary plugin icon exports in the canonical payload', () => {
+    expect(expectedDshPackageFiles({ exports: { './icon': './icon.svg' } })).toEqual(['lib/index.js', 'lib/types/**/*.d.ts'])
   })
 
   it('accepts the Agent Team icon payload and rejects its omission', () => {

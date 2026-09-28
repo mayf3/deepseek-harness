@@ -66,56 +66,7 @@ function metadataFixture(mode: 'native' | 'runtime') {
 }
 
 describe('PluginInventoryGateway', () => {
-  it.each(['active', 'pending', 'failed'] as const)('reads only explicit text from a loaded %s module', async (phase) => {
-    const { dir, baseUrl } = metadataFixture('native')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'local-plugin', type: 'module', exports: './index.js' }))
-    writeFileSync(join(dir, 'index.js'), `
-      export const meta = { title: { en: 'Export title', zh: '导出标题' }, description: 'Export description', icon: 'ignored.svg', error: 'ignored' };
-      export const inject = ${JSON.stringify(phase === 'pending' ? ['neverReady'] : [])};
-      export function apply() { ${phase === 'failed' ? 'throw new Error("fixture failure")' : ''} }
-    `)
-    const { ctx, inventory } = await harness(baseUrl)
-    const entryId = await ctx.loader.create({ name: pathToFileURL(join(dir, 'index.js')).href })
-    await ctx.loader.await()
-    expect((await inventory.list()).entries).toEqual([{
-      entryId, moduleName: pathToFileURL(join(dir, 'index.js')).href, enabled: true, fiberPhase: phase,
-      meta: { title: { en: 'Export title', zh: '导出标题' }, description: 'Export description' },
-    }])
-    await ctx.loader.update(entryId, { disabled: true })
-    await ctx.loader.await()
-    expect((await inventory.list()).entries[0]?.meta).toBeUndefined()
-  })
-
-  it('retains loaded plugin identity only for the current fiber', async () => {
-    const { ctx, inventory } = await harness()
-    const first = { meta: { title: 'First' }, apply() {} }
-    const second = { meta: { title: 'Second' }, apply() {} }
-    ctx.loader.builtins.feature = first
-    const entryId = await ctx.loader.create({ name: 'cordis:feature' })
-    const entry = ctx.loader.resolve(entryId)
-    expect(entry.plugin).toBe(first)
-    await ctx.loader.update(entryId, { disabled: true })
-    await ctx.loader.await()
-    expect(entry.plugin).toBeUndefined()
-    ctx.loader.builtins.feature = second
-    await ctx.loader.update(entryId, { disabled: false })
-    expect(entry.plugin).toBe(second)
-    expect((await inventory.list()).entries[0]?.meta).toEqual({ title: 'Second' })
-  })
-
-  it('reads static text from a default service class', async () => {
-    const { ctx, inventory } = await harness()
-    // oxlint-disable-next-line typescript/no-extraneous-class -- Loader fixture exercises default-exported class metadata.
-    class Feature {
-      static meta = { description: 'Service description without a title' }
-    }
-    ctx.loader.builtins.feature = { default: Feature }
-    await ctx.loader.create({ name: 'cordis:feature' })
-    expect((await inventory.list()).entries[0]?.meta).toEqual({ description: 'Service description without a title' })
-  })
-
-  it.each(['native', 'runtime'] as const)('ignores package locale metadata while the plugin remains disabled with %s resolution', async (mode) => {
+  it.each(['native', 'runtime'] as const)('reads local metadata while the package entry remains disabled with %s resolution', async (mode) => {
     const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
     mkdirSync(join(dir, 'locale'), { recursive: true })
     writeFileSync(join(dir, 'package.json'), JSON.stringify({
@@ -131,9 +82,8 @@ describe('PluginInventoryGateway', () => {
     await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
     await ctx.loader.create({ name: 'local-plugin/feature', disabled: true })
     expect((await inventory.list()).entries).toMatchObject([{
-      enabled: false, fiberPhase: null,
+      enabled: false, fiberPhase: null, meta: { title: { en: 'Local plugin' }, description: { en: 'Local description' } },
     }])
-    expect((await inventory.list()).entries.every(row => row.meta === undefined)).toBe(true)
     if (mode === 'runtime') {
       expectUnlinked()
       await ctx.fiber.dispose()
@@ -142,7 +92,7 @@ describe('PluginInventoryGateway', () => {
     }
   })
 
-  it.each(['native', 'runtime'] as const)('ignores package locale metadata for unmounted preset rows with %s resolution', async (mode) => {
+  it.each(['native', 'runtime'] as const)('resolves preset row metadata from the profile base without loading the plugins with %s resolution', async (mode) => {
     const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
     mkdirSync(join(dir, 'locale'), { recursive: true })
     writeFileSync(join(dir, 'package.json'), JSON.stringify({
@@ -174,6 +124,7 @@ describe('PluginInventoryGateway', () => {
         rows: [
           {
             entryId: 'feature', moduleName: 'local-plugin/feature', enabled: false, fiberPhase: null,
+            meta: { title: { en: 'Preset plugin', zh: '预设插件' }, description: { en: 'Preset description' } },
           },
           { entryId: null, moduleName: 'local-plugin/private', enabled: false, fiberPhase: null },
         ],

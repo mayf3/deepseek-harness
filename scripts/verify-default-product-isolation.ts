@@ -94,8 +94,8 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     if (manifest?.dsh?.bundle?.patch === undefined) {
       failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must declare dsh.bundle.patch`)
     }
-    if (typeof manifest?.icon !== 'string') {
-      failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must declare an icon`)
+    if (manifest?.exports?.['./icon'] === undefined) {
+      failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must export ./icon`)
     }
     if (manifest?.exports?.['./locale/*.json'] === undefined) {
       failures.push(`${PROFILE_SOURCE}: optional bundle ${name} must export ./locale/*.json display metadata`)

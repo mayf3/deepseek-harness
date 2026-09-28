@@ -10,9 +10,7 @@ Plugin Manager needs readable titles and descriptions for installed bundles and 
 
 ## Decision
 
-The [bundle and plugin metadata decision](2026-09-28-bundle-and-plugin-display-metadata.md) partially supersedes this note: ordinary plugins use loaded exports. This note retains the bundle resource rules and their rationale.
-
-Each bundle supplies optional `meta.title` and `meta.description` strings in its `locale/<language>.json` resources, starting with `locale/en.json`. These strings directly provide its display title and description. Other top-level locale content belongs to its existing consumers and is not included in metadata responses.
+Each plugin supplies optional `meta.title` and `meta.description` strings in its `locale/<language>.json` resources, starting with `locale/en.json`. These strings directly provide its display title and description. Other top-level locale content belongs to its existing consumers and is not included in metadata responses.
 
 ```json
 {
@@ -23,7 +21,7 @@ Each bundle supplies optional `meta.title` and `meta.description` strings in its
 }
 ```
 
-The bundle package name owns the resource address. The resource reader accepts the following address forms; Plugin Manager calls it only for bundles. Node module resolution selects files through the applicable profile and package exports without evaluating plugin code:
+The configured Cordis plugin name owns the resource address. Node module resolution selects files through the applicable profile and package exports without evaluating plugin code:
 
 | Plugin form | Locale resource |
 |---|---|
@@ -33,24 +31,24 @@ The bundle package name owns the resource address. The resource reader accepts t
 
 Locale addresses are not derived from a resolved JavaScript filename or an owning package directory. File paths and file URLs, including Windows drive and UNC paths, skip resource resolution and return no metadata; a file address alone is not a metadata error. They supply neither sibling locale metadata nor a neighboring package manifest. The [package cookbook](../../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) owns directory examples, export declarations, publication entries, and author verification.
 
-Language files for one bundle share a directory. The Host resolves `en.json`, discovers language filenames in that directory, and resolves each resource using the same plugin specifier and parent URL. The English resource anchors discovery, but any language may omit either display field. Language identifiers are case-insensitive and duplicates are rejected. Present locale display fields must be non-empty strings.
+Language files for one plugin share a directory. The Host resolves `en.json`, discovers language filenames in that directory, and resolves each resource using the same plugin specifier and parent URL. The English resource anchors discovery, but any language may omit either display field. Language identifiers are case-insensitive and duplicates are rejected. Present locale display fields must be non-empty strings.
 
-The Host reads installed bundle metadata without importing or activating their plugins. Remotes carry multilingual values or literal fallback text for the two display fields. The Client reuses its existing language selection and fallback chain at render time, without adding language registration, plugin-specific language defaults, or another language fallback policy.
+The Host reads installed bundles and their declared plugin rows without importing or activating them. Remotes carry multilingual values or literal fallback text for the two display fields. The Client reuses its existing language selection and fallback chain at render time, without adding language registration, plugin-specific language defaults, or another language fallback policy.
 
-Each field falls back independently before view-specific name formatting:
+The [bundle and plugin display metadata decision](2026-09-28-bundle-and-plugin-display-metadata.md) supersedes ordinary-plugin package fallback and owns custom image scope. Locale resource identity, language selection, and non-activation remain governed here.
 
-| Field | Existing locale fallback chain | Same-address package fallback | Final fallback |
+| Field | Existing locale fallback chain | Bundle-only package fallback | Final fallback |
 |---|---|---|---|
-| Title | `meta.title` | Non-empty `name` from `<plugin specifier>/package.json` | Complete configured Cordis plugin name |
-| Description | `meta.description` | Non-empty `description` from `<plugin specifier>/package.json` | No package description |
+| Title | `meta.title` | Non-empty `name` from `<bundle specifier>/package.json` | Complete configured Cordis plugin name |
+| Description | `meta.description` | Non-empty `description` from `<bundle specifier>/package.json` | No description |
 
-The package fallback obeys resource exports and belongs to the same plugin address; a subpath does not inherit its owning package's introduction. The Host supplies the package or final value as the English fallback for a field that has translations but no English value, preserving the existing Client locale API. Missing or unexported resources and missing fields use these fallbacks; invalid locale fields or malformed files report a diagnostic instead of silently falling back, while retaining management operations.
+Bundle package fallback obeys resource exports; ordinary plugins do not read a manifest for display text. The Host supplies the applicable package or final value as the English fallback for a field that has translations but no English value, preserving the existing Client locale API. Missing or unexported resources and missing fields use these fallbacks; invalid locale fields or malformed files report a diagnostic instead of silently falling back, while retaining management operations.
 
-Plugin Manager uses this resource metadata on installed bundle cards and details, preserving complete technical-name fallbacks. Ordinary component rows and Settings inventory use loaded exports as defined by the partially superseding decision.
+Plugin Manager uses this metadata on installed bundle cards and details, component lists, and component configuration details, preserving complete technical-name fallbacks. Settings uses it in the plugin inventory, including preset plugins, but shortens literal package-name and module-name fallbacks by removing their npm scope and Cordis/DSH prefixes. Translated titles remain verbatim in both views; full module names, entry ids, search identities, and operation targets stay unchanged. The [Settings inventory README](../../../../packages/client/ui-settings-plugin-inventory/README.md#use-this-package) owns the prefix rules.
 
 A row configuration page uses its registered `summary` view only when the plugin has no display description. The bundle's raw `description` field remains available to Host and model consumers; it is not an additional UI fallback around resource exports. These rules preserve one displayed description while keeping configuration summaries available for plugins without one.
 
-Disabled bundle metadata remains readable without activation. The Install view still uses registry information from `pnpm view`; it does not replace that information with locale metadata. Registry, Git, and tarball inspection before installation does not read remote package contents for translation. Model tool results retain their existing package information and exclude multilingual UI dictionaries. Session events remain unchanged.
+Disabled plugins remain readable without activation. The Install view still uses registry information from `pnpm view`; it does not replace that information with locale metadata. Registry, Git, and tarball inspection before installation does not read remote package contents for translation. Model tool results retain their existing package information and exclude multilingual UI dictionaries. Session events remain unchanged.
 
 Built-in bundle introductions live in their exported language files. Beta markers, page grouping, configuration slot ownership, and enablement targets remain unchanged. Plugin introductions and component interaction copy retain separate owners.
 
@@ -74,16 +72,16 @@ Built-in bundle introductions live in their exported language files. Beta marker
 
 ## Verification
 
-- Bundles display local resource metadata; disabled bundles need no activation for reading.
-- Language switching updates bundle titles and descriptions while keeping package identities and operation targets intact.
+- Bundles, child plugins, and read-only inventory display local metadata; disabled packages need no activation for reading.
+- Language switching updates titles and descriptions; Settings shortens only literal technical-name fallbacks, not translated titles, and keeps module identities and operation targets intact.
 - Direct metadata, unrelated locale content, absent resources, malformed JSON, missing display fields, and conflicting language identifiers have focused coverage.
 - Separate exports in one package and same-named packages under different parents retain independent metadata without executing plugin entries.
 - Windows drive paths, UNC paths, relative and absolute file paths, and file URLs return no metadata without invoking resource resolution.
-- Missing locale resources and individual fields fall back independently to address-local package fields, then the complete module specifier without a description.
+- Missing locale fields use complete module-name fallback and omit descriptions; only bundles also use address-local package fields.
 - Publication checks require readable resource exports and included language files, without duplicate ownership of built-in copy in the manager and plugins.
 - Management tools preserve existing model output, and pre-installation inspection adds no package-content lookup.
 - Focused tests and the complete `pnpm run build` succeed.
 
 ## Consequences
 
-Omitted language files or exports can make metadata unavailable after publication, so verification covers both resolution and packaged files. Metadata errors remain per-bundle diagnostics without removing the manager's repair controls; file diagnostics retain their absolute paths. Display metadata is read per request without a metadata cache. Lookup retains the complete module specifier and its resolution parent; package-name-only caching cannot distinguish exported plugins or different installations.
+Omitted language files or exports can make metadata unavailable after publication, so verification covers both resolution and packaged files. Metadata errors remain per-plugin diagnostics without removing the manager's repair controls; file diagnostics retain their absolute paths. Display metadata is read per request without a metadata cache. Lookup retains the complete module specifier and its resolution parent; package-name-only caching cannot distinguish exported plugins or different installations.

@@ -28,21 +28,22 @@ A Host-only bundle needs no dependencies, install scripts, or build tool:
 
 ## Display metadata and icon
 
-Plugin Manager cards, bundle details, component rows, and the Settings plugin inventory read display text and an icon from the manifest without activating the plugin. Put the title and description in `locale/en.json` (other languages such as `locale/zh.json` use the same fields), and declare the icon as a top-level `icon` in `package.json`:
+Plugin Manager and Settings read `meta.title` and `meta.description` from exported locale JSON without activating plugins. Ordinary plugins read only these resources and use generic artwork. Put the English discovery file at `locale/en.json`; other languages use the same fields:
 
 ```json
 { "meta": { "title": "My Decoration", "description": "Draws a badge under the composer." } }
 ```
 
+Only bundles can customize icons. Merge these resource exports and publication files into the bundle manifest, retaining its runtime exports:
+
 ```json
 {
-  "icon": "./icon.svg",
-  "exports": { "./package.json": "./package.json", "./locale/*.json": "./locale/*.json" },
+  "exports": { "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
   "files": ["locale/*.json", "icon.svg"]
 }
 ```
 
-`icon` is a path relative to the manifest directory; SVG, PNG, JPEG, and WebP up to 256 KiB are accepted, while absolute paths, URLs, paths outside the directory, and symlinks leaving it are rejected. Missing fields fall back to `package.json` `name` and `description` and to the panel's default artwork; malformed metadata produces a diagnostic and keeps the valid text.
+Both resource addresses support Node exports remapping. Do not add a JavaScript `meta` export or a top-level manifest `icon` field. The icon target can be SVG, PNG, JPEG, or WebP up to 256 KiB and must stay inside the real bundle directory, including through symlinks. Icon errors retain valid text. To enable optional bundle `name`/`description` fallback, also export `./package.json`; icons do not require it, and ordinary plugin display reads never use it. Missing ordinary titles use module names, missing descriptions are omitted, and absent or undecodable bundle images use default artwork.
 
 ## Host plugin export forms
 

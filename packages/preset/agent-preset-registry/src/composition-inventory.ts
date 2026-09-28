@@ -1,5 +1,4 @@
 /** Plugin inventory from declared configuration or an activated revision. */
-import { readLoadedPluginMeta, type LoadedPluginMeta } from '@deepseek-ai/dsh-app-boot'
 import type { FiberState } from '@deepseek-ai/cordis'
 import { isJsExpr, type EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { entryListProblem } from './definition.ts'
@@ -33,8 +32,6 @@ export interface AgentPresetCompositionRow {
   readonly condition?: string
   /** Root-fiber state, present only when read from a live mount. */
   readonly fiberState?: FiberState
-  /** Display text from the mounted plugin; absent for unmounted rows. */
-  readonly meta?: LoadedPluginMeta
 }
 
 /** One preset's roster identity beside its composition rows. */
@@ -160,11 +157,9 @@ export function mountedCompositionRows(tree: EntryTree): AgentPresetCompositionR
   const prefix = owner === undefined ? '' : `${owner.id}:`
   for (const entry of tree.entries()) {
     if (entry.options.group) continue
-    const meta = readLoadedPluginMeta(entry.plugin)
     found.push({
       entryId: entry.id.slice(prefix.length),
       moduleName: entry.options.name,
-      ...meta === undefined ? {} : { meta },
       enabled: !entry.disabled,
       ...isJsExpr(entry.options.disabled) ? { condition: entry.options.disabled.__jsExpr } : {},
       ...entry.fiber === undefined ? {} : { fiberState: entry.fiber.state },

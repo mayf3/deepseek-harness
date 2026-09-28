@@ -12,7 +12,7 @@ import z from '@deepseek-ai/schemastery'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import {
-  readLoadedPluginMeta, readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
+  readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
   reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
   evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
@@ -301,7 +301,7 @@ export class PluginManager extends TypertRemoteService {
         const compatibility = evaluatePluginCompatibility(info, exemptions)
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-        const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href)
+        const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href, { bundleDirectory: dir })
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           ...meta === undefined ? {} : { meta },
@@ -633,21 +633,23 @@ export class PluginManager extends TypertRemoteService {
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     const patches: PatchOptions[] = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
-    const live = new Map<string, { entryId: PluginEntryId; moduleName: string; meta: ReturnType<typeof readLoadedPluginMeta> }>()
+    const live = new Map<string, { entryId: PluginEntryId; baseUrl: string | undefined }>()
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.parent.tree.ctx.fiber.entry?.id !== 'include') continue
       /* v8 ignore next -- the Loader gives every entry an id before it is listed */
       if (typeof entry.options.id === 'string') live.set(entry.options.id, {
-        entryId: pluginEntryId(entry.id), moduleName: entry.options.name, meta: readLoadedPluginMeta(entry.plugin),
+        entryId: pluginEntryId(entry.id), baseUrl: entry.parent.tree.ctx.baseUrl,
       })
     }
     const rows: BundleRowInfo[] = []
+    const packages = this.ctx.get('pluginPackages')
     for (const row of flatten(composeEntries([patches.filter(item => item.insert !== undefined)]))) {
       if (typeof row.id !== 'string' || typeof row.name !== 'string') continue
-      const entry = live.get(row.id)
+      const active = live.get(row.id)
+      const entryId = active?.entryId
+      const base = active?.baseUrl ?? pathToFileURL(join(dir, 'package.json')).href
+      const meta = packages?.metaOf(row.name, base)
       rows.push({ rowId: row.id, moduleName: row.name,
-        ...entry === undefined ? {} : { entryId: entry.entryId },
-        ...entry?.moduleName !== row.name || entry.meta === undefined ? {} : { meta: entry.meta } })
+        ...entryId === undefined ? {} : { entryId }, ...meta === undefined ? {} : { meta } })
     }
     const declared = new Set(rows.map(row => row.rowId))
     const overrides = [...new Set(patches.flatMap(item =>
