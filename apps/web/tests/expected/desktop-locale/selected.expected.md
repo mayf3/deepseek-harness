@@ -20,7 +20,7 @@
   - button "Decrease font size"
   - text: px Work details Choose how much detail to show for tool calls
   - button "Standard"
-  - text: Coding Tools Shows trajectory and code diffs, and adds PTC and Minimal modes to new chats
+  - text: Coding Tools Shows trajectory and code diffs, and offers more agent preset options
   - switch "Coding Tools" [checked]
   - text: Keyboard shortcuts
   - paragraph: View and edit available shortcuts and input actions
