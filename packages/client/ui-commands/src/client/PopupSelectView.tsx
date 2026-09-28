@@ -11,7 +11,7 @@
  * above the composer.
  */
 import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/dsh-client-ui-primitives'
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
 import { useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { IconCheckOutlineRegular, RiskConfirmation, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -50,7 +50,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
   const rows = useMemo(() => filterOptions(state.options, state.search, state.searchMode),
     [state.options, state.search, state.searchMode])
   const groups = useMemo(() => groupOptions(rows), [rows])
-  useLayoutEffect(() => {
+  useEffect(() => {
     const viewport = viewportRef.current
     if (viewport === null) return
     return observeStickyMenuGroups(viewport)

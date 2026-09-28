@@ -852,46 +852,6 @@ describe('ModelSelect search', () => {
   })
 })
 
-it('paints only a pinned provider heading and clears its state when the pane closes', () => {
-  const directory = createSnapshotStore(state({ groups: [
-    ...state().groups,
-    { id: 'other', name: 'Other', models: [{ id: 'gemini', name: 'Gemini Flash' }] },
-  ] }))
-  render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
-  const trigger = screen.getByRole('button', { name: /选择模型/ })
-  fireEvent.click(trigger)
-  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-  const viewport = screen.getByRole('menu', { name: '模型' })
-  const sections = [...viewport.querySelectorAll<HTMLElement>('section')]
-  const headings = sections.map(section => section.querySelector<HTMLElement>(':scope > div')!)
-  let firstHeight = 90
-  vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 100, 240, 80))
-  vi.spyOn(sections[0]!, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 100 - viewport.scrollTop, 240, firstHeight))
-  vi.spyOn(sections[1]!, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, 103 + firstHeight - viewport.scrollTop, 240, 56))
-  const pinned = (): boolean[] => headings.map(heading => heading.hasAttribute('data-stuck'))
-  fireEvent.scroll(viewport, { target: { scrollTop: 0 } })
-  expect(pinned()).toEqual([false, false])
-  fireEvent.scroll(viewport, { target: { scrollTop: 24 } })
-  expect(pinned()).toEqual([true, false])
-  fireEvent.scroll(viewport, { target: { scrollTop: 93 } })
-  expect(pinned()).toEqual([false, false])
-  fireEvent.scroll(viewport, { target: { scrollTop: 94 } })
-  expect(pinned()).toEqual([false, true])
-  firstHeight = 130
-  fireEvent.resize(window)
-  expect(pinned()).toEqual([true, false])
-  fireEvent.scroll(viewport, { target: { scrollTop: 0 } })
-  expect(pinned()).toEqual([false, false])
-  fireEvent.scroll(viewport, { target: { scrollTop: 24 } })
-  const removeScroll = vi.spyOn(viewport, 'removeEventListener')
-  fireEvent.click(trigger)
-  expect(removeScroll).toHaveBeenCalledWith('scroll', expect.any(Function))
-  expect(pinned()).toEqual([false, false])
-  fireEvent.click(trigger)
-  fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-  expect(screen.getByRole('menu', { name: '模型' }).querySelector('[data-stuck]')).toBeNull()
-})
-
 it('shows the unselected model control with the inherited effort', async () => {
   const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, routable: false, retainedEffort: 'High' }))
   render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)

@@ -191,7 +191,7 @@ export function ModelSelect(
     ;(cell !== null && cell !== undefined && !cell.disabled ? cell : triggerRef.current)?.focus()
   }, [open, pane, showSearch])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const viewport = groupsRef.current
     if (viewport === null) return
     return observeStickyMenuGroups(viewport)
