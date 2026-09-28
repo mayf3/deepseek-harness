@@ -184,7 +184,7 @@ interface UserQuestionProjectionView {
 }
 ```
 
-An open question accepts answers only through the waterfall. Once it is `continued`, the `answer` Remote method queues a user message for the owning agent and wakes it if idle. The message has source `user-question-reply`, outcome `answered`, and an `answer_to_pending_question` payload. The method refuses open questions and a second reply while one is queued, including across a Host restart. It rejects incomplete or duplicate answer batches with `BAD_ANSWER`.
+An open question accepts answers only through the waterfall. Once it is `continued`, the `answer` Remote method queues a user message for the owning agent and wakes it if idle. The message has source `user-question-reply`, outcome `answered`, and an `answer_to_pending_question` payload. The method returns `false` for an open or unknown call, rejects a second queued reply with `REPLY_QUEUED` even after a Host restart, and rejects incomplete or duplicate answer batches with `BAD_ANSWER`.
 
 Closing the Client panel sends nothing. A foreground timeout ends only the tool wait. Continued questions have no deadline; they stay answerable until a reply is admitted.
 
@@ -226,9 +226,11 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
  * @param agent - Live root agent for the owning Session.
  * @param callId - Continued question identity.
  * @param answer - Complete structured answer batch, one item per question of the call.
- * @returns Whether the question was continued and had no reply already queued.
+ * @returns Whether the question is still continued; an accepted reply stays
+ *   queued until the agent admits its user message.
  * @throws {UserQuestionError} `BAD_ANSWER` when the batch does not name each
- *   question of the call exactly once.
+ *   question of the call exactly once, or `REPLY_QUEUED` when a reply is
+ *   already waiting for admission.
  */
 @Remote answer(agent: Agent, callId: ToolCallId, answer: AskUserQuestionAnswer): boolean
 

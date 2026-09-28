@@ -10,7 +10,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { planReviewOf, type QuestionAnswer, type QuestionCardSnapshot, type QuestionComposerProps } from './contract/slots.ts'
 import type { PendingQuestion } from './contract/slots.ts'
-import type { QuestionDraftAnswer } from './draft-store.ts'
+import type { QuestionDraftAnswer, QuestionDraftProgress } from './draft-store.ts'
 import { PlanReviewPanel } from './PlanReviewPanel.tsx'
 import css from './QuestionComposer.module.css'
 
@@ -20,7 +20,7 @@ import css from './QuestionComposer.module.css'
  * runtime failure messages (finished strings from the wire) pass through
  * verbatim.
  */
-type Feedback = { key: 'error.incomplete' | 'error.unanswered' | 'error.unavailable' | 'error.resubmit' } | { text: string }
+type Feedback = { key: 'error.incomplete' | 'error.unanswered' | 'error.unavailable' | 'error.resubmit' | 'status.queued' } | { text: string }
 
 /** A removed card can remain mounted until the composer seat updates. */
 const REMOVED_CARD: QuestionCardSnapshot = {
@@ -37,6 +37,22 @@ export function parseRecommendedLabel(label: string): { label: string; recommend
   return suffix.test(label)
     ? { label: label.replace(suffix, ''), recommended: true }
     : { label, recommended: false }
+}
+
+/** Accept persisted progress only when it still describes this question batch. */
+function isQuestionDraftProgress(value: unknown, questionCount: number): value is QuestionDraftProgress {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const progress = value as Record<string, unknown>
+  if (typeof progress.index !== 'number' || !Number.isInteger(progress.index)
+    || progress.index < 0 || progress.index >= questionCount
+    || !Array.isArray(progress.drafts) || progress.drafts.length !== questionCount
+    || (progress.wait !== undefined && progress.wait !== 'editing' && progress.wait !== 'waiting')) return false
+  return progress.drafts.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false
+    const draft = item as Record<string, unknown>
+    return Array.isArray(draft.selected) && draft.selected.every((label: unknown) => typeof label === 'string')
+      && typeof draft.custom === 'string' && typeof draft.skipped === 'boolean'
+  })
 }
 
 /** Return whether a text-field key event belongs to an active IME composition. */
@@ -158,10 +174,11 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
     })
   }, [questions, review])
   const stored = useStore(state => state.progressByRequest[pending.key])
+  const validStored = isQuestionDraftProgress(stored, questions.length) ? stored : undefined
   // A review card renders the record itself, so a draft its live card left
   // behind can never surface as an answer; only the page position is restored.
-  const storedProgress = review === undefined ? stored : undefined
-  const index = stored?.index ?? 0
+  const storedProgress = review === undefined ? validStored : undefined
+  const index = validStored?.index ?? 0
   const drafts = storedProgress?.drafts ?? initialDrafts
   const restoredWait = storedProgress?.wait
     ?? (storedProgress?.drafts.some(item => item.selected.length > 0 || item.custom !== '' || item.skipped) === true
@@ -178,7 +195,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
   // The draft therefore survives until the projection closes the card, and a
   // card that flips to continued while a submission is in flight re-arms the
   // controls so the same draft can go through the Remote path.
-  const sentVia = useRef<'waterfall' | 'rpc' | null>(null)
+  const sentVia = useRef<'waterfall' | null>(null)
   useEffect(() => {
     if (sentVia.current !== 'waterfall' || card.state !== 'continued') return
     sentVia.current = null
@@ -338,8 +355,17 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
     }
     setBusy('answer')
     setError(null)
-    sentVia.current = card.channel === 'waterfall' ? 'waterfall' : 'rpc'
+    // The external-store render can lag the carrier as a timed call continues.
+    // Read the channel used by answer() in this same event turn.
+    const channel = pending.snapshot().channel
+    sentVia.current = channel === 'waterfall' ? 'waterfall' : null
     void pending.answer(answer)
+      .then(() => {
+        if (channel !== 'rpc') return
+        sentVia.current = null
+        setBusy(null)
+        setError({ key: 'status.queued' })
+      })
       .catch((cause: unknown) => {
         sentVia.current = null
         setBusy(null)

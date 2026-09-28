@@ -144,7 +144,7 @@ export function registerTimedAskUser(ctx: Context, timeout = 120): void {
       // the logged request header to tell a timed call from a legacy one.
       [TIMED_WAIT_PARAMETER]: {
         type: 'integer',
-        description: `Wait seconds (default ${defaultTimeout}). Normally omit; continue independent work after timeout. Timeout is not approval; late replies include the questions. Use -1 only when an answer is required before continuing or the user explicitly requests an indefinite wait.`,
+        description: `Wait seconds for the entire batch (default ${defaultTimeout}); omit unless the user specifies a duration. Use -1 only when an answer is required before proceeding.`,
       },
     },
     output: {

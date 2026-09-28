@@ -154,6 +154,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 These limits define when the tool is a poor fit. They are current package constraints, not a UI backlog.
 
 - **The legacy tool never reports pending** — it returns an answer or an error. Native legacy calls do not enter the `userQuestions` projection, and interrupted calls cannot take late answers.
+- **An interrupted PTC wait may lose its question** — if the `run_code` process ends before an `ask_user_question` sub-call records its `tool/ptc-dispatch` result, the projection cannot reconstruct that sub-call for a late answer.
 - **Runtime-owned subagents cannot ask the user** — `ask_user_question` rejects a live child owned by another agent with `DELEGATED_CALLER`; the child must include the unresolved question or decision in its final result. Durable lineage does not decide this boundary, so a lineage-bearing session resumed as a runtime root may ask normally.
 - **Native answers render as JSON text** — the canonical value remains structured, but the model-facing result uses compact JSON rather than a richer content-block vocabulary.
 

@@ -119,7 +119,7 @@ describe('ask_user_question tool', () => {
 
     expect(schema?.parameters).toHaveProperty('properties.timeout')
     expect(JSON.stringify(schema)).toContain('pending')
-    expect(JSON.stringify(schema)).toContain('Wait seconds (default 120)')
+    expect(JSON.stringify(schema)).toContain('Wait seconds for the entire batch (default 120)')
   })
 
   it('falls back to the 120 second wait when apply receives a row without a timeout', async () => {
@@ -130,7 +130,7 @@ describe('ask_user_question tool', () => {
 
     toolAskUser.apply(ctx, { mode: 'timed' })
 
-    expect(JSON.stringify(ctx.tools.schemas().find(tool => tool.name === 'ask_user_question'))).toContain('Wait seconds (default 120)')
+    expect(JSON.stringify(ctx.tools.schemas().find(tool => tool.name === 'ask_user_question'))).toContain('Wait seconds for the entire batch (default 120)')
   })
 
   it('returns the answer batch when the Client answers inside the configured wait', async () => {
@@ -163,8 +163,8 @@ describe('ask_user_question tool', () => {
 
     const schema = ctx.tools.schemas().find(tool => tool.name === 'ask_user_question')
 
-    expect(JSON.stringify(schema)).toContain('Wait seconds (default 45)')
-    expect(JSON.stringify(schema)).not.toContain('Wait seconds (default 120)')
+    expect(JSON.stringify(schema)).toContain('Wait seconds for the entire batch (default 45); omit unless the user specifies a duration. Use -1 only when an answer is required before proceeding.')
+    expect(JSON.stringify(schema)).not.toContain('Wait seconds for the entire batch (default 120)')
   })
 
   it('registers a model-facing tool schema', async () => {

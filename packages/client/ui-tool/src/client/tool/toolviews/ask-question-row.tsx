@@ -261,6 +261,9 @@ export function AskQuestionRow({
       summary = t('ask.pending')
       if (questions !== null) transcript = { kind: 'unanswered', questions, verdict: t('ask.pendingDetail') }
       rowAction = reopen
+    } else if (settled?.answers.length === 0) {
+      summary = t('ask.closed')
+      if (questions !== null) transcript = { kind: 'unanswered', questions, verdict: t('ask.closedDetail') }
     } else if (settled !== undefined) {
       const presentation = answeredPresentation(questions, settled.answers, t)
       summary = presentation.summary

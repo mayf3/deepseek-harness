@@ -154,6 +154,7 @@ assistant 工具调用保留问题。等待期间收到的回答会在下一步�
 这些限制说明该工具何时不合适。它们是当前包约束，不是 UI 积压事项。
 
 - **Legacy 工具不会报告 pending**：它只返回回答或错误。原生 legacy 调用不进入 `userQuestions` 投影；中断的调用不能接受迟到回答。
+- **中断的 PTC 等待可能丢失问题**：若 `run_code` 进程在 `ask_user_question` 子调用记录 `tool/ptc-dispatch` 结果前结束，投影无法重建该子调用以接受迟到回答。
 - **运行时中归属于其他 agent 的 subagent 不能向用户提问**：`ask_user_question` 会以 `DELEGATED_CALLER` 拒绝归属于另一个 agent 的存活子级；该子级必须在最终结果中包含尚未解决的问题或决定。持久谱系不能决定这一边界，因此带有谱系的会话恢复为运行时根后可以正常提问。
 - **Native 回答渲染为 JSON 文本**：规范值仍为结构化数据，但模型侧结果使用紧凑 JSON，而非更丰富的内容块词汇。
 

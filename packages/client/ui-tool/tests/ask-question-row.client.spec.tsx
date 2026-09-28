@@ -223,6 +223,18 @@ describe('AskQuestionRow', () => {
     expect(reviewPanel).toHaveBeenCalledWith('c1', expect.objectContaining({ answers: batch }))
   })
 
+  it('shows an unreadable late reply after crash repair as closed', () => {
+    const reviewPanel = vi.fn(() => true)
+    const repaired = resultNode(READABLE_ARGS, 'The tool call was interrupted after it was recorded.', {
+      isError: true, error: { name: 'SessionFormatError', code: 'TOOL_OUTCOME_UNKNOWN' },
+    })
+    render(<AskQuestionRow {...rowProps(repaired, { settled: { c1: [] }, reviewPanel })} />)
+
+    expect(screen.getByText('已结束')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: PILL.review })).toBeNull()
+    expect(reviewPanel).not.toHaveBeenCalled()
+  })
+
   it('a late reply makes its row read exactly like one answered in time', () => {
     // The timed call's own result is the timeout, so the answers come from the
     // projection; which one beat the clock is the agent's pacing, not the

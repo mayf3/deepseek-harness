@@ -137,7 +137,7 @@ export interface QuestionWaterfallChannel {
 
 /** The Remote answer path of a continued question. */
 export interface QuestionRpcChannel {
-  /** Steer the answer into the agent; false when the question is no longer continued. */
+  /** Steer the answer into the agent; false when the question is no longer continued. Rejects when a reply is already queued. */
   answer(answer: QuestionAnswer): Promise<boolean>
 }
 

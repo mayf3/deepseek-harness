@@ -63,12 +63,10 @@ interface QuestionCard {
   readonly reveal: () => void
   /** Drop the card for good: the projection no longer lists its call. */
   readonly remove: () => void
-  /**
-   * Record the completion of the listener awaiting this card's waterfall, so a
-   * plugin teardown that delegates the request resolves only once that
-   * listener has handed it to `next()`.
-   */
-  readonly awaitListener: (completion: Promise<void>) => void
+  /** Track forwarded requests through claim opening and waterfall settlement. */
+  readonly trackRequest: (completion: Promise<void>) => () => void
+  /** Whether the forwarded request is still opening or waiting for settlement. */
+  readonly hasRequest: () => boolean
 }
 
 /**
@@ -117,10 +115,10 @@ class QuestionCards {
 
   /** Publish one carrier into the composer seat and register the card that owns it. */
   #create(pending: PendingQuestion): QuestionCard {
-    let listener: Promise<void> | undefined
+    const requests = new Set<Promise<void>>()
     const delegate = async (): Promise<void> => {
       pending.delegate()
-      await listener
+      await Promise.all(requests)
     }
     // Republishing is how a revealed card reaches the seat: the registry keeps
     // the last entry of equal precedence, and it rejects a duplicate key.
@@ -143,7 +141,11 @@ class QuestionCards {
         unpublish?.()
         unpublish = undefined
       },
-      awaitListener: (completion) => { listener = completion },
+      trackRequest: (completion) => {
+        requests.add(completion)
+        return () => { requests.delete(completion) }
+      },
+      hasRequest: () => requests.size > 0,
     }
     // A review card has no request left to park: closing it drops the card, and
     // the tool call row builds another one from the same transcript record.
@@ -231,7 +233,7 @@ async function answerQuestion(
     }, 'ui-user-questions: foreground claim')
     : undefined
   const completed = Promise.withResolvers<void>()
-  card.awaitListener(completed.promise)
+  const finishRequest = card.trackRequest(completed.promise)
   try {
     const iterator = claim?.[Symbol.asyncIterator]()
     const opening = iterator === undefined ? undefined : await iterator.next()
@@ -272,6 +274,7 @@ async function answerQuestion(
     // A blocking request without a call id is not in the projection; its card ends with its waterfall.
     if (callId === undefined) card.remove()
     completed.resolve()
+    finishRequest()
   }
 }
 
@@ -329,6 +332,7 @@ function publishContinuedQuestions(ctx: ClientContext, cards: QuestionCards): ()
       if (card.pending.callId === undefined
         || card.pending.review !== undefined
         || rows.has(card.pending.key)
+        || card.hasRequest()
         || card.pending.hasWaterfall()) continue
       card.remove()
     }

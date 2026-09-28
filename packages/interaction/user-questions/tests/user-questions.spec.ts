@@ -665,7 +665,8 @@ describe('late replies', () => {
     const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
 
     expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
-    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
     expect(agent.steer).toHaveBeenCalledTimes(1)
 
     const first = agent.steer.mock.calls[0]![0]
@@ -689,11 +690,39 @@ describe('late replies', () => {
     })
     agent.queuedMessages.push(reply)
 
-    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
     agent.queuedMessages.shift()
     agent.queuedTurns.push(reply)
-    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
     expect(agent.steer).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
+  it('reserves a restored inbox reply while it is claimed for admission', async () => {
+    const ctx = await timedContext()
+    const agent = liveAgent('late-restored-claim')
+    ctx.agents.enter(agent, undefined)
+    askInLog(agent, timedCallId)
+    continueInLog(agent, timedCallId)
+    const batch = { answers: [{ id: 'scope', selected: ['Tool only'] }] }
+    const reply = createUserMessage({
+      source: { kind: 'user-question-reply', callId: timedCallId, outcome: 'answered' },
+      content: [{ type: 'text', text: 'restored reply' }],
+    })
+    agent.queuedMessages.push(reply)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
+
+    agent.queuedMessages.shift()
+    agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: reply, turn: 1 })
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
+
+    const ended = agent.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    ctx.emit('session/event', agent.session, ended)
+    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(true)
     await ctx.fiber.dispose()
   })
 
@@ -729,7 +758,8 @@ describe('late replies', () => {
     const turnEnd = agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.emit('session/event', agent.session, turnEnd)
 
-    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
     expect(agent.steer).toHaveBeenCalledOnce()
     await ctx.fiber.dispose()
   })
@@ -746,7 +776,8 @@ describe('late replies', () => {
     const first = agent.steer.mock.calls[0]![0]
     agent.queuedMessages.shift()
     agentEvents(ctx, agent).emit('agent/inbox/claimed', { message: first, turn: 1 })
-    expect(ctx.userQuestions.answer(agent, timedCallId, batch)).toBe(false)
+    expect(() => ctx.userQuestions.answer(agent, timedCallId, batch))
+      .toThrow(expect.objectContaining({ code: 'REPLY_QUEUED' }))
 
     const ended = agent.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
     ctx.emit('session/event', agent.session, ended)

@@ -216,6 +216,35 @@ describe('apply', () => {
     }
   })
 
+  it('keeps a timed card during a Session update before the claim first frame', async () => {
+    const b = await bench()
+    const opening = Promise.withResolvers<IteratorResult<{ remainingMs: number }>>()
+    const ended = Promise.withResolvers<IteratorResult<{ remainingMs: number }>>()
+    b.remoteQuestions.attachWait.mockImplementationOnce(() => {
+      let reads = 0
+      return {
+        dispose: () => { ended.resolve({ done: true, value: undefined }) },
+        send: () => {}, end: () => {},
+        [Symbol.asyncIterator]: () => ({ next: () => ++reads === 1 ? opening.promise : ended.promise }),
+      }
+    })
+    try {
+      const result = b.invoke(b.agent, timed(), async () => ANSWER)
+      const card = b.pending.getSnapshot()[0]!
+      b.list.set({ ...b.list.getSnapshot() })
+      expect(b.pending.getSnapshot()).toContain(card)
+      expect(card.snapshot().closed).toBe(false)
+
+      opening.resolve({ done: false, value: { remainingMs: 60_000 } })
+      await vi.waitFor(() => { expect(card.snapshot().channel).toBe('waterfall') })
+      await card.answer(ANSWER)
+      await expect(result).resolves.toEqual(ANSWER)
+    } finally {
+      opening.resolve({ done: true, value: undefined })
+      await b.fiber.dispose()
+    }
+  })
+
   it('attaches an indefinite request before publishing control back to the caller', async () => {
     const b = await bench()
     try {
@@ -578,6 +607,25 @@ describe('apply', () => {
     await expect(card.answer(ANSWER)).rejects.toThrow(/no longer answerable/)
     b.remoteQuestions.answer.mockResolvedValueOnce({ ok: false, error: { message: 'offline' } })
     await expect(card.answer(ANSWER)).rejects.toThrow('offline')
+  })
+
+  it('queues an older answer while a later question is waiting', async () => {
+    const currentCall = ToolCallId('call-current')
+    const b = await bench(true, [CONTINUED, { ...CONTINUED, callId: currentCall, state: 'open' }])
+    const current = b.invoke(b.agent, { ...timed(), wait: { callId: currentCall, timed: true } }, async () => ANSWER)
+    await vi.waitFor(() => {
+      expect(b.pending.getSnapshot().find(card => card.callId === currentCall)?.snapshot().channel).toBe('waterfall')
+    })
+
+    const currentCard = b.pending.getSnapshot().find(card => card.callId === currentCall)!
+    const earlier = b.pending.getSnapshot().find(card => card.callId === CALL)!
+    expect(earlier.snapshot()).toMatchObject({ state: 'continued', channel: 'rpc' })
+    await earlier.answer(ANSWER)
+    expect(b.remoteQuestions.answer).toHaveBeenCalledWith(SESSION_ID, CALL, ANSWER)
+    expect(currentCard.snapshot().channel).toBe('waterfall')
+
+    currentCard.timeout()
+    await expect(current).rejects.toMatchObject({ code: 'ASK_TIMED_OUT' })
   })
 
   it('publishes a plan-review request ahead of plain questions', async () => {

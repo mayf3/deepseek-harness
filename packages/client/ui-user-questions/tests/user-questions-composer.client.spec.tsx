@@ -467,6 +467,16 @@ describe('PendingQuestion domain face', () => {
     expect(screen.queryByText('stale')).toBeNull()
   })
 
+  it('ignores persisted progress that no longer matches the question batch', () => {
+    const carrier = new PendingQuestion(SID, QUESTIONS, ToolCallId('stale-progress'))
+    draftInstance.actions.replace(carrier.key, { index: 7, drafts: [] })
+
+    render(<QuestionComposer matched={carrier} {...kit} />)
+
+    expect(screen.getByRole('heading', { name: QUESTIONS[0]!.question })).toBeTruthy()
+    expect(screen.getByText(`1 / ${QUESTIONS.length}`)).toBeTruthy()
+  })
+
   it('collapses the card to the header strip and expands it back', () => {
     const { carrier } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
@@ -684,6 +694,45 @@ describe('timed card', () => {
     act(() => { carrier.attachRpc({ answer }) })
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
     await vi.waitFor(() => { expect(answer).toHaveBeenCalledWith({ answers: [{ id: 'scope', selected: ['仅工具'] }] }) })
+  })
+
+  it('reports an already queued RPC reply and allows retry after it is discarded', async () => {
+    const carrier = new PendingQuestion(SID, TIMED, ToolCallId('ask-retry'))
+    const answer = vi.fn(async () => true)
+    answer.mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('a reply is already queued for this question'))
+    carrier.attachRpc({ answer })
+    carrier.setState('continued')
+    render(<QuestionComposer matched={carrier} {...kit} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '仅工具' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await vi.waitFor(() => { expect(screen.getByText('回答已排队等待处理；如未送达，可以再次提交。')).toBeTruthy() })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(await screen.findByText('a reply is already queued for this question')).toBeTruthy()
+    expect(answer).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+    await vi.waitFor(() => { expect(answer).toHaveBeenCalledTimes(3) })
+    await vi.waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
+    })
+  })
+
+  it('unlocks an older reply when the rendered channel lags its continued state', async () => {
+    const carrier = new PendingQuestion(SID, TIMED, ToolCallId('ask-stale-channel'))
+    carrier.attachRpc({ answer: vi.fn(async () => true) })
+    carrier.setState('continued')
+    const rendered = { ...carrier.snapshot(), state: 'open' as const, channel: 'waterfall' as const }
+    const useQuestionCard = ((_key: string, selector?: (value: QuestionCardSnapshot | undefined) => unknown) =>
+      selector === undefined ? rendered : selector(rendered)) as QuestionComposerProps['useQuestionCard']
+    render(<Composer matched={carrier} {...kit} useQuestionCard={useQuestionCard} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: '仅工具' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交' }))
+
+    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '提交' }).disabled).toBe(false)
   })
 
   it('closing a continued panel only withdraws it from the seat and sends nothing', async () => {

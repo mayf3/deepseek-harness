@@ -184,7 +184,7 @@ interface UserQuestionProjectionView {
 }
 ```
 
-开放中的问题只能通过 waterfall 回答。问题变为 `continued` 后，`answer` Remote 方法向所属 agent 排入一条用户消息，并在其空闲时唤醒它。消息的 source 为 `user-question-reply`，outcome 为 `answered`，正文是 `answer_to_pending_question` 载荷。该方法拒绝开放中的问题，以及回复仍在排队时的第二次提交，Host 重启后也一样；遗漏或重复问题的回答批次以 `BAD_ANSWER` 拒绝。
+开放中的问题只能通过 waterfall 回答。问题变为 `continued` 后，`answer` Remote 方法向所属 agent 排入一条用户消息，并在其空闲时唤醒它。消息的 source 为 `user-question-reply`，outcome 为 `answered`，正文是 `answer_to_pending_question` 载荷。开放或未知调用返回 `false`；回复仍在排队时的第二次提交以 `REPLY_QUEUED` 拒绝，Host 重启后也一样；遗漏或重复问题的回答批次以 `BAD_ANSWER` 拒绝。
 
 收起 Client 面板不会发送内容。前台超时只结束工具等待。已继续的问题没有期限；在回复进入会话前，问题仍可回答。
 
@@ -226,9 +226,11 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
  * @param agent - Live root agent for the owning Session.
  * @param callId - Continued question identity.
  * @param answer - Complete structured answer batch, one item per question of the call.
- * @returns Whether the question was continued and had no reply already queued.
+ * @returns Whether the question is still continued; an accepted reply stays
+ *   queued until the agent admits its user message.
  * @throws {UserQuestionError} `BAD_ANSWER` when the batch does not name each
- *   question of the call exactly once.
+ *   question of the call exactly once, or `REPLY_QUEUED` when a reply is
+ *   already waiting for admission.
  */
 @Remote answer(agent: Agent, callId: ToolCallId, answer: AskUserQuestionAnswer): boolean
 

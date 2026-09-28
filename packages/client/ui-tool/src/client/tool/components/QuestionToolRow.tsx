@@ -25,8 +25,7 @@ export function QuestionToolRow({
   const open = expanded && expandable
   return (
     <div className={css.root} data-variant="others" data-tool="ask_user_question" data-state={state}>
-      {(state === 'running' || state === 'error' || state === 'stopped') &&
-        <span className={css.visuallyHidden}>{t(state === 'running' ? 'row.running' : state === 'error' ? 'row.failed' : 'row.stopped')}</span>}
+      {state === 'running' && <span className={css.visuallyHidden}>{t('row.running')}</span>}
       <DisclosureRow
         rowClassName={css.row} leadingClassName={css.leading} titleClassName={css.title}
         chevronClassName={css.chevron} icon={<IconQuestionOutlineRegular />} title={t('ask.rowTitle')}

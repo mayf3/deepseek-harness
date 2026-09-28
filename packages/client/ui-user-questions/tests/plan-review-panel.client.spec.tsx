@@ -295,6 +295,20 @@ describe('PlanReviewPanel', () => {
     expect(answer).toHaveBeenCalledTimes(1)
   })
 
+  it('re-arms a continued plan decision after the reply is queued', async () => {
+    const carrier = new PendingQuestion(SID, questions(), 'continued-plan' as ToolCallId)
+    const answer = vi.fn(async () => true)
+    carrier.attachRpc({ answer })
+    carrier.setState('continued')
+    render(<QuestionComposer matched={carrier} {...kit} />)
+
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
+    expect(await screen.findByText(zh['status.queued'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['plan.approve'] }).hasAttribute('disabled')).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))
+    expect(answer).toHaveBeenCalledTimes(2)
+  })
+
 
   it('dismisses the request so the composer returns for a plain message', () => {
     const { carrier, cancel, answer } = wait()

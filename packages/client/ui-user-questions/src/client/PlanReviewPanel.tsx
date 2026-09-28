@@ -31,16 +31,22 @@ export function PlanReviewPanel({ pending, review, t, renderSlot }: PlanReviewPa
   // clicks must not resubmit. A failed send re-enables it and shows the error.
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const settle = (send: () => Promise<void>): void => {
+  const settle = (send: () => Promise<void>, queued = false): void => {
     setBusy(true)
     setError(null)
-    void send().catch((cause: unknown) => {
-      setBusy(false)
-      setError(cause instanceof Error ? cause.message : String(cause))
-    })
+    void send()
+      .then(() => {
+        if (!queued) return
+        setBusy(false)
+        setError(t('status.queued'))
+      })
+      .catch((cause: unknown) => {
+        setBusy(false)
+        setError(cause instanceof Error ? cause.message : String(cause))
+      })
   }
   const decide = (label: string): void => {
-    settle(() => pending.answer({ answers: [{ id: review.id, selected: [label] }] }))
+    settle(() => pending.answer({ answers: [{ id: review.id, selected: [label] }] }), pending.snapshot().channel === 'rpc')
   }
   const summary = useMemo(() => {
     const title = extractMarkdownPlainText(review.plan, { mode: 'first-line' })
