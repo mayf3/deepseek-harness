@@ -12,9 +12,8 @@
  * edited where the roster is visible — the settings section's "make default"
  * — so General settings carries no duplicate control for the same field.
  *
- * Developer tools (General settings) are the single gate over selection: with
- * them off the chip disappears and the card actions are disabled, while the
- * saved default keeps composing new sessions.
+ * Developer tools (General settings) hide PTC and Minimal from the hero menu
+ * when off. Settings actions, staged choices and the saved default remain available.
  */
 
 // Type-only: pulls the Session Controller service merge (ctx.sessions).
@@ -100,15 +99,6 @@ export function apply(ctx: ClientContext): void {
     return seat
   }
   const section = new AgentPresetSectionController(ctx)
-  // Turning Developer tools off clears the shared stage before any apply can compose it.
-  const developerTools = ctx.configForms.developerTools.enabled
-  ctx.effect(() => developerTools.subscribe(() => {
-    if (developerTools.getSnapshot()) return
-    staged.id = undefined
-    staged.introduce = false
-    void unboundSeat.apply()
-    for (const seat of seats.values) void seat.apply()
-  }), 'ui-agent-preset: Developer tools gate')
   const mainBlankSeat = (): AgentPresetSeatController | undefined => {
     const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find((session) => {
@@ -210,7 +200,7 @@ export function apply(ctx: ClientContext): void {
   }
 
   const sectionInjected = (): AgentPresetSectionInjected => ({
-    hooks: { agentPresetSection: section.store, developerTools: ctx.configForms.developerTools.enabled },
+    hooks: { agentPresetSection: section.store },
     load: () => section.load(),
     view: (id: string) => section.view(id),
     closeView: () => { section.closeView() },

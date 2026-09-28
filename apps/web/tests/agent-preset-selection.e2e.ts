@@ -343,7 +343,7 @@ describe('web e2e: agent-preset selection', () => {
     await writeComposerDraft(page, composer, '')
   }, 90_000)
 
-  it('keeps the saved default composing sessions while Developer tools only gate the choice', async () => {
+  it('keeps the saved default composing sessions while Coding Tools hide PTC and Minimal choices', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-disabled'))
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
@@ -359,8 +359,12 @@ describe('web e2e: agent-preset selection', () => {
     await expect.poll(() => developerTools.getAttribute('aria-checked')).toBe('false')
     await dialog.getByRole('button', { name: 'Close' }).last().click()
 
-    // The gate hides the choice; the blank task keeps its saved composition.
-    await expect.poll(() => page.getByRole('button', { name: / mode$/ }).count()).toBe(0)
+    // A selected hidden option keeps its label and composition until another choice is made.
+    await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
+    await page.getByRole('menu').waitFor()
+    expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
+    expect(await page.getByRole('menuitem', { name: /^Standard mode|^Creator mode/ }).count()).toBe(2)
+    await page.keyboard.press('Escape')
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
 
     await openSettings(page, 'en')

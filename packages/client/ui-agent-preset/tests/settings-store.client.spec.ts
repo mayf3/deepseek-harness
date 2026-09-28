@@ -466,27 +466,21 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 
-  it('clears an unconsumed stage when Developer tools are off', async () => {
+  it.each(['standard', 'cordis', 'mine'])('applies %s while Developer tools are off', async (preset) => {
     const writes: Recorded[] = []
     const developerTools = createSnapshotStore(false)
     const controller = chip(ROSTER, {
       id: 's1' as SessionId,
-      blank: false,
-      projectionValues: { agentPreset: 'standard' },
+      blank: true,
+      projectionValues: { agentPreset: 'minimal' },
     }, { writes, developerTools })
-    controller.stage('minimal', true)
-
     await controller.load()
-    await controller.apply()
-
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot()).toMatchObject({
-      current: 'standard',
-      introduce: false,
-    })
+    await controller.select(preset)
+    expect(writes).toEqual([{ ns: 'select', ops: preset }])
+    expect(controller.store.getSnapshot().current).toBe(preset)
   })
 
-  it('drops a stage made while Developer tools were on once they turn off', async () => {
+  it('preserves an explicit staged pick when Developer tools turn off', async () => {
     const writes: Recorded[] = []
     const developerTools = createSnapshotStore(true)
     const session = {
@@ -496,17 +490,11 @@ describe('the new-session chip controller', () => {
     }
     const controller = chip(ROSTER, session, { writes, developerTools })
     await controller.load()
-    // The blank session keeps the composition its own screen already names.
     controller.stage('minimal', true)
     developerTools.set(false)
-
     await controller.apply()
-
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot()).toMatchObject({
-      current: 'standard',
-      introduce: false,
-    })
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', introduce: true })
   })
 
   it('leaves the introduction cue to the chip while Developer tools stay on', async () => {

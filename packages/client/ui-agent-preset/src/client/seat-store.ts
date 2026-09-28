@@ -13,8 +13,6 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: pulls the Developer tools preference (ctx.configForms) into this program.
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -85,11 +83,6 @@ export class AgentPresetSeatController {
     this.staged.introduce = false
   }
 
-  /** Developer tools are the single gate over preset selection. */
-  private selectionAvailable(): boolean {
-    return this.ctx.configForms.developerTools.enabled.getSnapshot()
-  }
-
   /**
    * Read the roster and open the chip on the Host-effective default.
   * @returns once the snapshot reflects the host.
@@ -103,8 +96,6 @@ export class AgentPresetSeatController {
       return
     }
     const { presets } = roster.value
-    // A stage outlives the screen that made it; Developer tools may have gone off since.
-    if (!this.selectionAvailable()) this.clearStage()
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
     this.set({
@@ -201,18 +192,12 @@ export class AgentPresetSeatController {
    */
   async apply(): Promise<string | undefined> {
     if (this.store.getSnapshot().busy) return
-    const available = this.selectionAvailable()
-    // A stage made while Developer tools were on must not outlive them.
-    if (!available) this.clearStage()
     const staged = this.staged.id
     const session = this.currentSession()
     if (staged === undefined) {
       const current = session === undefined ? this.fallback : presetOf(session) ?? ''
       const shown = this.store.getSnapshot()
-      // Hiding the chip also withdraws the introduction cue armed for it;
-      // ordinary list movement leaves that cue to the chip that plays it.
-      if (!available && shown.introduce) this.set({ current, introduce: false })
-      else if (current !== shown.current) this.set({ current })
+      if (current !== shown.current) this.set({ current })
       return
     }
     if (session === undefined) return

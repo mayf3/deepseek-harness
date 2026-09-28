@@ -28,7 +28,7 @@ import { apply as hostApply } from '../src/index.ts'
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); each bench stages zh explicitly on the locale instead.
 
-/** The Developer tools half of `ctx.configForms`, which gates all selection. */
+/** The Developer tools half of `ctx.configForms`, which filters the hero menu. */
 function developerTools(enabled = true): { configForms: { developerTools: { enabled: ObservableSnapshot<boolean> } } } {
   return { configForms: { developerTools: { enabled: createSnapshotStore(enabled) } } }
 }
@@ -735,65 +735,36 @@ describe('ui-agent-preset apply', () => {
     expect(calls.filter(call => call === 'select:minimal')).toHaveLength(spent)
   })
 
-  it('drops a cross-screen stage when Developer tools turn off, and releases its subscription with the fiber', async () => {
+  it.each(['standard', 'cordis', 'mine', 'minimal'])('preserves the staged %s choice when Developer tools turn off', async (preset) => {
     const { ctx, slots, calls, setDeveloperTools } = await bench()
     declareRoot(slots)
-    const conversation = declareConversation(slots)
+    declareConversation(slots)
     ctx.provide('conversation', {} as never)
     const state: {
       current?: string
       byId: Record<string, { id: string; blank: boolean; projectionValues?: { agentPreset?: string | null } }>
     } = {
-      current: 's0',
-      byId: {
-        s0: { id: 's0', blank: false, projectionValues: { agentPreset: 'standard' } },
-        s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'standard' } },
-      },
+      byId: { s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'ptc' } } },
     }
     const sessions = sessionsDouble(ctx, state)
     ctx.provide('sessions', sessions as never)
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    // The gate's seat sweep runs over live Provider bindings; s1's binding is
-    // not the main view yet, so its seat keeps a stage it cannot apply.
-    let released = 0
-    const dispatch = ctx.configForms.developerTools.enabled.subscribe.bind(ctx.configForms.developerTools.enabled)
-    vi.spyOn(ctx.configForms.developerTools.enabled, 'subscribe').mockImplementation((listener) => {
-      const dispose = dispatch(listener)
-      return () => { released += 1; dispose() }
-    })
-    const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
-    await feature.await()
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as (sessionId?: SessionId) => AgentPresetSeatInjected & Record<string, unknown>
     const chip = injectSeat(SessionId('s1'))
     await chip.load()
-
-    await chip.select('minimal')
-    expect(chip.hooks.agentPresetSeat.getSnapshot()).toMatchObject({ current: 'minimal', introduce: false })
-
-    // The preference turns off with no seat load, so only the gate's own sweep
-    // can reconcile this live bound seat back to the roster default.
+    await chip.select(preset)
     await setDeveloperTools(false)
-    await vi.waitFor(() => {
-      expect(chip.hooks.agentPresetSeat.getSnapshot()).toMatchObject({ current: 'standard', introduce: false })
-    })
+    await chip.load()
+    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
     expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
 
-    // Turning back on must not resurrect the dropped stage when this blank
-    // Session becomes the main view's current one.
-    await setDeveloperTools(true)
     state.current = 's1'
     sessions.notify()
-    await chip.load()
-    expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
-
-    const settled = chip.hooks.agentPresetSeat.getSnapshot()
-    await feature.dispose()
-    await setDeveloperTools(false)
-    expect(chip.hooks.agentPresetSeat.getSnapshot()).toBe(settled)
-    expect(released).toBe(1)
-    conversation()
+    await vi.waitFor(() => {
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual([`select:${preset}`])
+    })
   })
 
   it('loads the header label from the shared roster store', async () => {
