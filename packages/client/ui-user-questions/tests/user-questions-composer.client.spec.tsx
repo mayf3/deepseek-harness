@@ -182,9 +182,9 @@ const QUESTIONS: PendingQuestion['questions'] = [
 ]
 
 /** Pending waterfall fixture with observable Client response methods. */
-function wait(questions: PendingQuestion['questions'] = QUESTIONS) {
+function wait(questions: PendingQuestion['questions'] = QUESTIONS, deadline?: number) {
   const carrier = new PendingQuestion(SID, questions)
-  const request = createWaterfallRequest(undefined, undefined, (channel) => { carrier.detachWaterfall(channel) })
+  const request = createWaterfallRequest(deadline, undefined, (channel) => { carrier.detachWaterfall(channel) })
   carrier.attachWaterfall(request.channel)
   const answer = vi.spyOn(carrier, 'answer')
   const dismiss = vi.spyOn(carrier, 'dismiss')
@@ -212,6 +212,35 @@ describe('QuestionComposer', () => {
     expect(screen.getByRole('button', { name: '放弃整组问题' })).toBeTruthy()
   })
 
+  it('keeps a recommended default selected without pausing a timed wait', () => {
+    const { carrier } = wait(QUESTIONS, Date.now() + 30_000)
+    try {
+      const view = render(<QuestionComposer matched={carrier} {...kit} />)
+      expect(screen.getByRole('radio', { name: /工程落地型/ }).getAttribute('aria-checked')).toBe('true')
+      expect(carrier.snapshot().countdown?.running).toBe(true)
+
+      fireEvent.click(screen.getByLabelText('下一题'))
+      view.unmount()
+      render(<QuestionComposer matched={carrier} {...kit} />)
+      expect(carrier.snapshot().countdown?.running).toBe(true)
+      expect(screen.getByText('2 / 3')).toBeTruthy()
+    } finally {
+      carrier.timeout()
+    }
+  })
+
+  it('treats Enter on an unselected option as submit, without selecting it', () => {
+    const { carrier, answer } = wait([{
+      id: 'mode', question: 'Which mode?', options: [{ label: 'Alpha' }, { label: 'Beta' }],
+    }])
+    render(<QuestionComposer matched={carrier} {...kit} />)
+    const option = screen.getByRole('radio', { name: 'Alpha' })
+    expect(fireEvent.keyDown(option, { key: 'Enter' })).toBe(false)
+    expect(option.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('status').textContent).toBe('请先完成这道问题。')
+    expect(answer).not.toHaveBeenCalled()
+  })
+
   it('collects single, custom, and multi-select answers before one batch submit', () => {
     const { carrier, answer } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
@@ -220,13 +249,12 @@ describe('QuestionComposer', () => {
     expect(screen.getByText('1 / 3')).toBeTruthy()
     expect(screen.getByText('推荐')).toBeTruthy()
     expect(screen.getByText('工程落地型')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: /工程落地型/ }).getAttribute('aria-checked')).toBe('true')
     const detail = screen.getByText('按当前空缺岗位的优先级选择。')
     const scrollRegion = detail.closest('[data-question-scroll]')
     expect(scrollRegion).toBeTruthy()
     expect(scrollRegion?.contains(screen.getByRole('radio', { name: /工程落地型/ }))).toBe(true)
     expect(scrollRegion?.contains(screen.getByText('下一题').closest('button'))).toBe(false)
-    fireEvent.keyDown(screen.getByRole('radio', { name: /工程落地型/ }), { key: 'Enter' })
-    expect(answer).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('radio', { name: /工程落地型/ }))
 
     expect(screen.getByText('2 / 3')).toBeTruthy()
@@ -280,7 +308,8 @@ describe('QuestionComposer', () => {
     const { carrier, answer } = wait()
     render(<QuestionComposer matched={carrier} {...kit} />)
 
-    expect((screen.getByText('下一题').closest('button') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('radio', { name: /工程落地型/ }).getAttribute('aria-checked')).toBe('true')
+    expect((screen.getByText('下一题').closest('button') as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(screen.getByRole('radio', { name: '研究潜力型' }))
     expect(screen.getByText('2 / 3')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '跳过' }))

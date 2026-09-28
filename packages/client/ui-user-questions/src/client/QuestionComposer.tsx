@@ -39,6 +39,12 @@ export function parseRecommendedLabel(label: string): { label: string; recommend
     : { label, recommended: false }
 }
 
+/** Only a marked first choice is an implicit draft; the user still submits it. */
+function recommendedFirstOption(question: PendingQuestion['questions'][number]): string | undefined {
+  const label = question.options?.[0]?.label
+  return label !== undefined && parseRecommendedLabel(label).recommended ? label : undefined
+}
+
 /** Accept persisted progress only when it still describes this question batch. */
 function isQuestionDraftProgress(value: unknown, questionCount: number): value is QuestionDraftProgress {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
@@ -165,8 +171,9 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
     return questions.map((item) => {
       const answer = recorded.get(item.id)
       const custom = answer?.custom ?? ''
+      const recommended = review === undefined ? recommendedFirstOption(item) : undefined
       return {
-        selected: [...answer?.selected ?? []],
+        selected: answer === undefined && recommended !== undefined ? [recommended] : [...answer?.selected ?? []],
         custom,
         // A recorded answer with no selection and no custom text was skipped.
         skipped: answer !== undefined && answer.selected.length === 0 && custom === '',
@@ -181,7 +188,10 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
   const index = validStored?.index ?? 0
   const drafts = storedProgress?.drafts ?? initialDrafts
   const restoredWait = storedProgress?.wait
-    ?? (storedProgress?.drafts.some(item => item.selected.length > 0 || item.custom !== '' || item.skipped) === true
+    ?? (storedProgress?.drafts.some((item, itemIndex) =>
+      item.selected.length !== initialDrafts[itemIndex]?.selected.length
+      || item.selected.some((label, labelIndex) => label !== initialDrafts[itemIndex]?.selected[labelIndex])
+      || item.custom !== '' || item.skipped) === true
       ? 'editing' : undefined)
   const [busy, setBusy] = useState<'answer' | 'cancel' | null>(null)
   const [error, setError] = useState<Feedback | null>(null)
@@ -499,7 +509,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
                       disabled={locked}
                       onClick={() => { choose(option.label) }}
                       onKeyDown={(event) => {
-                        if (event.key !== 'Enter' || !drafts.every(completed)) return
+                        if (event.key !== 'Enter') return
                         event.preventDefault()
                         submitDrafts(drafts)
                       }}
