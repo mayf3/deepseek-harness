@@ -15,8 +15,15 @@ import {
   type GateResult,
 } from './run-gates.ts'
 
-// Graph fixtures select their own browser pool instead of inheriting the CI host's pool.
-beforeEach(() => vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined))
+// Graph fixtures select their own browser pool instead of inheriting the CI
+// host's pool, and coverage gates take their shape from the values each case
+// sets, not from the lane that runs this file (a partitioned lane exports
+// DSH_COVERAGE_PARTITIONS to every child).
+beforeEach(() => {
+  vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_MAX_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_PARTITIONS', undefined)
+})
 afterEach(() => vi.unstubAllEnvs())
 
 /**
@@ -565,7 +572,12 @@ describe('gate graph validation', () => {
     const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-unit')))
     expect(gates.map(gate => gate.id)).toEqual(['native-system', 'unit'])
-    expect(gates[0]).toMatchObject({ displayCommand: 'pnpm run build:native-system' })
+    // The aggregate is the `test` package script's two segments, in order,
+    // so a step added to one cannot silently leave the other.
+    const [nativeBuild, unitRun, ...rest] = (scripts.test ?? '').split(' && ')
+    expect(rest).toEqual([])
+    expect(gates[0]).toMatchObject({ displayCommand: nativeBuild })
+    expect(gates[1]?.displayCommand).toBe(`pnpm exec ${unitRun} --testTimeout=15000 --expect.poll.timeout=15000 --hookTimeout=15000`)
     expect(gates[1]).toMatchObject({
       label: 'test',
       needs: ['native-system'],

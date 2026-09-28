@@ -203,9 +203,10 @@ export function ciWorkerEnvironment(
   env: NodeJS.ProcessEnv,
   available = availableParallelism(),
 ): Record<string, string> {
-  // ci-unit runs the plain Vitest inventory and nothing that reads these
-  // settings; the inventory's own run-gates tests build coverage gates from
-  // the ambient coverage variables, so it inherits the environment exactly as
+  // ci-unit's gates read none of these settings, while the inventory it runs
+  // reads the same variables (run-gates.spec.ts builds coverage gates from
+  // DSH_COVERAGE_PARTITIONS; the oxlint contract spawns run-oxlint, which
+  // reads DSH_OXLINT_THREADS), so the aggregate leaves the environment as
   // `pnpm run test` finds it.
   if (!mode.startsWith('ci-') || mode === 'ci-unit') return {}
   const additions: Record<string, string> = {}
