@@ -25,25 +25,26 @@ const ATTEMPTS = { list: 3, fork: 3 } as const
 /** Midpoints of ten equal length strata of the query corpus, then its p99 Session. */
 const FORK_STRATA = [50, 150, 250, 350, 450, 550, 650, 750, 850, 950] as const
 const FORK_P99_RANK = 990
-/** The longest Session; one sample, because one fork takes about 18 s on standard hosted CI. */
+/** The longest Session; one sample, because one fork takes about 20 s on standard hosted CI. */
 const FORK_LONGEST_RANK = 999
 const WORKER_TIMEOUT_MS = 240_000
 const WORKER = join(import.meta.dirname, '..', '.dsh-build', 'session-corpus', 'session-corpus.worker.js')
 
 /**
- * Standard two-CPU hosted CI expectations, rounded above the recorded medians before variance headroom.
- * Recorded medians: list 1,000 830.3 / 1,155.3 / 876.7 ms and list 5,000 3,569.5 / 5,143.5 / 4,290.5 ms,
- * interpolated to the list corpus; search 139,470 / 3,369 ms; fork 89.6 / 1,485.7 / 17,538.1 ms.
+ * Standard two-CPU hosted CI expectations, rounded above the higher recorded median of the EPYC 7763 and
+ * EPYC 9V74 runners before variance headroom. Recorded medians: list 2,204.5 / 2,633.6 / 2,235.1 ms;
+ * search 139,470 and 135,065 / 3,369 and 2,704 ms; fork 89.6 and 73.5 / 1,485.7 and 1,485.5 /
+ * 17,538.1 and 20,326.7 ms.
  */
 const EXPECTED_CI_MS = {
-  listBoot: 2_200,
-  listFirst: 3_200,
-  listRepeat: 2_600,
+  listBoot: 2_300,
+  listFirst: 2_700,
+  listRepeat: 2_300,
   searchFirst: 140_000,
   searchRepeat: 3_400,
   forkStratumMedian: 90,
   forkP99: 1_500,
-  forkLongest: 17_600,
+  forkLongest: 20_400,
 } as const
 
 function budget(expectedCiMs: number): number {
@@ -101,15 +102,17 @@ describe('Session corpus workload', () => {
 
   it('accepts recorded hosted medians and rejects medians a quarter above their expectation', () => {
     const recorded = [
+      [median([2_204.5, 2_219.7, 2_181.8]), EXPECTED_CI_MS.listBoot],
+      [median([2_633.6, 2_625.9, 2_638.3]), EXPECTED_CI_MS.listFirst],
       [139_470, EXPECTED_CI_MS.searchFirst],
-      [median([17_573.2, 17_532.9, 17_538.1]), EXPECTED_CI_MS.forkLongest],
+      [20_326.7, EXPECTED_CI_MS.forkLongest],
       [median([88.2, 89.6, 91.8]), EXPECTED_CI_MS.forkStratumMedian],
     ] as const
     for (const [value, expected] of recorded) {
       expectWithinBudget(value, budget(expected))
       expect(() => expectWithinBudget(Math.ceil(expected * 1.26), budget(expected))).toThrow()
     }
-    expect(budget(EXPECTED_CI_MS.forkLongest)).toBe(22_000)
+    expect(budget(EXPECTED_CI_MS.forkLongest)).toBe(25_500)
   })
 })
 

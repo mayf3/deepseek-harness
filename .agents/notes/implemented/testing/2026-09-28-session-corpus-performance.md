@@ -47,13 +47,15 @@ The file must finish within five minutes on standard hosted CI, including seedin
 
 ## Calibration evidence
 
-Budgets use standard two-CPU hosted CI expectations (AMD EPYC 7763, Linux x64, Node 24.21, PR #5403), rounded above the recorded medians and multiplied by the shared 1.25 headroom. Hosted samples varied by less than 4% within each case. The hosted-to-reference ratio is 2.4 to 3.4, above the shared reference scale of 2, so reference-machine scaling would reject ordinary hosted runs.
+Budgets use standard two-CPU hosted CI expectations (Linux x64, Node 24.21, PR #5403), rounded above the higher recorded median across the AMD EPYC 7763 and EPYC 9V74 runners and multiplied by the shared 1.25 headroom. Samples varied by up to 15% within one run; the runner models differed by up to 25% per endpoint. The hosted-to-reference ratio is 2.4 to 3.4, above the shared reference scale of 2, so reference-machine scaling would reject ordinary hosted runs.
 
 | Endpoint | Hosted medians | Expectation | Budget |
 |---|---|---:|---:|
-| List 3,000: boot / first / repeat | interpolated between 1,000 (830.3 / 1,155.3 / 876.7 ms) and 5,000 (3,569.5 / 5,143.5 / 4,290.5 ms) | 2,200 / 3,200 / 2,600 ms | 2,750 / 4,000 / 3,250 ms |
-| Search 1,000: first / repeat (one sample) | 139,470 / 3,369 ms | 140,000 / 3,400 ms | 175,000 / 4,250 ms |
-| Fork: strata median / p99 / longest | 89.6 / 1,485.7 / 17,538.1 ms | 90 / 1,500 / 17,600 ms | 113 / 1,875 / 22,000 ms |
+| List 3,000: boot / first / repeat (9V74) | 2,204.5 / 2,633.6 / 2,235.1 ms | 2,300 / 2,700 / 2,300 ms | 2,875 / 3,375 / 2,875 ms |
+| Search 1,000: first / repeat (one sample; 7763 and 9V74) | 139,470 and 135,065 / 3,369 and 2,704 ms | 140,000 / 3,400 ms | 175,000 / 4,250 ms |
+| Fork: strata median / p99 / longest (7763 and 9V74) | 89.6 and 73.5 / 1,485.7 and 1,485.5 / 17,538.1 and 20,326.7 ms | 90 / 1,500 / 20,400 ms | 113 / 1,875 / 25,500 ms |
+
+The complete file took 266.6 s on the EPYC 9V74 runner: 70 s seeding, 22.6 s listing, 139 s searching, and 34.6 s forking. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
 
 On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 ms first, list 5,000 at 1,364–1,603 ms first, search at 57 s first, and fork of the longest Session at 6.0–6.4 s. A 10,000-Session list took 3.2–5.4 s for the first call with 1.9 GB peak RSS; the extreme list case uses 5,000 Sessions to bound seeding time and disk use.
 
@@ -67,6 +69,6 @@ On Apple M5 Pro with Node 26.5, isolated runs measured list 1,000 at 311–358 m
 
 ## Consequences
 
-The gate covers corpus-scale list, search, and fork costs that single-Session gates cannot see. On standard hosted CI it already shows that content search spends 139 s building its index on first use, that the first list took 5.1 s at 5,000 Sessions in calibration, and that forking the longest Session takes 17.5 s. Seeding writes about 1.2 GB.
+The gate covers corpus-scale list, search, and fork costs that single-Session gates cannot see. On standard hosted CI it already shows that content search spends 139 s building its index on first use, that the first list took 5.1 s at 5,000 Sessions in calibration, and that forking the longest Session takes 17.5 to 20.3 s. Seeding writes about 1.2 GB.
 
 Exclusions: the corpus is current-generation only, although most real Sessions are stored in older generations, which list revision hashing and migration-on-read would add. Only 22 distinct bodies exist, so search indexes repeated text. Fork runs without Agent presets or Workspace attachment. Calls are in-process, without Typert transport or a browser. Filesystem caches are not evicted, so cold means a fresh process, not cold storage.
