@@ -24,7 +24,7 @@ The product behavior is unchanged. The close is a post-commit effect by design: 
 
 ## Alternatives considered
 
-**Read the panel once after a longer wait, or retry the read outside the assertion.** Rejected: the assertion's subject is the DOM after the close, and `waitFor` polls exactly that state with a bounded default. A longer single read only moves the window, and any retry that is not tied to the asserted condition can pass on a panel that never closes.
+**Read the panel once after a longer wait, or retry the read outside the assertion.** Rejected on the grounds the two Related notes record for fixed windows and retries that are not bound to the asserted condition. What is specific to this case is the signal being trusted: `findByText` resolves on the commit that renders the empty list, which is not the commit that drops the panel, so the retried read has to be bound to the asserted DOM rather than to that earlier signal.
 
 **Drive the retry through a `Promise.withResolvers` deferred and one `await act(...)`, as the neighboring refresh-ordering cases do.** Not chosen here: those cases hold both the deletion's and the refresh's promises because their subject is the ordering between the two, while this case's subject is the state the retry button's own path settles into. A deferred retry would hand the case the refresh's resolution and flush the close into the same act boundary, replacing the user-visible `list.retry` path with a hand-driven one. Polling keeps that path, and the negative control under Consequences shows the failure still lands on the assertion when the panel never closes.
 
