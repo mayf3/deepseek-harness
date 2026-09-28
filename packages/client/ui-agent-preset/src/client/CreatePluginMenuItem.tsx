@@ -37,7 +37,7 @@ export function CreatePluginMenuItem({
   else if (!enabled) description = t('createPluginMissing')
 
   return (
-    <MenuItemButton icon={<IconAgentPresetOutlineRegular size={16} />} disabled={!enabled} onSelect={() => {
+    <MenuItemButton icon={<IconAgentPresetOutlineRegular size={14} />} disabled={!enabled} onSelect={() => {
       onDismiss()
       startCreatorDraft()
     }}>

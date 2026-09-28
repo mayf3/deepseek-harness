@@ -191,6 +191,7 @@ export function apply(ctx: ClientContext): void {
         hooks: { agentPresetSeat: seat.store, developerTools: ctx.configForms.developerTools.enabled },
         load: () => seat.load(),
         select: (id: string) => seat.select(id),
+        dismissRefusal: (error) => { seat.dismissRefusal(error) },
         introduced: () => { seat.introduced() },
       }
     }
@@ -200,13 +201,15 @@ export function apply(ctx: ClientContext): void {
       load: () => controller.load(),
     })
 
+    const startCreatorDraft = () => {
+      const seat = mainBlankSeat() ?? unboundSeat
+      seat.stage('cordis', true)
+      scope.uiWorkspace.startSession()
+      void seat.apply()
+    }
+
     scope.effect(() => {
-      creatorDraft = () => {
-        const seat = mainBlankSeat() ?? unboundSeat
-        seat.stage('cordis', true)
-        scope.uiWorkspace.startSession()
-        void seat.apply()
-      }
+      creatorDraft = startCreatorDraft
       const chip = scope.slots.register({
         name: 'conversation.hero.agentPreset',
         locale: 'settings.agentPreset',
@@ -234,9 +237,7 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({
         hooks: { agentPresets: controller.store },
         load: () => controller.load(),
-        startCreatorDraft: () => {
-          creatorDraft?.()
-        },
+        startCreatorDraft,
       }),
     }, CreatePluginMenuItem))
   })

@@ -33,7 +33,7 @@ Once the off value is accepted, built-in PTC or Minimal choices reset to Standar
 
 Known shipped presets offer mode details and usage examples in a read-only dialog. Its tabs preserve each page's scroll position; closing returns focus to the opening action. Help does not change the new-task default. The default badge replaces the card's group badge, and the preset id appears beside the title. Guide copy and examples belong to this package.
 
-The Plugins page's “Add plugin” menu offers “Let the agent create a plugin” through the same Creator task flow as Settings. Choosing it closes the menu without submitting a message, replacing a draft, or changing global preferences. The item stays in place while the roster loads or refreshes and explains why it is disabled when Creator is unavailable. The optional slot contribution disappears with its owner.
+“Let the agent create a plugin” in the Plugins page's **Add plugin** menu starts the same Creator task as Settings. Both entries show the reason if the preset switch is refused. It submits no message and preserves existing drafts and global preferences. While the roster loads or Creator is unavailable, the entry is disabled with an explanation.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

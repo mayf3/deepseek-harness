@@ -84,13 +84,6 @@
   padding: 6px 12px;
 }
 
-/* Keep both action icons centred beside the complete text block. */
-.addMenu [role='menuitem'] > span:first-child:has(> svg),
-.addMenu [role='menuitem'] > span:first-child:has(> svg) > svg {
-  width: 16px;
-  height: 16px;
-}
-
 .addMenuItem {
   display: flex;
   flex-direction: column;
@@ -99,9 +92,15 @@
 }
 
 .addMenuDescription {
+  display: -webkit-box;
+  max-height: 36px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .status,

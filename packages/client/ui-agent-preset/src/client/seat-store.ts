@@ -25,8 +25,8 @@ export interface AgentPresetSeatState {
   options: readonly AgentPresetOption[]
   /** The staged choice, empty until the roster loads. */
   current: string
-  /** A rejected apply's message, cleared by the next attempt. */
-  error: string | null
+  /** An error message; explicit selection failures also carry the preset for a Toast. */
+  error: string | { readonly preset: AgentPresetOption; readonly reason: string } | null
   busy: boolean
   /**
    * One-shot cue that the chip should introduce itself (the creator-draft
@@ -101,7 +101,10 @@ export class AgentPresetSeatController {
     }
     this.acceptedSelection = { sessionId, current: preset }
     this.codingToolsFailure = undefined
-    if (this.currentSession()?.id === sessionId) this.set({ current: this.staged.id ?? preset, error: null })
+    if (this.currentSession()?.id === sessionId) {
+      const error = this.store.getSnapshot().error
+      this.set({ current: this.staged.id ?? preset, error: typeof error === 'object' ? error : null })
+    }
   }
 
   /** Forget selection receipts when reconnect establishes a new Host generation. */
@@ -127,8 +130,10 @@ export class AgentPresetSeatController {
     const generation = ++this.loadGeneration
     const roster = await readRoster(this.ctx)
     if (generation !== this.loadGeneration) return
+    // A roster refresh can finish after a selection; leave its announcement for the chip.
+    const error = this.store.getSnapshot().error
     if (!roster.ok) {
-      this.set({ error: roster.error })
+      if (typeof error !== 'object' || error === null) this.set({ error: roster.error })
       return
     }
     const { presets } = roster.value
@@ -144,7 +149,7 @@ export class AgentPresetSeatController {
       // once the flow's session is current, so the reply can arrive after
       // apply() already composed it.
       current: this.staged.id ?? (session === undefined ? this.fallback : this.currentPreset(session) ?? ''),
-      error: null,
+      error: typeof error === 'object' ? error : null,
       introduce: this.staged.introduce,
     })
     await this.apply()
@@ -154,11 +159,8 @@ export class AgentPresetSeatController {
    * Stage one preset for the next session, applying it immediately when a
    * blank session is already current.
    *
-   * The refusal is returned as well as stored, because the two readers need
-   * different things from it: the chip's own label carries the standing state,
-   * while the caller that made this pick is the one that has to say why the
-   * label came back — and only it knows the pick was a person's, not the
-   * applier catching up with a session that just became current.
+   * The refusal is stored for the chip's announcement and returned to callers
+   * such as Settings that also report the result of their own write.
    * @param id - the preset to stage.
    * @returns the refusal text, or undefined once the pick settled.
    */
@@ -184,6 +186,15 @@ export class AgentPresetSeatController {
     this.staged.id = id
     this.staged.introduce = introduce
     this.set({ current: id, error: null, introduce })
+  }
+
+  /** Acknowledge a displayed refusal without dismissing a newer attempt.
+   * @param refusal - the selection error whose Toast finished.
+   */
+  dismissRefusal(refusal: AgentPresetSeatState['error']): void {
+    if (refusal !== null && typeof refusal === 'object' && this.store.getSnapshot().error === refusal) {
+      this.set({ error: refusal.reason })
+    }
   }
 
   /**
@@ -302,36 +313,32 @@ export class AgentPresetSeatController {
     const forgetRefused = () => {
       this.unconfirmedSelections = this.unconfirmedSelections.filter(selection => selection !== awaitingOwner)
     }
+    const refuse = (error: string) => {
+      forgetRefused()
+      this.set({
+        error: correction === undefined
+          ? { reason: error, preset: this.store.getSnapshot().options.find(option => option.id === staged) ?? { id: staged } }
+          : error,
+        current: this.staged.id ?? this.currentPreset(session) ?? current,
+      })
+      if (correction !== undefined) this.codingToolsFailure = { sessionId: session.id, preset: correction, error }
+      return error
+    }
     try {
       this.set({ busy: true, error: null })
       const result = await this.ctx.remote.agentPresets.select(session.id, staged)
       if (!result.ok) {
-        forgetRefused()
         const { error } = result
+        // Prefer the bare cause; the Toast already names the rejected preset.
         const refusal = 'reason' in error.details && typeof error.details.reason === 'string'
           ? error.details.reason
           : error.message
-        this.set({
-          // A refusal carries its cause twice: `message` wraps it in the
-          // roster's own frame, which names the preset the surface reporting
-          // this already names, and a `reason` detail holds the same cause
-          // without it. Read by the detail rather than by the code, because
-          // every refusal that has a cause to give names it the same way.
-          error: refusal,
-          current: this.staged.id ?? this.currentPreset(session) ?? current,
-        })
-        if (correction !== undefined) this.codingToolsFailure = { sessionId: session.id, preset: correction, error: refusal }
-        return refusal
+        return refuse(refusal)
       }
       if (this.acceptedSelection === accepted) this.acceptedSelection = { sessionId: session.id, current: result.value }
       this.set({ current: this.staged.id ?? this.currentPreset(session) ?? '' })
     } catch (error) {
-      forgetRefused()
-      if (correction === undefined) throw error
-      const refusal = error instanceof Error ? error.message : String(error)
-      this.codingToolsFailure = { sessionId: session.id, preset: correction, error: refusal }
-      this.set({ current: this.staged.id ?? this.currentPreset(session) ?? current, error: refusal })
-      return refusal
+      return refuse(error instanceof Error ? error.message : String(error))
     } finally {
       this.pendingSelection = undefined
       this.set({ busy: false })

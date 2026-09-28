@@ -80,7 +80,7 @@ export interface PluginAddActionsProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Additional MenuItemButton rows after installation in the add-plugin menu. */
+    /** Additional MenuItemButton rows after installation: 72px high, with a title and a description capped at two lines. */
     'plugins.add.actions': { kind: 'list'; scope: 'root'; owner: PluginAddActionsProps }
     /** Optional guidance after the user enables a bundle from the list, keyed by npm package name. */
     'plugins.bundle.activation': { kind: 'keyed'; scope: 'root'; owner: PluginActivationOwnerProps }

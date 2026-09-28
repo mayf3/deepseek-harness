@@ -1804,8 +1804,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'plugins.add.actions',
     kind: 'list',
     scope: 'root',
-    summary: 'Additional MenuItemButton rows after installation in the add-plugin menu.',
-    doc: 'Additional MenuItemButton rows after installation in the add-plugin menu.',
+    summary: 'Additional MenuItemButton rows after installation: 72px high, with a title and a description capped at two lines.',
+    doc: 'Additional MenuItemButton rows after installation: 72px high, with a title and a description capped at two lines.',
     registerOptions: [
       {
         name: 'id',

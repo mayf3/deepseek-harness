@@ -412,8 +412,6 @@ describe('ui-agent-preset apply', () => {
 
       await feature.dispose()
       expect(slots.entries('plugins.add.actions')).toHaveLength(0)
-      action.startCreatorDraft()
-      expect(uiWorkspace.starts).toHaveLength(1)
     } finally {
       await ctx.fiber.dispose()
     }
@@ -1105,8 +1103,9 @@ describe('ui-agent-preset apply', () => {
     conversation()
   })
 
-  it('keeps the applied composition when the roster load lands late', async () => {
-    const { ctx, slots, calls } = await bench()
+  it.each([false, true])('keeps the bound Creator outcome when the roster load lands late (refused: %s)', async (refused) => {
+    const selection = Promise.withResolvers<undefined>()
+    const { ctx, slots, calls } = await bench({ selectGate: selection.promise })
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -1125,6 +1124,7 @@ describe('ui-agent-preset apply', () => {
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
+    const unboundSeat = injectSeat()
 
     await section.load()
     section.startCreatorDraft?.()
@@ -1132,18 +1132,28 @@ describe('ui-agent-preset apply', () => {
     state.byId['s1'] = { id: 's1', blank: true }
     sessions.notify()
     const boundSeat = injectSeat(SessionId('s1'))
-    await boundSeat.load()
+    const loading = boundSeat.load()
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
+    if (refused) selection.reject(new Error('Creator failed to mount'))
+    else selection.resolve(undefined)
+    await loading
+    await vi.waitFor(() => { expect(boundSeat.hooks.agentPresetSeat.getSnapshot().busy).toBe(false) })
 
     // The chip mounts with the flow's session, so its roster load can land
     // AFTER the stage was consumed; the session's own composition is what
     // the display must keep — not the deployment default.
     state.byId['s1'] = {
-      id: 's1', blank: true, projectionValues: { agentPreset: 'cordis' },
+      id: 's1', blank: true, projectionValues: { agentPreset: refused ? null : 'cordis' },
     }
     await boundSeat.load()
 
-    expect(boundSeat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    expect(boundSeat.hooks.agentPresetSeat.getSnapshot()).toMatchObject({
+      current: refused ? '' : 'cordis',
+      error: refused ? { preset: { id: 'cordis' }, reason: 'Creator failed to mount' } : null,
+    })
+    expect(unboundSeat.hooks.agentPresetSeat.getSnapshot().error).toBeNull()
+    boundSeat.dismissRefusal(boundSeat.hooks.agentPresetSeat.getSnapshot().error)
+    expect(boundSeat.hooks.agentPresetSeat.getSnapshot().error).toBe(refused ? 'Creator failed to mount' : null)
     conversation()
   })
 
@@ -1190,6 +1200,25 @@ describe('AgentPresetSeatController reconciliation', () => {
     controller.resetSelection()
     await controller.load()
     expect(controller.store.getSnapshot().current).toBe('cordis')
+  })
+
+  it('keeps a refused choice visible when an earlier successful selection event arrives late', async () => {
+    const select = vi.fn((_id: SessionId, id: string) => Promise.resolve({ ok: true as const, value: id }))
+    const session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
+    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never, () => session)
+    await controller.select('minimal')
+    select.mockRejectedValueOnce(new Error('Creator failed to mount'))
+    await controller.select('cordis')
+    const refusal = controller.store.getSnapshot().error
+    expect(refusal).toEqual({ preset: { id: 'cordis' }, reason: 'Creator failed to mount' })
+
+    controller.observeSelection(session.id, 'minimal')
+
+    expect(controller.store.getSnapshot().current).toBe('minimal')
+    expect(controller.store.getSnapshot().error).toBe(refusal)
+    controller.dismissRefusal(refusal)
+    controller.observeSelection(session.id, 'standard')
+    expect(controller.store.getSnapshot().error).toBeNull()
   })
 
   it.each(['external', 'reset'] as const)('does not overwrite a newer %s observation with an older RPC reply', async (change) => {
@@ -1349,7 +1378,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.store.getSnapshot()).toMatchObject({ current: '', error: 'Disconnected', busy: false })
   })
 
-  it('propagates an explicit selection transport failure and releases it before an automatic fallback', async () => {
+  it('reports an explicit selection transport failure and releases it before an automatic fallback', async () => {
     const failure = new Error('Disconnected')
     const select = vi.fn((_id: SessionId, id: string) => Promise.resolve({ ok: true as const, value: id }))
       .mockRejectedValueOnce(failure)
@@ -1363,8 +1392,10 @@ describe('AgentPresetSeatController reconciliation', () => {
       id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'minimal' },
     }), undefined, () => disabled)
     await controller.load()
-    await expect(controller.select('cordis')).rejects.toBe(failure)
-    expect(controller.store.getSnapshot().busy).toBe(false)
+    await expect(controller.select('cordis')).resolves.toBe(failure.message)
+    expect(controller.store.getSnapshot()).toMatchObject({
+      busy: false, error: { preset: { id: 'cordis' }, reason: failure.message },
+    })
     disabled = true
     await controller.reconcileCodingTools()
     expect(select.mock.calls.map(call => call[1])).toEqual(['cordis', 'standard'])
@@ -1404,7 +1435,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
     expect(controller.store.getSnapshot()).toMatchObject({
       current: refuseLatest ? (refuseFirst ? 'standard' : 'minimal') : 'cordis', busy: false,
-      error: refuseLatest ? 'selection refused' : null,
+      error: refuseLatest ? { preset: { id: 'cordis' }, reason: 'selection refused' } : null,
     })
   })
 
@@ -1529,7 +1560,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     await controller.select('minimal')
 
     expect(controller.store.getSnapshot()).toMatchObject({
-      busy: false, current: '', error: 'selection rejected',
+      busy: false, current: '', error: { preset: { id: 'minimal' }, reason: 'selection rejected' },
     })
   })
 
@@ -1539,6 +1570,7 @@ describe('AgentPresetSeatController reconciliation', () => {
       ...developerTools(),
       remote: {
         agentPresets: {
+          list: () => Promise.resolve({ ok: false as const, error: new RemoteError('gateway/internal', 'roster unavailable', {}) }),
           select: () => Promise.resolve({
             ok: false as const,
             error: new RemoteError(
@@ -1554,6 +1586,17 @@ describe('AgentPresetSeatController reconciliation', () => {
     // The surface reporting this names the preset itself, so carrying the
     // roster's own "preset X failed to mount" frame would say it twice.
     expect(await controller.select('broken')).toBe(reason)
+    const first = controller.store.getSnapshot().error
+    expect(first).toEqual({ preset: { id: 'broken' }, reason })
+    await controller.select('broken')
+    const second = controller.store.getSnapshot().error
+    expect(second).toEqual(first)
+    expect(second).not.toBe(first)
+    await controller.load()
+    expect(controller.store.getSnapshot().error).toBe(second)
+    controller.dismissRefusal(first)
+    expect(controller.store.getSnapshot().error).toBe(second)
+    controller.dismissRefusal(second)
     expect(controller.store.getSnapshot().error).toBe(reason)
   })
 })

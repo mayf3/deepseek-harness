@@ -57,7 +57,14 @@ function renderSeat(
 ) {
   const store = createSnapshotStore<AgentPresetSeatState>({ ...SEAT_READY, ...state })
   const developerTools = createSnapshotStore(enabled)
-  const actions = { load: vi.fn(() => Promise.resolve()), select: vi.fn(select), introduced: vi.fn() }
+  const actions = {
+    load: vi.fn(() => Promise.resolve()), select: vi.fn(select), introduced: vi.fn(),
+    dismissRefusal: vi.fn((error: AgentPresetSeatState['error']) => {
+      if (store.getSnapshot().error === error && error !== null && typeof error === 'object') {
+        store.set({ ...store.getSnapshot(), error: error.reason })
+      }
+    }),
+  }
   const props = {
     ...actions,
     sessionId: session === undefined ? undefined : SessionId(session.id),
@@ -69,7 +76,7 @@ function renderSeat(
     t: translate,
   } as AgentPresetSeatProps
   render(<AgentPresetSeat {...props} />)
-  return { ...actions, developerTools }
+  return { ...actions, developerTools, store }
 }
 
 function renderLabel(
@@ -215,28 +222,34 @@ describe('the new-session chip', () => {
 })
 
 describe('a refused switch', () => {
-  it('announces the reason instead of letting the label snap back in silence', async () => {
+  it('announces delayed and repeated refusals even without a composed preset or Coding Tools', () => {
     // The banner's own timer has to be a fake one from the start, or the
     // lifetime assertion below would wait out its real nine seconds.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const reason = 'failed to import loader entry live-on-mac (@deepseek-ai/dsh-also-gone)'
-      renderSeat({}, () => Promise.resolve(reason))
-
-      fireEvent.click(screen.getByRole('button'))
-      fireEvent.click(screen.getByRole('menuitem', { name: /mine/ }))
+      const actions = renderSeat({ current: '' }, undefined, undefined, false)
+      const refusal = { preset: { id: 'cordis' }, reason }
+      act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: refusal }) })
 
       // The host refuses a mount discovery reported healthy, so this banner is
       // the only place the cause appears — the chip has already reverted and
       // the settings row shows the preset as fine.
-      const banner = await screen.findByRole('alert')
+      const banner = screen.getByRole('alert')
       expect(banner.textContent).toContain(reason)
-      expect(banner.textContent).toContain('mine')
+      expect(banner.textContent).toContain(en.presetCordisName)
+      expect(screen.queryByRole('button')).toBeNull()
+
+      act(() => { vi.advanceTimersByTime(7000) })
+      act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: { ...refusal } }) })
+      act(() => { vi.advanceTimersByTime(2001) })
+      expect(screen.getByRole('alert').textContent).toContain(reason)
 
       // Transient by design: it holds long enough to read a cause that names
       // packages, then leaves rather than sitting over the screen.
       act(() => { vi.advanceTimersByTime(9001) })
       expect(screen.queryByRole('alert')).toBeNull()
+      expect(actions.dismissRefusal).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
     }

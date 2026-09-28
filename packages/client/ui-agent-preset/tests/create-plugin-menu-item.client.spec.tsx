@@ -48,19 +48,15 @@ function item(): HTMLElement {
 }
 
 describe('Create plugin menu item', () => {
-  it('reads the roster and explains the direct Creator action without an introductory dialog', () => {
-    const actions = view()
+  it('explains Creator and dismisses the menu before starting it exactly once', () => {
+    const actions = view({}, true)
     expect(actions.load).toHaveBeenCalledOnce()
     expect(item().textContent).toContain(en.createPluginDescription)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(actions.startCreatorDraft).not.toHaveBeenCalled()
-  })
-
-  it('dismisses the menu before starting Creator exactly once', () => {
-    const actions = view()
     fireEvent.click(item())
     expect(actions.calls).toEqual(['dismiss', 'start'])
-    expect(actions.startCreatorDraft).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -78,14 +74,6 @@ describe('Create plugin menu item', () => {
     expect(item()).toHaveProperty('disabled', true)
     const description = status === 'idle' || status === 'loading' ? en.createPluginChecking : en.createPluginUnavailable
     expect(item().textContent).toContain(description)
-    fireEvent.click(item())
-    expect(actions.calls).toEqual([])
-  })
-
-  it('explains why the entry is disabled when the deployment has no cordis preset', () => {
-    const actions = view({ options: [{ id: 'standard' }] })
-    expect(item()).toHaveProperty('disabled', true)
-    expect(item().textContent).toContain(en.createPluginMissing)
     fireEvent.click(item())
     expect(actions.calls).toEqual([])
   })

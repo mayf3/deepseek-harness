@@ -37,9 +37,9 @@ The **Refresh** button shows its tooltip after 500 ms of hovering or keyboard fo
 
 ### Installing a bundle
 
-The **Add plugin** primary button directly opens the existing installation dialog. Its separate arrow button, **Choose how to add a plugin**, opens a menu: **Install a third-party plugin** opens that same dialog with focus in its package-name field; plugin-contributed creation actions follow it. The two buttons have independent click targets and accessible names. Arrow keys move between menu rows, Escape closes back to the arrow button, and the menu stays within the viewport. While an installation is tracked, **View installation** opens that task directly.
+**Add plugin** and the arrow menu's **Install a third-party plugin** open the installation dialog with focus in its package field. The menu also offers plugin-contributed actions.
 
-`plugins.add.actions` adds root-scoped `MenuItemButton` rows after installation in this menu. Its owner supplies `onDismiss()`, which a contribution calls before starting its action.
+`plugins.add.actions` accepts root-scoped `MenuItemButton` contributions after the install action. Contributions call the supplied `onDismiss()` before starting their action.
 
 On first use, when pnpm uses the unconfigured official npm registry and npmmirror is offered, the Host probes both registries in parallel. The first successful HTTPS ping response selects the initial source. The dialog preserves remembered choices, manual selections, explicit manager configuration, and custom or unknown pnpm registries. An install clicked during initial probing waits for that bounded operation; a late result cannot overwrite a manual choice or reopen a closed dialog.
 

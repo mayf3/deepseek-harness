@@ -79,7 +79,7 @@ function AddPluginMenu({ t, disabled, openInstall, renderSlot }: {
             <IconChevronDownOutlineRegular size={12} aria-hidden="true" />
           </Button>
         )}>
-        <MenuItemButton icon={<IconDownloadOutlineRegular size={16} />} onSelect={() => { onDismiss(); openInstall() }}>
+        <MenuItemButton icon={<IconDownloadOutlineRegular size={14} />} onSelect={() => { onDismiss(); openInstall() }}>
           <span className={css.addMenuItem}>
             <span>{t('installExisting')}</span>
             <span className={css.addMenuDescription}>{t('installExistingDescription')}</span>
