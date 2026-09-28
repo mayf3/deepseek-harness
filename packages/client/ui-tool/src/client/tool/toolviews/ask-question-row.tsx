@@ -251,9 +251,8 @@ export function AskQuestionRow({
   let summary = model.summary
   let state = model.state
   let transcript: AskQuestionCardModel | null = null
-  // Every row keeps a pill back to its panel: an answerable call reopens the
-  // live one, and a settled call opens the same panel read-only over its
-  // recorded answers.
+  // An answerable call reopens its panel, a queued reply reveals the row's
+  // read-only transcript, and a settled call opens a read-only panel.
   let rowAction: (() => boolean) | undefined
   let rowActionLabel = t('ask.reopen')
   if (code === 'ASK_CANCELLED') {
