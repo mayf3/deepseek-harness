@@ -3,5 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "icon": "./icon.svg",
+  "exports": { "./package.json": "./package.json", "./locale/*.json": "./locale/*.json" },
+  "files": ["cordis.patch.yml", "locale/*.json", "icon.svg"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }

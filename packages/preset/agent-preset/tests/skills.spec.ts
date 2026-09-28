@@ -4,7 +4,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, matchesGlob, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
@@ -98,6 +98,41 @@ describe('the shipped creator skills', () => {
       expect(Array.isArray(patch)).toBe(true)
       for (const file of readdirSync(dir).filter(entry => entry.endsWith('.js'))) {
         execFileSync(process.execPath, ['--check', join(dir, file)])
+      }
+    }
+  })
+
+  it('ships discoverable, exported, packaged display resources with every plugin template', () => {
+    const templates = join(skills, 'cordis-plugin-development', 'templates')
+    for (const name of readdirSync(templates)) {
+      const dir = join(templates, name)
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+        icon: string
+        exports: Record<string, string>
+        files: string[]
+        dsh: { bundle: { patch: string } }
+      }
+      expect(manifest.exports['./package.json']).toBe('./package.json')
+      expect(manifest.exports['./locale/*.json']).toBe('./locale/*.json')
+      expect(manifest.icon).toBe('./icon.svg')
+      const icon = readFileSync(join(dir, manifest.icon), 'utf8')
+      expect(Buffer.byteLength(icon)).toBeLessThanOrEqual(256 * 1024)
+      expect(icon).toContain('<svg xmlns="http://www.w3.org/2000/svg"')
+      expect(icon).toContain('viewBox="0 0 64 64"')
+      const locales = readdirSync(join(dir, 'locale')).map(file => `locale/${file}`)
+      expect(locales).toContain('locale/en.json')
+      for (const file of locales) {
+        const locale = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { meta: { title: string; description: string } }
+        expect(locale.meta.title).toMatch(/\S/u)
+        expect(locale.meta.description).toMatch(/\S/u)
+      }
+      const resources = new Set([...Object.values(manifest.exports).filter(file => !file.includes('*')),
+        ...locales, manifest.icon, manifest.dsh.bundle.patch])
+      for (const resource of resources) {
+        const file = resource.replace(/^\.\//u, '')
+        expect(body('cordis-plugin-development'), file).toContain(`\`templates/${name}/${file}\``)
+        expect(statSync(join(dir, file)).isFile(), file).toBe(true)
+        if (file !== 'package.json') expect(manifest.files.some(pattern => matchesGlob(file, pattern)), file).toBe(true)
       }
     }
   })
