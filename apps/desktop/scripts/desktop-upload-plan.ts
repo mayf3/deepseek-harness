@@ -38,7 +38,7 @@ export interface DesktopUploadArtifact {
   readonly contents?: string
 }
 
-/** A fully validated upload operation with channel metadata ordered last. */
+/** A validated installer or update upload, with any channel metadata ordered last. */
 export interface DesktopUploadPlan {
   readonly environment: 'test' | 'production'
   readonly target: DesktopPackageTargetName
@@ -56,6 +56,8 @@ export interface DesktopUploadPlan {
 
 /** Filesystem and environment inputs used to validate one upload. */
 export interface DesktopUploadPlanOptions {
+  /** Publish only the installer at its fixed download URL, replacing the previous object. */
+  readonly latest?: boolean
   readonly environment?: NodeJS.ProcessEnv
   readonly repositoryRoot?: string
   readonly appRoot?: string
@@ -171,7 +173,7 @@ function uploadArtifact(
  * Validate the completed package record, dsh version, update metadata, hashes, and target files.
  * @param targetName - Fixed platform and architecture selected by the upload command.
  * @param options - Optional filesystem roots and environment for tests or release automation.
- * @returns An upload plan whose mutable channel metadata is the final entry.
+ * @returns A fixed installer upload or an update plan with channel metadata ordered last.
  */
 export async function createDesktopUploadPlan(
   targetName: DesktopPackageTargetName,
@@ -272,15 +274,17 @@ export async function createDesktopUploadPlan(
     const stableFilename = metadataFilename.replace('nightly', 'latest')
     artifacts.push({ ...channelArtifact, filename: stableFilename, key: `${update.keyPrefix}/${stableFilename}` })
   }
+  const latestFilename = `dsh-latest-${target.platform === 'darwin' ? 'macos' : 'windows'}-${target.arch}.${target.platform === 'darwin' ? 'dmg' : 'exe'}`
+  const latestKey = `desktop/${latestFilename}`
   return {
     environment: update.environment,
     target: targetName,
     version: buildVersion,
-    publicUrl: update.publicUrl,
+    publicUrl: options.latest ? `${update.origin}/${latestKey}` : update.publicUrl,
     bucket: update.bucket,
     secretIdEnvName: update.secretIdEnvName,
     secretKeyEnvName: update.secretKeyEnvName,
-    artifacts,
+    artifacts: options.latest ? [{ ...artifacts[0]!, filename: latestFilename, key: latestKey }] : artifacts,
     ...typeof buildRecord.commit === 'string' ? { commit: buildRecord.commit } : {},
     ...typeof buildRecord.dirty === 'boolean' ? { dirty: buildRecord.dirty } : {},
   }

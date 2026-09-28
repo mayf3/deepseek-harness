@@ -60,6 +60,7 @@ export function resolveCredentialUploadEnvironment(
 
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
+    latest: { type: 'boolean' },
     'credential-launcher': { type: 'boolean' }, environment: { type: 'string' }, bucket: { type: 'string' },
   } })
   const target = positionals[0]
@@ -79,14 +80,14 @@ async function main(): Promise<void> {
   const environment = launcher
     ? resolveCredentialUploadEnvironment(fileEnvironment, process.env, values.environment as 'test' | 'production', values.bucket!, name)
     : fileEnvironment
-  const plan = await createDesktopUploadPlan(name, { environment })
+  const plan = await createDesktopUploadPlan(name, { environment, latest: values.latest === true })
   const cos = createDesktopCos({
     secretId: requiredEnvironmentValue(environment, plan.secretIdEnvName),
     secretKey: requiredEnvironmentValue(environment, plan.secretKeyEnvName),
   })
   process.stdout.write(`desktop upload: ${plan.target} ${plan.version} -> ${plan.publicUrl}\n`)
   await uploadDesktopRelease(plan, cos, resolve(import.meta.dirname, '../.desktop-build/upload-records'))
-  if (plan.environment === 'production') recordProductionRelease(plan)
+  if (plan.environment === 'production' && !values.latest) recordProductionRelease(plan)
 }
 
 /**
