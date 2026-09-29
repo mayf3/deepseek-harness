@@ -8,7 +8,7 @@
  * process-local activation arrives through the injected activation hook.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
@@ -46,6 +46,16 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
   const pendingRef = useRef(false)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+
+  // The editor grows with the draft up to the CSS cap, then scrolls.
+  useLayoutEffect(() => {
+    const node = editorRef.current
+    if (node === null) return
+    node.style.height = 'auto'
+    // scrollHeight excludes the border that the border-box height includes.
+    node.style.height = `${node.scrollHeight + node.offsetHeight - node.clientHeight}px`
+  }, [draft, editing])
 
   // A new goal identity (cleared/completed/replaced externally) invalidates the local edit
   // state: without the reset a surviving draft's Enter would write over the NEW goal.
@@ -88,15 +98,20 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   if (editing) {
     return (
       <div className={css.dock} data-goal-bar>
-        <div className={css.bar}>
-          <input
+        <div className={`${css.bar} ${css.editBar}`}>
+          <textarea
+            ref={editorRef}
             className={css.objectiveInput}
-            type="text"
+            rows={1}
             aria-label={t('objective.aria')}
             value={draft}
             onChange={(e) => { setDraft(e.target.value) }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleEdit()
+              // Shift+Enter breaks the line; IME confirmation keeps its commit behavior.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void handleEdit()
+              }
               if (e.key === 'Escape') setEditing(false)
             }}
             autoFocus

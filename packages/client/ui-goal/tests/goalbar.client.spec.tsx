@@ -94,6 +94,22 @@ describe('GoalBar', () => {
     await waitFor(() => { expect(screen.getByText('进行中的目标')).toBeTruthy() })
   })
 
+  it('edits a multi-line objective: Shift+Enter and IME confirmation do not save', () => {
+    const actions = makeActions()
+    render(<GoalBar goal={makeGoal({ objective: 'Line one\nLine two' })} {...actions} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '编辑目标' }))
+    const box = screen.getByRole('textbox', { name: '目标内容' })
+    expect(box).toHaveProperty('value', 'Line one\nLine two')
+
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+    expect(actions.onEdit).not.toHaveBeenCalled()
+
+    fireEvent.change(box, { target: { value: 'Line one\nLine three' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(actions.onEdit).toHaveBeenCalledWith('Line one\nLine three')
+  })
+
   it('Esc cancels the edit without calling onEdit', () => {
     const actions = makeActions()
     render(<GoalBar goal={makeGoal()} {...actions} t={t} />)
