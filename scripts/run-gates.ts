@@ -582,10 +582,10 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates('win32').map(gate => ({
+  const coverage = coverageGates('win32').map(gate => gate.id === 'electron-install' ? gate : {
     ...gate,
     needs: [...new Set(['build', ...(gate.needs ?? [])])],
-  }))
+  })
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // Coverage owns Electron preparation. The required production site replaces

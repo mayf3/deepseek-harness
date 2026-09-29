@@ -149,6 +149,7 @@ function withEnv<T>(name: string, value: string | undefined, action: () => T): T
   }
 }
 
+// Mutates worker-global state: only use for synchronous, non-concurrent graph inspection.
 function withPlatform<T>(platform: NodeJS.Platform, action: () => T): T {
   const original = Object.getOwnPropertyDescriptor(process, 'platform')!
   Object.defineProperty(process, 'platform', { ...original, value: platform })
@@ -547,6 +548,7 @@ describe('gate graph validation', () => {
     const installers = gates.filter(gate => gate.id === 'electron-install')
     expect(installers).toHaveLength(1)
     expect(installers[0]?.allowFailure).not.toBe(true)
+    expect(installers[0]?.needs ?? []).not.toContain('build')
     expect(gates.find(gate => gate.id === 'coverage')?.needs).toContain('electron-install')
     let installed = false
     await runGates(gates, 8, async (subject) => {
@@ -592,12 +594,12 @@ describe('gate graph validation', () => {
     },
   )
 
-  it.each(['ci-primary', 'ci-linux-primary', 'ci-coverage', 'ci-artifacts', 'ci-windows-blocking'] as const)(
+  it.each(['ci-coverage', 'ci-artifacts', 'ci-windows-blocking'] as const)(
     'only provisions Electron for native Windows coverage in %s', (mode) => {
       const original = Object.getOwnPropertyDescriptor(process, 'platform')
       for (const platform of ['linux', 'darwin', 'win32'] as const) {
         const gates = withPlatform(platform, () => withPnpmEntrypoint(() => gatesForMode(mode)))
-        const needed = platform === 'win32' && ['ci-primary', 'ci-linux-primary', 'ci-coverage'].includes(mode)
+        const needed = platform === 'win32' && mode === 'ci-coverage'
         expect(gates.filter(gate => gate.id === 'electron-install')).toHaveLength(needed ? 1 : 0)
         if (needed) {
           expect(gates.find(gate => gate.id === 'coverage')?.needs).toContain('electron-install')
@@ -609,9 +611,11 @@ describe('gate graph validation', () => {
     },
   )
 
-  it('restores the platform descriptor after failed graph inspection', () => {
+  it('restores the platform descriptor when coverage configuration is rejected', () => {
     const original = Object.getOwnPropertyDescriptor(process, 'platform')
-    expect(() => withPlatform('win32', () => { throw new Error('inspection failed') })).toThrow('inspection failed')
+    expect(() => withEnv('DSH_COVERAGE_PARTITIONS', '1', () =>
+      withPlatform('win32', () => withPnpmEntrypoint(() => gatesForMode('ci-coverage')))))
+      .toThrow('DSH_COVERAGE_PARTITIONS must be an integer greater than 1')
     expect(Object.getOwnPropertyDescriptor(process, 'platform')).toEqual(original)
   })
 
