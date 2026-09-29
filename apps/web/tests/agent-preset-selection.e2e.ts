@@ -249,13 +249,25 @@ describe('web e2e: agent-preset selection', () => {
     await rm(fixtureRoot, { recursive: true, force: true })
   })
 
-  it('starts on the Standard default with the roster editable in Settings', async () => {
+  it('clears an unapplied hidden pick and creates a Standard session with the roster editable in Settings', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-hero'))
-    await connectFreshWorkspace(page, scaffold.workspaceCwd)
-    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 10_000 })
-
+    expect(await livePreset(scaffold)).toBeUndefined()
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await page.getByRole('menuitem', { name: /^Minimal mode/ }).click()
+    await page.getByRole('button', { name: 'Minimal mode', exact: true }).waitFor()
     await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
+    const codingTools = dialog.getByRole('switch', { name: 'Coding Tools' })
+    await codingTools.click()
+    await expect.poll(() => codingTools.getAttribute('aria-checked')).toBe('false')
+    await dialog.getByRole('button', { name: 'Close' }).last().click()
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 10_000 })
+    await expect.poll(() => livePreset(scaffold)).toBe('standard')
+
+    await openSettings(page, 'en')
+    await codingTools.click()
+    await expect.poll(() => codingTools.getAttribute('aria-checked')).toBe('true')
     await dialog.getByRole('button', { name: 'Agent presets' }).click()
     await dialog.getByRole('button', { name: 'New task default: Standard mode' }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('switch').count()).toBe(0)
@@ -367,6 +379,11 @@ describe('web e2e: agent-preset selection', () => {
     await page.keyboard.press('Escape')
     await expect.poll(async () => (await scaffold.ctx.agentPresets.remoteExportList()).presets.find(preset => preset.isDefault)?.id).toBe('standard')
 
+    const reuse = page.waitForResponse('**/api/session/create')
+    await page.getByRole('button', { name: 'New session', exact: true }).last().click()
+    const reused = await reuse
+    expect(reused.request().postDataJSON()).toHaveProperty('payload.args.request.sessionId')
+    expect(await reused.json()).toMatchObject({ result: { ok: true, value: { agentPreset: 'minimal' } } })
     await page.reload()
     await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')

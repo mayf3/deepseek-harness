@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { presetOptions, readRoster } from './settings-store.ts'
+import { presetOptions, readRoster, requiresCodingTools } from './settings-store.ts'
 import type { AgentPresetOption } from './settings-store.ts'
 
 /** Hero-chip snapshot. */
@@ -46,6 +46,8 @@ export interface AgentPresetStage {
   id: string | undefined
   /** Whether the receiving chip should announce the applied choice once. */
   introduce: boolean
+  /** Whether this choice was a built-in PTC or Minimal preset when staged. */
+  requiresCodingTools?: boolean
 }
 
 /** Stages the next session's preset and applies it when one appears. */
@@ -78,9 +80,11 @@ export class AgentPresetSeatController {
     this.store.set({ ...this.store.getSnapshot(), ...patch })
   }
 
-  private clearStage(): void {
+  /** Forget the unapplied choice without changing any Session. */
+  clearStage(): void {
     this.staged.id = undefined
     this.staged.introduce = false
+    this.staged.requiresCodingTools = false
   }
 
   /**
@@ -145,6 +149,7 @@ export class AgentPresetSeatController {
   stage(id: string, introduce = false): void {
     this.staged.id = id
     this.staged.introduce = introduce
+    this.staged.requiresCodingTools = requiresCodingTools(this.store.getSnapshot().options.find(option => option.id === id))
     this.set({ current: id, error: null, introduce })
   }
 
