@@ -23,7 +23,7 @@
     - code: fixture-review
     - text: "Off"
 - heading "Source" [level=4]
-- term: Installed from
+- term: Code source
 - definition:
   - code: file:{{fixtures}}/fixture-bundle
 - term: Current version

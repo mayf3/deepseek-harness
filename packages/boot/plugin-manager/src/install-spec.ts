@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-plugin-manager/install-spec
  */
 
+import { homedir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
 
 /**
@@ -90,13 +91,16 @@ export function parseInstallSpec(raw: string): ParsedInstallSpec {
   return range === undefined ? { kind: 'registry', spec, name } : { kind: 'registry', spec, name, range }
 }
 
-/** A recorded dependency value pnpm resolves outside the registry: a protocol other than a registry alias, or an scp-like git address. */
-const NON_REGISTRY_VALUE = /^(?!(?:npm|workspace|catalog):)[a-z][a-z0-9+.-]*:|^git@/i
+/** A recorded dependency value pnpm resolves outside a registry: a protocol other than a registry alias, or an scp-like git address. */
+const NON_REGISTRY_VALUE = /^(?!(?:npm|jsr|workspace|catalog):)[a-z][a-z0-9+.-]*:|^git@/i
+/** The user information of an http(s) URL, which holds a password or access token when present. */
+const HTTP_CREDENTIALS = /^((?:git\+)?https?:\/\/)[^/@]*@/i
 
 /**
  * The spec `pnpm add` accepts for a dependency the profile manifest records. A git address, URL, or other
- * non-registry protocol is the recorded value; a `file:` or `link:` path, which pnpm records relative to the
- * profile, becomes absolute; a registry range, tag, or alias follows the dependency name after `@`.
+ * non-registry protocol is the recorded value without the credentials of an http(s) URL; a `file:` or `link:`
+ * path, which pnpm records relative to the profile or with `~` for the home directory, becomes absolute; a
+ * registry range, tag, or alias follows the dependency name after `@`.
  * @param name - the dependency name.
  * @param recorded - the value the profile manifest records for it.
  * @param profileDir - the profile directory a relative local path is resolved against.
@@ -104,6 +108,9 @@ const NON_REGISTRY_VALUE = /^(?!(?:npm|workspace|catalog):)[a-z][a-z0-9+.-]*:|^g
  */
 export function dependencySpec(name: string, recorded: string, profileDir: string): string {
   const local = /^(file|link):(.*)$/s.exec(recorded)
-  if (local !== null) return `${local[1]}:${resolve(profileDir, local[2] as string)}`
-  return NON_REGISTRY_VALUE.test(recorded) ? recorded : `${name}@${recorded}`
+  if (local !== null) {
+    const path = (local[2] as string).replace(/^~(?=$|[\\/])/, () => homedir())
+    return `${local[1]}:${resolve(profileDir, path)}`
+  }
+  return NON_REGISTRY_VALUE.test(recorded) ? recorded.replace(HTTP_CREDENTIALS, '$1') : `${name}@${recorded}`
 }

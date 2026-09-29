@@ -564,10 +564,9 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
  * One package's page: the crumb back to the list; its icon with its switch
  * and, for a package the profile installed, uninstall; its title beside its
  * version tag, its beta tag, and its problem tag; the package name the title
- * stands for; its one-liner; the Host's
- * problem when it reports one; the configuration the bundle registered for
- * itself; its rows with their switches and configure controls; and where it
- * comes from.
+ * stands for; its one-liner; the Host's problem when it reports one; the
+ * configuration the bundle registered for itself; its rows with their switches
+ * and configure controls; and where it comes from.
  */
 function PackageDetail({
   pkg, t, resolveText, busy, rowBusy, configured, configure, renderSlot,

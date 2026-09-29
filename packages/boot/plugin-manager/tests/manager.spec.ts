@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import { join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import type { Context } from '@deepseek-ai/cordis'
@@ -337,20 +337,28 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
 })
 
 it('names where each installed bundle comes from as a spec pnpm installs', async () => {
-  const { manager, dir, bundle } = await fixture()
+  const { manager, dir, bundle, profile } = await fixture()
   const recorded: Record<string, string> = {
-    extra: '^1.0.0', tagged: 'latest', aliased: 'npm:@acme/aliased@2', github: 'github:someone/dsh-plugin#v1',
-    ssh: 'git@github.com:someone/dsh-plugin.git', tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
-    relative: 'file:../plugins/relative', linked: 'link:/plugins/linked',
+    extra: '^1.0.0', tagged: 'latest', aliased: 'npm:@acme/aliased@2', jsr: 'jsr:@acme/jsr@^1', github: 'github:someone/dsh-plugin#v1',
+    ssh: 'git@github.com:someone/dsh-plugin.git', sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git',
+    tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz', token: 'https://ghp_secret@cdn.example.com/dsh-x-1.0.0.tgz',
+    password: 'git+https://someone:secret@git.example.com/someone/dsh-plugin.git#main',
+    relative: 'file:../plugins/relative', linked: 'link:/plugins/linked', home: 'file:~/plugins/home',
+    shadowed: '1.0.0',
   }
   for (const name of Object.keys(recorded)) bundle(name, [])
   const manifest = readProfileManifest('test', dir)
   manifest.dependencies = recorded
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+  // The installation's own copy of a bundle is the one that loads, so the profile's dependency on it names nothing.
+  writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { shadowed: '1.0.0' } }))
   expect(Object.fromEntries((await manager.listBundles()).map(row => [row.name, row.source]))).toEqual({
-    core: undefined, extra: 'extra@^1.0.0', tagged: 'tagged@latest', aliased: 'aliased@npm:@acme/aliased@2',
-    github: 'github:someone/dsh-plugin#v1', ssh: 'git@github.com:someone/dsh-plugin.git', tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
-    relative: `file:${resolve(dir, '../plugins/relative')}`, linked: `link:${resolve('/plugins/linked')}`,
+    core: undefined, extra: 'extra@^1.0.0', tagged: 'tagged@latest', aliased: 'aliased@npm:@acme/aliased@2', jsr: 'jsr@jsr:@acme/jsr@^1',
+    github: 'github:someone/dsh-plugin#v1', ssh: 'git@github.com:someone/dsh-plugin.git', sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git',
+    tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz', token: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
+    password: 'git+https://git.example.com/someone/dsh-plugin.git#main',
+    relative: `file:${resolve(dir, '../plugins/relative')}`, linked: `link:${resolve(dir, '/plugins/linked')}`,
+    home: `file:${resolve(homedir(), 'plugins/home')}`, shadowed: undefined,
   })
 })
 

@@ -232,7 +232,7 @@ export const en = {
   versionTag: 'v{version}',
   partsLabel: 'Components',
   sourceTitle: 'Source',
-  sourceSpec: 'Installed from',
+  sourceSpec: 'Code source',
   sourceBuiltIn: 'Built in',
   sourceVersion: 'Current version',
   partsEmpty: 'This plugin pack contains no components.',

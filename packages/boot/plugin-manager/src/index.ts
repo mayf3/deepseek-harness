@@ -288,9 +288,10 @@ export class PluginManager extends TypertRemoteService {
     const bundles: BundleInfo[] = []
     for (const name of names) {
       const installed = dependencies.includes(name)
-      const source = installed ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir) } : {}
       const optional = OPTIONAL_BUNDLES.includes(name)
       const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
+      // Bundle resolution reads the installation first, so a profile dependency it also supplies is not the loaded copy.
+      const source = removable ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir) } : {}
       const enabled = selected.includes(name)
       const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
       try {
