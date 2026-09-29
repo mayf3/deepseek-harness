@@ -17,7 +17,7 @@ try {
     $options = @{ EnvironmentKey='Environment'; OwnerKey='Software\DeepSeekHarness\Command'; MachinePath=$machinePath; MutexName=('Global\DeepSeekHarness.Command.' + $sid) }
     $state = Invoke-DshCommandPath @options -Request @{ operation='inspect'; directory=$Directory }
     $previousDesktop = $state.ownedDirectory -and $state.activeCommand -and
-        [string]::Equals($state.activeCommand, (Join-Path $state.ownedDirectory 'dsh.exe'), [StringComparison]::OrdinalIgnoreCase)
+        [string]::Equals($state.activeCommand, (Join-Path $state.ownedDirectory 'dsh.cmd'), [StringComparison]::OrdinalIgnoreCase)
     if ($Operation -eq 'install' -and $state.activeCommand -and -not $previousDesktop) {
         if ($Silent) { exit 2 }
         Add-Type -AssemblyName System.Windows.Forms
@@ -31,7 +31,7 @@ try {
     $result = Invoke-DshCommandPath @options -Request @{ operation=$Operation; directory=$Directory; expected=$state.fingerprint }
     Send-DshCommandEnvironmentChange
     if (-not $Silent -and $Operation -eq 'install' -and $result.activeCommand -and
-        -not [string]::Equals($result.activeCommand, (Join-Path $Directory 'dsh.exe'), [StringComparison]::OrdinalIgnoreCase)) {
+        -not [string]::Equals($result.activeCommand, (Join-Path $Directory 'dsh.cmd'), [StringComparison]::OrdinalIgnoreCase)) {
         Add-Type -AssemblyName System.Windows.Forms
         [void][Windows.Forms.MessageBox]::Show($messages.cliCommandShadowed, $messages.cliCommandTitle)
     }

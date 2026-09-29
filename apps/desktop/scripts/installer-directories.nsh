@@ -28,9 +28,6 @@ Var dshNewMoved
 !macroend
 
 !macro dshStageApplication
-  !ifmacrodef dshPrepareCliUpdate
-    !insertmacro dshPrepareCliUpdate
-  !endif
   StrCpy $dshFinalDirectory $INSTDIR
   System::Call 'ole32::CoCreateGuid(g .r0) i .r1'
   ${If} $1 != 0
@@ -72,9 +69,6 @@ Function dshCleanupDirectories
   ${If} $dshFinalDirectory != ""
     Call dshRollbackDirectories
   ${EndIf}
-  !ifmacrodef dshFinishCliUpdate
-    !insertmacro dshFinishCliUpdate
-  !endif
 FunctionEnd
 
 ; Only directories created or renamed by this installer are removed during rollback.
@@ -140,7 +134,4 @@ FunctionEnd
     RMDir /r "\\?\$dshOldDirectory"
     StrCpy $dshOldMoved ""
   ${EndIf}
-  !ifmacrodef dshFinishCliUpdate
-    !insertmacro dshFinishCliUpdate
-  !endif
 !macroend

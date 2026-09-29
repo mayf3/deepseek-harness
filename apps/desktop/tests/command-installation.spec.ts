@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { inspectFileCommand, installFileCommand, removeFileCommand } from '../src/command-installation.ts'
-import { prepareDesktopCli } from '../scripts/prepare-cli.ts'
+import { prepareCommandLink } from '../scripts/prepare-command-link.ts'
 
 const barrier = vi.hoisted(() => ({
   afterRead: undefined as ((path: unknown) => Promise<void>) | undefined,
@@ -43,14 +43,13 @@ async function fixture() {
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const launcher = join(root, 'desktop-launcher')
   await writeFile(launcher, 'desktop\n', { mode: 0o755 })
-  return { root, options: { destination: join(root, 'dsh'), launcher, control: join(compiled, 'cli-control') } }
+  return { root, options: { destination: join(root, 'dsh'), launcher, linkHelper: join(compiled, 'link-entry') } }
 }
 
 describe.skipIf(process.platform === 'win32')('macOS command entry ownership', () => {
   beforeAll(async () => {
     compiled = await mkdtemp(join(tmpdir(), 'dsh-command-control-'))
-    prepareDesktopCli(compiled, { platform: process.platform, arch: process.arch,
-      ...process.platform === 'darwin' ? { macosMinimumVersion: '13.0' } : {} })
+    if (process.platform === 'darwin') prepareCommandLink(compiled, process.arch === 'arm64' ? 'arm64' : 'x64', '13.0')
   })
   afterAll(async () => { if (compiled !== undefined) await rm(compiled, { recursive: true, force: true }) })
   it('installs and removes only its own link', async () => {

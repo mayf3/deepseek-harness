@@ -55,7 +55,7 @@ function parseState(value: unknown, platform: NodeJS.Platform): CommandState {
   if (!object(value) || typeof value.fingerprint !== 'string' || !/^[a-f0-9]{64}$/u.test(value.fingerprint)
     || typeof value.managed !== 'boolean' || typeof value.available !== 'boolean') throw new Error('Invalid command-manager response.')
   const destination = platform === 'win32' && typeof value.directory === 'string'
-    ? join(value.directory, 'dsh.exe') : value.destination
+    ? join(value.directory, 'dsh.cmd') : value.destination
   const launcher = platform === 'win32' ? destination : value.launcher
   if (typeof destination !== 'string' || !isAbsolute(destination) || typeof launcher !== 'string' || !isAbsolute(launcher)) {
     throw new Error('Invalid command-manager locations.')

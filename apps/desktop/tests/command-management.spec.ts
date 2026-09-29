@@ -23,8 +23,8 @@ it.each([en, zh])('shows installation, repair/removal and shadowed command locat
 it.each([
   ['darwin', 'en-US', en], ['darwin', 'zh-CN', zh],
   ['win32', 'en-US', en], ['win32', 'zh-CN', zh],
-] as const)('records command status and update guidance on %s in %s', async (platform, language, messages) => {
-  const destination = platform === 'darwin' ? '/usr/local/bin/dsh' : 'C:\\Users\\user\\AppData\\Local\\Programs\\DeepSeek Harness\\resources\\runtime\\cli\\bin\\dsh.exe'
+] as const)('records command status on %s in %s', async (platform, language, messages) => {
+  const destination = platform === 'darwin' ? '/usr/local/bin/dsh' : 'C:\\Users\\user\\AppData\\Local\\Programs\\DeepSeek Harness\\resources\\runtime\\cli\\bin\\dsh.cmd'
   const other = platform === 'darwin' ? '/opt/homebrew/bin/dsh' : 'C:\\Program Files\\nodejs\\dsh.cmd'
   const states = [
     { managed: false, available: false, destination },
@@ -35,6 +35,5 @@ it.each([
   ]
   await expect(JSON.stringify({
     dialogs: states.map(state => presentCommandManagement(state, messages, platform)),
-    runningCommands: { title: messages.cliCommandBusyTitle, detail: messages.cliCommandBusyDetail },
   }, null, 2) + '\n').toMatchFileSnapshot(`./expected/command-management-${platform}-${language}.json`)
 })

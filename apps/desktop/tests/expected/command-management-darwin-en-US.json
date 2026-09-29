@@ -63,9 +63,5 @@
       "defaultId": 0,
       "cancelId": 1
     }
-  ],
-  "runningCommands": {
-    "title": "dsh Commands Are Running",
-    "detail": "Finish running dsh commands, then retry the update. The downloaded update will be kept."
-  }
+  ]
 }

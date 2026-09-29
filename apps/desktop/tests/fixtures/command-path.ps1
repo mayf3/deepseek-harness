@@ -24,8 +24,8 @@ try {
     $npm = Join-Path $Root 'npm'
     $system = Join-Path $Root 'system'
     New-Item -ItemType Directory -Force $desktop, $other, $npm, $system | Out-Null
-    [IO.File]::WriteAllText((Join-Path $desktop 'dsh.exe'), 'fixture')
-    [IO.File]::WriteAllText((Join-Path $other 'dsh.exe'), 'fixture')
+    [IO.File]::WriteAllText((Join-Path $desktop 'dsh.cmd'), 'fixture')
+    [IO.File]::WriteAllText((Join-Path $other 'dsh.cmd'), 'fixture')
     [IO.File]::WriteAllText((Join-Path $npm 'dsh.cmd'), 'fixture')
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($environmentKey)
     try { $key.SetValue('Path', $npm, [Microsoft.Win32.RegistryValueKind]::ExpandString) }

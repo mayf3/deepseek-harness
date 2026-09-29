@@ -58,7 +58,7 @@ function Invoke-DshCommandPath {
             }
         }
         if ($Request.operation -eq 'install') {
-            if (-not (Test-Path -LiteralPath (Join-Path $directory 'dsh.exe') -PathType Leaf)) { Fail 'ENOENT' 'The installed launcher is unavailable.' }
+            if (-not (Test-Path -LiteralPath (Join-Path $directory 'dsh.cmd') -PathType Leaf)) { Fail 'ENOENT' 'The installed launcher is unavailable.' }
             $next = (@($directory) + $kept) -join ';'
             $environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($EnvironmentKey)
             $owner = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($OwnerKey)
@@ -106,7 +106,7 @@ function Invoke-DshCommandPath {
             if ($active) { break }
         }
         $onPath = @(([string]$raw).Split(';') | Where-Object { (Comparable $_) -eq $current }).Count -gt 0
-        return [ordered]@{ fingerprint=$fingerprint; directory=$directory; ownedDirectory=$owned; managed=([bool]$owned -and (Comparable ([string]$owned)) -eq $current); activeCommand=$active; available=($onPath -and (Test-Path -LiteralPath (Join-Path $directory 'dsh.exe') -PathType Leaf)) }
+        return [ordered]@{ fingerprint=$fingerprint; directory=$directory; ownedDirectory=$owned; managed=([bool]$owned -and (Comparable ([string]$owned)) -eq $current); activeCommand=$active; available=($onPath -and (Test-Path -LiteralPath (Join-Path $directory 'dsh.cmd') -PathType Leaf)) }
     } finally {
         if ($locked) { $mutex.ReleaseMutex() }
         $mutex.Dispose()

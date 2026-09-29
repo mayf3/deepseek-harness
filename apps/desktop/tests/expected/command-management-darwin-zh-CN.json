@@ -63,9 +63,5 @@
       "defaultId": 0,
       "cancelId": 1
     }
-  ],
-  "runningCommands": {
-    "title": "dsh 命令正在运行",
-    "detail": "请结束运行中的 dsh 命令后重试更新。已下载的更新会保留。"
-  }
+  ]
 }

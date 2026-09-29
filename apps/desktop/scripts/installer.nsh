@@ -11,7 +11,6 @@ ManifestDPIAware true
 !macro customHeader
   !define /ifndef INSTALLER_STRINGS_FILE "${INSTALLER_SOURCE_DIR}\strings.nsh"
   !include "${INSTALLER_STRINGS_FILE}"
-  !include "${INSTALLER_SOURCE_DIR}\cli.nsh"
   !ifdef BUILD_UNINSTALLER
     BrandingText " "
     SetFont "Segoe UI" 9
@@ -94,8 +93,6 @@ ManifestDPIAware true
 !macroend
 
 !macro customUnInstall
-  !insertmacro customCheckAppRunning
-  Call un.PrepareCliUpdate
   Push $0
   Push $1
   ${IfNot} ${isUpdated}

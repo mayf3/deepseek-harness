@@ -28,7 +28,7 @@ The application menu's **Manage dsh Command…** entry, immediately below **Chec
 
 On macOS, installation creates `/usr/local/bin/dsh` and requests administrator authentication when the directory requires it. Shell startup files are unchanged. On Windows, the installer offers an optional command checkbox, and the management dialog uses the same current-user PATH registration. A pre-existing command requires confirmation before switching; repairing Desktop's own selected command does not repeat that confirmation. The macOS link preserves and restores the displaced launcher; Windows preserves other PATH entries, including entries that predate registration. A command with higher PATH precedence is reported with its location. After moving the application, use Repair on macOS or Install from the new location on Windows. Remove leaves unrelated installations intact.
 
-Desktop keeps downloaded updates while a bundled CLI command is running. Finish those commands and retry installation. New commands are blocked during installer handoff; Windows applies the same protection to direct installation and uninstallation. The CLI runtime version follows the installed Desktop release. See the [runtime decision](../../.agents/notes/implemented/feature/2026-09-27-desktop-cli-runtime.md) for runtime compatibility and update ownership.
+Finish CLI commands before updating or uninstalling Desktop. The CLI runtime version follows the installed Desktop release. See [bundled command runtime](#bundled-command-runtime) for Desktop plugin commands and runtime limitations.
 
 ## Closing the window and quitting
 
