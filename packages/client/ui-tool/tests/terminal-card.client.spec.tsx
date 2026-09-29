@@ -255,13 +255,17 @@ describe('terminalCardModel', () => {
     ['timeout value', { timeoutMs: 0 }],
     ['workdir type', { workdir: 7 }],
     ['background type', { run_in_background: 'yes' }],
-    ['permission type', { sandbox_permissions: 7, justification: 'Need access' }],
-    ['permission value', { sandbox_permissions: 'read-only', justification: 'Need access' }],
-    ['missing justification', { sandbox_permissions: 'workspace-write' }],
-    ['orphan justification', { justification: 'Need access' }],
-    ['blank justification', { sandbox_permissions: 'workspace-write', justification: ' ' }],
   ])('keeps malformed standard-shell optional fields generic: %s', (_label, fields) => {
     expect(terminalCardModel(running({ argsRaw: shellArgs(fields) }))).toBeNull()
+  })
+
+  // Escalation validity depends on the Session's sandbox mode, which only the
+  // Host knows; a rejected call settles as an error result instead.
+  it.each([
+    ['permission equal to the current mode with blank justification', { sandbox_permissions: 'danger-full-access', justification: '' }],
+    ['blank justification alone', { justification: '' }],
+  ])('keeps the terminal card for escalation fields the Host accepts: %s', (_label, fields) => {
+    expect(terminalCardModel(settled({ call: { name: 'bash', argsRaw: shellArgs(fields) } }))).not.toBeNull()
   })
 
   it('accepts valid optional and unknown standard-shell fields on the open parameter root', () => {
@@ -428,6 +432,14 @@ describe('BashRow terminal card', () => {
     fireEvent.click(view.container.querySelector('[data-expandable]')!)
     expect(view.queryByText(/a\.ts/)).toBeNull()
     expect(view.getByText('List files')).toBeTruthy()
+  })
+
+  it('expands a completed command that carries Host-accepted blank escalation fields', () => {
+    const view = render(<BashRow {...rowProps(settled({
+      call: { name: 'bash', argsRaw: shellArgs({ sandbox_permissions: 'danger-full-access', justification: '' }) },
+    }))} />)
+    fireEvent.click(view.getByRole('button'))
+    expect(view.getByText('a.ts  b.ts', RAW)).toBeTruthy()
   })
 
   // The row's running state and the card's run-state dot describe the same
