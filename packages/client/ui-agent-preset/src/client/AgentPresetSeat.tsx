@@ -102,12 +102,12 @@ export function AgentPresetSeat({
     void load()
   }, [load])
 
+  const options = state.options.filter(option => developerTools || !requiresCodingTools(option))
+
   // Close a menu whose available choices just changed.
   useEffect(() => {
     setOpen(false)
-  }, [developerTools])
-
-  const options = state.options.filter(option => developerTools || !requiresCodingTools(option))
+  }, [developerTools, options.length])
 
   const chosen = state.options.find(option => option.id === state.current)
   const chosenText = chosen === undefined ? undefined : presetDisplayText(chosen, t)
@@ -160,7 +160,7 @@ export function AgentPresetSeat({
   return (
     <>
       {ready && <Menu
-        open={open}
+        open={open && options.length > 0}
         onClose={() => { setOpen(false) }}
         items={options.map((option) => {
           const text = presetDisplayText(option, t)
@@ -189,9 +189,9 @@ export function AgentPresetSeat({
             type="button"
             className={css.seat}
             aria-haspopup="menu"
-            aria-expanded={open}
+            aria-expanded={open && options.length > 0}
             title={(typeof state.error === 'object' ? state.error?.reason : state.error) ?? t('seatHint')}
-            disabled={state.busy}
+            disabled={state.busy || options.length === 0}
             onClick={() => { setOpen(value => !value) }}
           >
             <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />

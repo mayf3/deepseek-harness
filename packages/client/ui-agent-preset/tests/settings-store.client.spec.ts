@@ -11,8 +11,6 @@ import type { RemoteErrorCode } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import {
   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController,
   writeDefaultPreset,
@@ -200,20 +198,17 @@ describe('the agent-preset roster store', () => {
 describe('the new-session chip controller', () => {
   /** A chip over a current session the test can move. */
   function chip(
-    presets: AgentPresetRow[],
+    presets: { id: string; isDefault: boolean }[],
     current: SeatSession | undefined | (() => SeatSession | undefined),
     options: {
       writes?: Recorded[]
       failSelect?: string
       failList?: string
       failListCode?: RemoteErrorCode
-      developerTools?: ObservableSnapshot<boolean>
       list?: () => Promise<ReturnType<typeof remoteRoster>>
     } = {},
   ): AgentPresetSeatController {
     const partial = {
-      configForms: { developerTools: { enabled: options.developerTools ?? createSnapshotStore(true) } },
-      locale: { bind: () => () => 'Standard is unavailable' },
       remote: {
         agentPresets: {
           list: options.list ?? (() => {
@@ -229,7 +224,6 @@ describe('the new-session chip controller', () => {
           }),
           select: (agentId: SessionId, agentPreset: string) => {
             options.writes?.push({ ns: 'select', ops: agentPreset })
-            if (options.failSelect === undefined) controller.observeSelection(agentId, agentPreset)
             return Promise.resolve(options.failSelect === undefined
               ? { ok: true as const, value: agentPreset }
               : {
@@ -242,14 +236,11 @@ describe('the new-session chip controller', () => {
         },
       },
     }
-    const ctx = partial as never
-    const controller: AgentPresetSeatController = new AgentPresetSeatController(
+    const ctx = partial as ClientContext
+    return new AgentPresetSeatController(
       ctx,
       typeof current === 'function' ? current : () => current,
-      undefined,
-      () => !partial.configForms.developerTools.enabled.getSnapshot(),
     )
-    return controller
   }
 
   const ROSTER: { id: string; isDefault: boolean }[] = [
@@ -474,147 +465,22 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 
-  it.each(['standard', 'cordis', 'mine'])('applies %s while Developer tools are off', async (preset) => {
+  it('keeps the introduction cue after applying a staged pick', async () => {
     const writes: Recorded[] = []
-    const developerTools = createSnapshotStore(false)
-    const controller = chip(ROSTER, {
-      id: 's1' as SessionId,
-      blank: true,
-      projectionValues: { agentPreset: 'minimal' },
-    }, { writes, developerTools })
-    await controller.load()
-    writes.length = 0
-    await controller.select(preset)
-    expect(writes).toEqual(preset === 'standard' ? [] : [{ ns: 'select', ops: preset }])
-    expect(controller.store.getSnapshot().current).toBe(preset)
-  })
-
-  it('replaces a restricted staged pick when Developer tools turn off without restoring it later', async () => {
-    const writes: Recorded[] = []
-    const developerTools = createSnapshotStore(true)
     const session = {
       id: 's1' as SessionId,
       blank: true,
       projectionValues: { agentPreset: 'standard' },
     }
-    const controller = chip(ROSTER, session, { writes, developerTools })
+    const controller = chip(ROSTER, session, { writes })
     await controller.load()
     controller.stage('minimal', true)
-    developerTools.set(false)
     await controller.apply()
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', introduce: false })
-    developerTools.set(true)
-    await controller.reconcileCodingTools()
-    expect(controller.store.getSnapshot().current).toBe('standard')
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
+    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', introduce: true })
   })
 
-  it.each(['ptc', 'minimal'])('normalizes an unbound %s default and the blank Session it later reaches', async (preset) => {
-    const writes: Recorded[] = []
-    const state: { current?: SeatSession } = {}
-    const controller = chip([
-      { id: 'standard', isDefault: false }, { id: preset, isDefault: true },
-    ], () => state.current, { writes, developerTools: createSnapshotStore(false) })
-    await controller.load()
-    expect(controller.store.getSnapshot().current).toBe('standard')
-    expect(writes).toEqual([])
-    state.current = { id: 'new' as SessionId, blank: true, projectionValues: { agentPreset: preset } }
-    await controller.apply()
-    await controller.apply()
-    expect(writes).toEqual([{ ns: 'select', ops: 'standard' }])
-    expect(controller.store.getSnapshot().current).toBe('standard')
-  })
-
-  it('does not turn an unbound default fallback into a shared selection for a valid blank Session', async () => {
-    const staged = { id: undefined, introduce: false }
-    const ctx = fakeRoster([
-      { id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
-    ])
-    const unbound = new AgentPresetSeatController(ctx, () => undefined, staged, () => true)
-    const blank = new AgentPresetSeatController(ctx, () => ({
-      id: 'blank' as SessionId, blank: true, projectionValues: { agentPreset: 'cordis' },
-    }), staged, () => true)
-    await unbound.load()
-    await blank.load()
-    expect(staged.id).toBeUndefined()
-    expect(unbound.store.getSnapshot().current).toBe('standard')
-    expect(blank.store.getSnapshot().current).toBe('cordis')
-  })
-
-  it.each(['ptc', 'minimal'])('preserves an already-started %s Session when Coding Tools turn off', async (preset) => {
-    const writes: Recorded[] = []
-    const controller = chip([
-      { id: 'standard', isDefault: true }, { id: preset, isDefault: false },
-    ], { id: 'started' as SessionId, blank: false, projectionValues: { agentPreset: preset } },
-    { writes, developerTools: createSnapshotStore(false) })
-    await controller.load()
-    await controller.reconcileCodingTools()
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot().current).toBe(preset)
-  })
-
-  it.each(['ptc', 'minimal'])('preserves a named custom %s override with Coding Tools off', async (preset) => {
-    const writes: Recorded[] = []
-    const controller = chip([
-      { id: 'standard', isDefault: false }, { id: preset, name: 'My preset', isDefault: true },
-    ], undefined, { writes, developerTools: createSnapshotStore(false) })
-    await controller.load()
-    await controller.reconcileCodingTools()
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot().current).toBe(preset)
-  })
-
-  it('still recognizes a restricted blank Session after its preset becomes broken', async () => {
-    const writes: Recorded[] = []
-    const controller = chip([
-      { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false, broken: 'missing dependency' },
-    ], { id: 'blank' as SessionId, blank: true, projectionValues: { agentPreset: 'minimal' } },
-    { writes, developerTools: createSnapshotStore(false) })
-    await controller.load()
-    expect(writes).toEqual([{ ns: 'select', ops: 'standard' }])
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', options: [{ id: 'standard' }] })
-  })
-
-  it.each([false, true])('reports an unavailable Standard without choosing another preset (broken: %s)', async (broken) => {
-    const writes: Recorded[] = []
-    const controller = chip([
-      ...broken ? [{ id: 'standard', isDefault: false, broken: 'missing dependency' }] : [],
-      { id: 'minimal', isDefault: true }, { id: 'cordis', isDefault: false },
-    ], undefined, { writes, developerTools: createSnapshotStore(false) })
-    await controller.load()
-    await controller.apply()
-    await controller.load()
-    expect(writes).toEqual([])
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', error: 'Standard is unavailable' })
-  })
-
-  it('retains a fallback refusal through list changes and allows an explicit retry', async () => {
-    const writes: Recorded[] = []
-    const controller = chip(ROSTER, {
-      id: 'blank' as SessionId, blank: true, projectionValues: { agentPreset: 'minimal' },
-    }, { writes, developerTools: createSnapshotStore(false), failSelect: 'selection refused' })
-    await controller.load()
-    await controller.apply()
-    await controller.load()
-    await controller.reconcileCodingTools()
-    expect(writes).toEqual([{ ns: 'select', ops: 'standard' }])
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', error: 'selection refused' })
-    await controller.select('standard')
-    expect(writes).toHaveLength(2)
-  })
-
-  it.each([new Error('Disconnected'), 'Disconnected'])('keeps a preference reconciliation roster transport failure in the chip error: %s', async (failure) => {
-    const controller = chip([], undefined, {
-      developerTools: createSnapshotStore(false),
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Non-Error transport rejection is the scenario under test.
-      list: () => Promise.reject(failure),
-    })
-    await controller.reconcileCodingTools()
-    expect(controller.store.getSnapshot().error).toBe('Disconnected')
-  })
-
-  it('leaves the introduction cue to the chip while Developer tools stay on', async () => {
-    const developerTools = createSnapshotStore(true)
+  it('keeps the introduction cue until acknowledged when the Session already runs the staged preset', async () => {
     const session = {
       id: 's1' as SessionId,
       blank: true,
@@ -622,7 +488,7 @@ describe('the new-session chip controller', () => {
       // no-op that leaves the cue for the chip to play.
       projectionValues: { agentPreset: 'minimal' },
     }
-    const controller = chip(ROSTER, session, { developerTools })
+    const controller = chip(ROSTER, session)
     await controller.load()
     controller.stage('minimal', true)
 
