@@ -23,25 +23,33 @@ In these samples, reordering `required` changes argument order where reordering 
 
 ### A lazily computed argument view lives in `dsh-util-values`
 
-`PartialArguments` is a lazily computed class that knows no tool. It holds the raw text (the accumulated deltas while preparing; the event's string after `tool/call`; the event's object for a PTC child) and a level-one index, and any reader (`has`, `complete`, `stringLength`, `text`, `value`, `keys`) resumes scanning from the last consumed position only when called; with no reader, not one character is scanned. Text is decoded on demand from the raw slice, so no specification of "which fields keep text" and no registry is needed.
+`PartialArguments` is a tool-independent lazy reader. It retains separate argument fragments and a top-level key/value range index, or borrows an already parsed PTC payload. Reads index only newly received boundaries; unrequested values are neither decoded, counted, nor parsed. Requested fields materialize from their own ranges, without a per-tool field specification or registry.
 
-Scanning indexes only unread fragments. Indexing the cumulative source after every append would repeatedly flatten V8 concatenation strings even with a forward cursor; the cumulative source is retained for field slices, not for the scan loop.
+The boundary scanner tracks quotes, backslash parity, and matching nested brackets across fragments. Key names are decoded for lookup, while value contents are deferred. `complete()` reports a closing delimiter, not validated content; `invalid` reports errors already found by indexing or a content read. Content errors do not prevent indexing subsequent fields. Formal tool-input validation remains outside this presentation reader.
 
-The view judges change itself: it remembers every question it answered, and `append(delta)` recomputes only those, returning true only when an answer differs; with nothing read yet it is always false. The business states its granularity as it reads: `stringLength('content', { step: 1024 })` makes only a kilobyte crossing count, `text('description')` makes every character count. An `offset` includes completed strings when edit progress combines old and new text.
+Requested unescaped lengths derive directly from offsets. Escaped strings maintain content cursors only for requested length, text, or bounded-prefix reads; a limit query stops once its answer is known. Closed strings use native decoding when their full text is first requested. Arbitrary late reads require retaining the original fragments until authoritative complete text replaces them.
+
+The view judges change itself: `append(delta)` only retains the fragment, and `refresh()` compares remembered answers at publication time. With nothing read yet, it does not scan or report a change. Only refresh advances an existing answer's comparison baseline; an intervening read cannot suppress another consumer's update. The business states its granularity as it reads: `stringLength('content', { step: 1024 })` makes only a kilobyte crossing count, `text('description')` makes every character count, and `textPrefix()` limits decoded text to the requested UTF-16 prefix. An `offset` includes completed strings when edit progress combines old and new text.
 
 ### Parsing happens in the Tool Definition, not in React
 
-The [Tool Definition](../../../../packages/client/ui-chat/src/client/conversation-nodes/tool.ts) matches every `tool-call-delta` carrying an id as a start candidate: the earliest opens the Context whether or not it is named, later ones fold as updates. The named delta creates the preparing root with a fresh streaming view; every delta only calls `args.append(delta)`, and the root reference is replaced only when the view reports a change. Publication keeps the `animation-frame` cadence. A stream whose arguments precede the name is not scanned: a view opened late sees a non-object prefix, turns invalid, and reports no fields.
+The [Tool Definition](../../../../packages/client/ui-chat/src/client/conversation-nodes/tool.ts) matches every `tool-call-delta` carrying an id as a start candidate: the earliest opens the Context whether or not it is named, later ones fold as updates. The named delta creates the preparing root with a fresh streaming view; every delta only calls `args.append(delta)`. At the `animation-frame` publication point, `buildViewNode()` refreshes observed answers and replaces the root only when they change; otherwise it reuses the currently published root. The Context and its published Node own these identities without a separate preparation cache. A stream whose arguments precede the name is not scanned: a view opened late sees a non-object prefix, turns invalid, and reports no fields.
 
-Every stage's block exposes `name` and `args`; legacy `argsRaw` and result `call: { name, argsRaw } | null` remain available. Dispatched roots use `PartialArguments.fromText(argsRaw)`, PTC children use `fromObject(payload)` without stringifying, and results reuse the started view. An unpaired root result has an empty name and shared empty view. Card models continue to read `argsRaw`.
+Every stage's block exposes `name` and `args`; legacy `argsRaw` and result `call: { name, argsRaw } | null` remain available. `block-end` and `tool/call` reconcile argument fragments against their authoritative full text with length and exact per-fragment comparisons. Matching text seals the same reader and preserves its indexed fields; missing or conflicting deltas create a new `fromText()` view. No cumulative string or probabilistic hash is needed. PTC readers use `fromObject(payload)`, results reuse the started reader, and an unpaired result uses the shared empty view. Card models continue to read finalized `argsRaw`.
+
+Assistant blocks retain tool identity and first-token timing, not argument deltas. Complete argument text comes from `block-end` or the durable message. Parameter-only deltas preserve Assistant State, while the Tool Definition owns preparing reads and notifications.
+
+The Assembler shares one immutable Match per input and lifecycle role, including its Location, while each Definition retains independent State. Empty dependency sets require no replay work.
 
 Rows use the same readers across stages: read/write/edit show an openable path once `file_path` closes; write/edit show decoded content length in 1024-character units while content streams; bash/pwsh/run_code show the description prefix. Chat group detail reads the same view using its existing field priority. Without usable detail it stays empty while fields can still arrive, then falls back to the tool name once `closed()` is true, for every category.
+
+Group detail normalizes an initial 512-unit decoded prefix and expands it only when whitespace or multi-unit grapheme clusters prevent deciding the 160-cluster result. A filled prefix remains unchanged as its field grows, while a later higher-priority field still republishes the detail. String-length checks do not materialize the full text. Detail already within 160 UTF-16 units requires no grapheme traversal.
 
 Third-party tools receive the same view without registration or a separate subscription. Write/edit and Bash share their component across stages. The mutable argument reader is a narrow exception to JSON-compatible owner data: its Definition publishes a new block reference when an observed answer changes. Scan caches use private fields so read history does not affect structural comparison of equal sources.
 
 ### Argument declaration order
 
-`tool-bash` and `tool-pwsh` declare `description` before `command` and include the ordering instruction; both `parameters` declarations of `run_code` put `description` before `code` without an instruction. `file_path` is already first for write/edit/read. Other tools retain their argument order.
+`tool-bash` and `tool-pwsh` declare `description` before `command` and include the ordering instruction. Both `parameters` declarations of `run_code` put `description` before `code` and share a parameter description requesting that generation order for TypeScript and Python. Write/edit declare `file_path` first and ask for it before `content` or `old_string`/`new_string` in the path parameter description. Read retains its leading `file_path`; other tools retain their argument order.
 
 ## Alternatives considered
 
@@ -51,7 +59,7 @@ Third-party tools receive the same view without registration or a separate subsc
 
 **Third-party `partial-json`.** It reparses the cumulative input each frame and does not expose string completion separately from the decoded value.
 
-**Eagerly parse every field.** Large fields such as `content` usually need only a length; eagerly materializing their text adds decoding and memory costs before a consumer asks for it.
+**Eagerly parse every field.** Large fields such as `content` usually need only a length; eagerly materializing their text adds decoding and memory costs before a consumer asks for it. Observing the entire key list also republishes a block when an unused argument appears; detail keeps field-specific observations.
 
 **Slice the normalized field for a truncated detail.** A V8 substring can retain the entire field. Joining the bounded selection of grapheme clusters keeps the displayed prefix independent of that source.
 
@@ -60,20 +68,21 @@ Third-party tools receive the same view without registration or a separate subsc
 ## Verification
 
 - Parser tests cover lazy scanning, observed-answer changes, empty and repeated keys, split escapes, non-string values, invalid input, sealed views, and read-independent structural equality.
-- Row and grouping tests cover streamed paths and descriptions, content length, shared row identity, name fallback only when arguments cannot grow, and a 161-cluster traversal limit without changing whitespace or Unicode handling.
+- Row and grouping tests cover streamed paths and descriptions, content length, shared row identity, name fallback only when arguments cannot grow, and at most 161 clusters per truncation pass without changing whitespace or Unicode handling.
+- Negative controls restore read-time acknowledgement, repeated Match allocation, and short-text segmentation; four focused tests fail at their corresponding assertions and pass after restoration. Definitions retain independent State; Turn and Step records remain Session-owned.
+- Additional controls eagerly parse unread containers, accept same-length conflicting text, or rebuild Assistant State for parameter-only deltas. Each fails its owning assertion; the boundary-index implementation passes after restoration.
 
-The required [conversation-fold benchmark](../../../../benchmarks/conversation-fold/conversation-fold.bench.client.ts) drives the real Tool Definition, Assembler, and Chat groups with 16-character fragments, flushing every 64 fragments. Three fresh compiled Node workers report all samples and their median; setup and forced GC are outside timing, and retained heap is measured with the Assembler and argument view still reachable. On Linux x64, AMD EPYC 7763, Node 24.18.0:
+The required [conversation-fold benchmark](../../../../benchmarks/conversation-fold/conversation-fold.bench.client.ts) drives the real Tool Definition, Assembler, Chat groups, and published write-row reads with 16-character fragments, flushing every 64 fragments. Three fresh compiled Node workers report all samples and their median; setup and forced GC are outside timing, and retained heap is measured with the Assembler and argument view still reachable. Row reads validate decoded progress and the file path; the worker also reports process peak RSS.
 
-| Workload | Optimized samples (ms) | Reintroduced cumulative indexing and full segmentation (ms) | Time / retained-heap budget |
-|---|---|---|---|
-| 512 KiB write content | 295.3, 282.9, 277.7 | 4035.5, 4035.5, 3984.9 | 750 ms / 37.5 MiB |
-| 128 KiB command before description | 144.0, 141.9, 145.3 | 1494.9, 1486.0, 1471.2 | 375 ms / 10 MiB |
+Local Chat-only measurements on 2026-09-29 compare the pre-feature baseline with the optimized implementation for 512 KiB write content and 32,769 body deltas. On Linux x64, AMD EPYC 7763, Node 24.18.0, median unprofiled processing time is 212.16 → 176.12 ms, cumulative allocation including collected objects is 132.06 → 76.65 MiB, and retained heap is 24.89 → 21.84 MiB. These measurements exclude model, network, browser rendering, and non-Chat targets; they do not establish whole-page or CI-runner latency.
 
-Reference expectations are 300/150 ms and 30/8 MiB. The shared 2× CI time scale and 1.25× headroom apply to time; only headroom applies to heap. Both negative controls exceed their time budget. These are local Node measurements, not CI-runner, model, network, or browser-paint latency; whitespace normalization still scans the whole field.
+Match calls remain 393,228; update calls rise from 98,307 to 131,076 because the Tool Definition consumes every argument delta. The baseline displays raw-length write progress rather than decoded argument reads.
+
+The CI budgets remain 750/375 ms and 37.5/10 MiB: reference expectations of 300/150 ms use the shared 2× time scale and 1.25× headroom, while 30/8 MiB heap expectations use headroom only. Historical cumulative-indexing/full-segmentation controls take 3984.9–4035.5 ms for write and 1471.2–1494.9 ms for bash, exceeding those unchanged budgets.
 
 ## Consequences
 
 - Observed argument changes replace preparing blocks; unread calls retain their block reference. Views retain source text, and group headers can request fields independently of tool rows. Started and settled views scan on first read without publishing updates.
-- Model ordering is probabilistic: the reorder and the description sentence raise description-first to about 100% but are not a contract; the row logic shows whichever field closes first, so a reversed order only loses the benefit.
+- Schema order and description instructions encourage label-first generation but do not guarantee it. Rows show usable fields as they arrive; a late path delays its display and the accompanying content progress.
 - Presentation remains Client-derived; argument scanning adds no Session event or persistence format.
 - A stream whose name arrives after its arguments gives up scanning; that call's preparing row falls back to the title alone.

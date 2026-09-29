@@ -96,6 +96,10 @@ describe('preparing tool arguments', () => {
       expect(run.exitCode, run.stderr).toBe(0)
       const report = requireReport(run)
       expect(report.characters).toBe(workload.characters)
+      if (workload.tool === 'write') {
+        expect(report.progressKb).toBe(workload.characters / 1024)
+        expect(report.filePath).toBe('preview.md')
+      }
       expect(report.detail).toBe(workload.tool === 'write' ? 'preview.md' : `${'abcdefghijklmno '.repeat(10).slice(0, 159)}…`)
       samples.push(report)
     }

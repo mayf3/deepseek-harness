@@ -26,14 +26,13 @@ function pendingContentKilobytes(block: FileMutationRowProps['block']): number |
 
 /**
  * Lets users open the path as soon as its string closes, watch the content
- * size while it streams, and expand the applied diff once the call settles.
+ * size alongside it while it streams, and expand the applied diff once the call settles.
  */
 export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const diff = diffCardModel(block)
   const kilobytes = pendingContentKilobytes(block)
   const size = kilobytes === null ? null : t('tool.preparing.content', { kilobytes })
-  // The size stands alone until the path closes, then trails the path.
   return (
     <ToolRow
       useDisclosure={useDisclosure}
@@ -42,7 +41,7 @@ export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect,
       toolName={toolName}
       icon={FILE_MUTATION_ICON}
       title={t(model.titleKey)}
-      summary={size !== null && model.summary === '' ? size : model.summary}
+      summary={model.summary}
       summarySuffix={size !== null && model.summary !== '' ? size : undefined}
       output={model.output}
       errorSummary={model.errorSummary}

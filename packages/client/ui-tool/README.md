@@ -29,7 +29,7 @@ Tool calls appear in the conversation as cards: a root call tree with its nested
 
 Shared Tool rows and Bash rows retain error and warning colors for failed and stopped summaries, including on hover. Hover darkens only summaries without those states.
 
-Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Read/write/edit show an openable path once `file_path` closes; write/edit also show `Preparing content NKB` while content streams. N rounds the decoded content's UTF-16 length up in units of 1024, not file bytes. Command rows show the streamed description. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
+Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Read/write/edit show an openable path once `file_path` closes and decodes without errors; write/edit also show `Preparing content NKB` after that path while content streams, never as a standalone summary. N rounds the decoded content's UTF-16 length up in units of 1024, not file bytes. Command rows show the streamed description. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
 
 ### Registering a business tool view
 
@@ -72,7 +72,7 @@ The package realizes one dispatch rule: atomic Tool views are keyed by wire Tool
 Tool owner props forward Chat's stable `useDisclosure` Hook through root and nested calls. Rows invoke it where they own their expanded bodies; intermediate renderers do not subscribe. Each invocation has independent open state that resets when the enclosing Turn collapses, without replacing React identity. Presentation-mode switches preserve it.
 
 
-Tool Definitions own the [lazy argument view](../../util/values/README.md). Rows choose their fields and update granularity through its readers, without a separate subscription or registration. A streamed delta replaces the block only when an observed answer changes; publication remains frame-batched. Card models that need dispatched arguments continue to read `argsRaw`.
+Tool Definitions own the [lazy argument view](../../util/values/README.md). Rows choose their fields and update granularity through its readers, without a separate subscription or registration. Deltas append without scanning; frame-batched publication refreshes observed answers and replaces the block only when an answer changes. Card models that need dispatched arguments continue to read `argsRaw`.
 
 ### Cards
 

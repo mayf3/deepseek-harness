@@ -122,8 +122,13 @@ describe('Definition-owned Chat process groups', () => {
     try {
       expect(processActivity([node]).runningDetail).toBe(`${'x'.repeat(159)}…`)
       expect(visited).toBeLessThanOrEqual(161)
-      expect(args.append('","description":"Run focused tests"}')).toBe(true)
+      args.append('y'.repeat(1024))
+      expect(args.refresh()).toBe(false)
+      args.append('","description":"Run focused tests"}')
+      expect(args.refresh()).toBe(true)
+      spy.mockClear()
       expect(processActivity([node]).runningDetail).toBe('Run focused tests')
+      expect(spy).not.toHaveBeenCalled()
     } finally {
       spy.mockRestore()
     }

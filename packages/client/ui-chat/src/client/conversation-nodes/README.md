@@ -278,6 +278,10 @@ Exact-name rules also mean that a recorded name such as `functions.read`, `mcp.r
 
 Preparing calls use their first named delta time; dispatched calls use their tool/call time. Both read detail from the block's lazy `args` view.
 
+The Tool Definition alone retains streamed argument fragments. Assistant blocks keep tool identity and timing without accumulating argument deltas; `block-end` and the durable message supply their complete text. A Tool reader compares its fragments directly against `block-end` and `tool/call` arguments, retaining its indexed fields only for an exact match. Final text replaces missing or conflicting deltas.
+
+TurnProcess and TurnTail retain tool-argument Matches as Location evidence when the Turn start is outside the loaded window, even when those fragments do not change their State.
+
 Among running calls, the greatest `time` selects the live category and detail; equal times select the later visited call. With no running call, the category is absent and detail comes from the last nonempty reasoning paragraph of the latest running Assistant with nonempty reasoning, in member order. Reasoning detail removes `**` markers and does not require a newline-terminated first line; the individual reasoning-row preview has separate rules.
 
 Live selection uses call start `time`, not the latest output/progress time. A call is a running candidate while its projected tool value has no result; pending approval or waiting for a result does not receive a separate category.
@@ -311,4 +315,4 @@ The priority list is shared by every tool, not specialized per category. For exa
 | Any tool with `{"description":" ","command":42,"path":"src/app.ts"}` | `src/app.ts`; whitespace-only strings and numbers are skipped. |
 | No usable field yet | Empty while arguments can grow; otherwise the tool name. |
 
-All live detail collapses whitespace, trims its ends, and is limited to 160 grapheme clusters, including a final `…` when truncated. Truncation reads at most 161 clusters; whitespace normalization still covers the full field. A closed group's published summary clears its live category and detail while retaining category counts.
+All live detail collapses whitespace, trims its ends, and is limited to 160 grapheme clusters, including a final `…` when truncated. String arguments initially supply at most 512 decoded UTF-16 units; normalization expands that prefix only when whitespace or multi-unit clusters leave too little text to determine truncation. Each truncation pass reads at most 161 clusters. A closed group's published summary clears its live category and detail while retaining category counts.

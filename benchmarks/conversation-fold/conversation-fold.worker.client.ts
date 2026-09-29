@@ -51,6 +51,10 @@ export interface PreparingToolWorkerReport {
   readonly fragments: number
   readonly elapsedMs: number
   readonly retainedMb: number
+  readonly maxRssMb: number
+  readonly rowReads: number
+  readonly progressKb: number | undefined
+  readonly filePath: string | undefined
   readonly detail: string | undefined
 }
 
@@ -217,9 +221,25 @@ function preparingTool(tool: 'write' | 'bash', characters: number): PreparingToo
   assembler.activateTarget('chat')
   const snapshot = assembler.get('chat')
   const node = snapshot?.nodes.values().find((candidate): candidate is ChatNode<'tool-call'> => candidate.kind === 'tool-call')
-  if (node === undefined) throw new Error('preparing benchmark did not create its Tool node')
+  if (snapshot === undefined || node === undefined) throw new Error('preparing benchmark did not create its Tool node')
   const args = node.data.root.args
-  if (tool === 'write') args.stringLength('content', { step: 1024 })
+  const source = snapshot.nodes.source(node.key)
+  let rowReads = 0
+  let progressKb: number | undefined
+  let filePath: string | undefined
+  const readRow = (): void => {
+    const current = source.getSnapshot()
+    if (current?.kind !== 'tool-call') throw new Error('preparing benchmark lost its Tool node')
+    const currentArgs = (current as ChatNode<'tool-call'>).data.root.args
+    if (tool === 'write') {
+      const length = currentArgs.stringLength('content', { step: 1024 })
+      progressKb = length === undefined ? undefined : Math.ceil(length / 1024)
+      filePath = currentArgs.text('file_path')
+    }
+    rowReads++
+  }
+  readRow()
+  const unsubscribe = tool === 'write' ? source.subscribe(readRow) : () => {}
   globalThis.gc()
   const before = process.memoryUsage().heapUsed
   const start = performance.now()
@@ -229,13 +249,15 @@ function preparingTool(tool: 'write' | 'bash', characters: number): PreparingToo
   }
   assembler.flush()
   const elapsedMs = performance.now() - start
+  unsubscribe()
   globalThis.gc()
   const retainedMb = (process.memoryUsage().heapUsed - before) / 1048576
   const groups = assembler.grouped('chat')
   const group = groups?.entries.find(reference => reference.kind === 'group')
   return {
     tool, characters: args.stringLength(tool === 'write' ? 'content' : 'command'), fragments: chunks.length,
-    elapsedMs, retainedMb,
+    elapsedMs, retainedMb, maxRssMb: process.resourceUsage().maxRSS / 1024,
+    rowReads, progressKb, filePath,
     detail: group === undefined ? undefined : groups?.groupSource(group.key).getSnapshot()?.data.summary.runningDetail,
   }
 }

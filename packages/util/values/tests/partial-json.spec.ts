@@ -12,7 +12,7 @@ const CLOSED_TEXTS = [
   '{}',
 ]
 
-/** Texts that stop being a JSON object prefix part-way through. */
+/** Invalid structure or value contents, inspected by the full-reader oracle. */
 const INVALID_TEXTS = [
   String.raw`{"file_path":"ab\q"}`,
   String.raw`{"file_path":"ab\u12G4"}`,
@@ -50,6 +50,8 @@ interface FieldView {
   readonly has: boolean
   readonly complete: boolean
   readonly length: number | undefined
+  readonly prefix: string | undefined
+  readonly exceeds: boolean
   readonly text: string | undefined
   readonly value: JsonValue | undefined
 }
@@ -63,17 +65,19 @@ interface ViewSnapshot {
 
 /** Read every answer for `keys` (default: the view's own keys); on a streaming view this also registers the reads. */
 function snapshotOf(view: PartialArguments, keys: readonly string[] = view.keys()): ViewSnapshot {
+  const fields = keys.map((key): readonly [string, FieldView] => {
+    const length = view.stringLength(key)
+    const prefix = view.textPrefix(key, 4)
+    const exceeds = view.stringExceeds(key, 4)
+    const text = view.text(key)
+    const value = view.value(key)
+    return [key, { has: view.has(key), complete: view.complete(key), length, prefix, exceeds, text, value }]
+  })
   return {
     invalid: view.invalid,
     closed: view.closed(),
     keys: [...view.keys()],
-    fields: keys.map((key): readonly [string, FieldView] => [key, {
-      has: view.has(key),
-      complete: view.complete(key),
-      length: view.stringLength(key),
-      text: view.text(key),
-      value: view.value(key),
-    }]),
+    fields,
   }
 }
 
@@ -81,6 +85,11 @@ function streamed(chunks: readonly string[]): PartialArguments {
   const view = new PartialArguments()
   for (const chunk of chunks) view.append(chunk)
   return view
+}
+
+function appendAndRefresh(view: PartialArguments, fragment: string): boolean {
+  view.append(fragment)
+  return view.refresh()
 }
 
 describe('PartialArguments', () => {
@@ -94,7 +103,7 @@ describe('PartialArguments', () => {
       expect(empty.text('x')).toBeUndefined()
       expect(empty.value('x')).toBeUndefined()
       expect(empty.invalid).toBe(false)
-      expect(() => empty.append('{')).toThrow('cannot append to a sealed view')
+      expect(() => { empty.append('{') }).toThrow('cannot append to a sealed view')
     })
 
     it('reports every sealed view as closed, whatever its text says', () => {
@@ -140,7 +149,7 @@ describe('PartialArguments', () => {
       expect(view.complete('missing')).toBe(false)
       expect(view.value('missing')).toBeUndefined()
       expect(view.invalid).toBe(false)
-      expect(() => view.append('{')).toThrow('cannot append to a sealed view')
+      expect(() => { view.append('{') }).toThrow('cannot append to a sealed view')
     })
 
     it('fromObject treats anything but an object as a call without fields', () => {
@@ -156,19 +165,21 @@ describe('PartialArguments', () => {
       for (const text of CLOSED_TEXTS) {
         const fromText = PartialArguments.fromText(text)
         expect(snapshotOf(fromText)).toStrictEqual(snapshotOf(PartialArguments.fromObject(JSON.parse(text))))
-        expect(() => fromText.append(' ')).toThrow('cannot append to a sealed view')
+        expect(() => { fromText.append(' ') }).toThrow('cannot append to a sealed view')
       }
       expect('polluted' in {}).toBe(false)
     })
 
-    it('fromText reports invalid text and keeps the answers reached before the failure', () => {
-      for (const text of INVALID_TEXTS) expect(PartialArguments.fromText(text).invalid).toBe(true)
+    it('fromText reports invalid contents when read and retains independent fields', () => {
+      for (const text of INVALID_TEXTS) expect(snapshotOf(PartialArguments.fromText(text)).invalid).toBe(true)
       const view = PartialArguments.fromText('{"n":1,"b":tru}')
-      expect(view.invalid).toBe(true)
+      expect(view.invalid).toBe(false)
       expect(view.value('n')).toBe(1)
       expect(view.has('b')).toBe(true)
-      expect(view.complete('b')).toBe(false)
+      expect(view.complete('b')).toBe(true)
       expect(view.value('b')).toBeUndefined()
+      expect(view.invalid).toBe(true)
+      expect(view.complete('b')).toBe(false)
     })
 
     it('scans nothing until a reader asks', () => {
@@ -176,19 +187,138 @@ describe('PartialArguments', () => {
       try {
         const sealed = PartialArguments.fromText('{"todos":[1],"n":2}')
         const streaming = new PartialArguments()
-        expect(streaming.append('{"todos":[1],')).toBe(false)
-        expect(streaming.append('"n":2}')).toBe(false)
+        expect(appendAndRefresh(streaming, '{"todos":[1],')).toBe(false)
+        expect(appendAndRefresh(streaming, '"n":2}')).toBe(false)
         expect(parse).not.toHaveBeenCalled()
 
         expect(sealed.keys()).toEqual(['todos', 'n'])
-        expect(parse).toHaveBeenCalled()
-        parse.mockClear()
+        expect(sealed.has('todos')).toBe(true)
+        expect(sealed.complete('todos')).toBe(true)
+        expect(sealed.invalid).toBe(false)
+        expect(streaming.keys()).toEqual(['todos', 'n'])
+        expect(streaming.has('todos')).toBe(true)
+        expect(streaming.complete('todos')).toBe(true)
+        expect(parse).not.toHaveBeenCalled()
+
         expect(streaming.value('todos')).toStrictEqual([1])
+        expect(parse).toHaveBeenCalledExactlyOnceWith('[1]')
+        const todos = streaming.value('todos')
+        expect(streaming.value('todos')).toBe(todos)
+        expect(parse).toHaveBeenCalledTimes(1)
         expect(streaming.value('n')).toBe(2)
-        expect(parse).toHaveBeenCalled()
+        expect(parse).toHaveBeenCalledTimes(2)
+        expect(parse).toHaveBeenLastCalledWith('2')
       } finally {
         parse.mockRestore()
       }
+    })
+  })
+
+  describe('settlement', () => {
+    it('seals matching chunks without joining and retains previously read values', () => {
+      const view = new PartialArguments()
+      view.append(String.raw`{"command":"a\u4e`)
+      expect(view.text('command')).toBe('a')
+      expect(view.stringLength('command')).toBe(1)
+      expect(view.textPrefix('command', 2)).toBe('a')
+      expect(view.complete('command')).toBe(false)
+      view.append('2d","todos":[1]}')
+      const todos = view.value('todos')
+      expect(todos).toEqual([1])
+      const finalText = String.raw`{"command":"a\u4e2d","todos":[1]}`
+      const join = vi.spyOn(Array.prototype, 'join')
+      let settled: PartialArguments
+      let joins: number
+      try {
+        settled = view.settle(finalText)
+        joins = join.mock.calls.length
+      } finally {
+        join.mockRestore()
+      }
+      expect(joins).toBe(0)
+      expect(settled).toBe(view)
+      expect(view).toEqual(PartialArguments.fromText(finalText))
+      expect(view.text('command')).toBe('a中')
+      expect(view.stringLength('command')).toBe(2)
+      expect(view.textPrefix('command', 2)).toBe('a中')
+      expect(view.complete('command')).toBe(true)
+      expect(view.value('todos')).toBe(todos)
+      expect(view.closed()).toBe(true)
+      expect(view.invalid).toBe(false)
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
+      expect(view.settle(finalText)).toBe(view)
+      expect(() => { view.append(' ') }).toThrow('cannot append to a sealed view')
+    })
+
+    it('leaves matching unread containers unparsed until requested after settlement', () => {
+      const view = streamed(['{"items":', '[1,2]}'])
+      const parse = vi.spyOn(JSON, 'parse')
+      try {
+        expect(view.settle('{"items":[1,2]}')).toBe(view)
+        expect(view.keys()).toEqual(['items'])
+        expect(view.has('items')).toBe(true)
+        expect(view.complete('items')).toBe(true)
+        expect(parse).not.toHaveBeenCalled()
+        expect(view.value('items')).toEqual([1, 2])
+        expect(parse).toHaveBeenCalledExactlyOnceWith('[1,2]')
+      } finally {
+        parse.mockRestore()
+      }
+    })
+
+    it.each<[string, readonly string[], string, string, string]>([
+      ['same-length conflicting text', ['x"}'], '{"a":"y"}', 'x', 'y'],
+      ['missing deltas', ['x'], '{"a":"xy"}', 'x', 'xy'],
+      ['duplicate deltas', ['x', 'x"}'], '{"a":"x"}', 'xx', 'x'],
+    ])('uses final text after %s without changing the streaming view', (_label, tail, finalText, before, after) => {
+      const view = new PartialArguments()
+      view.append('{"a":"')
+      expect(view.text('a')).toBe('')
+      expect(view.textPrefix('a', 1)).toBe('')
+      for (const chunk of tail) view.append(chunk)
+      expect(view.text('a')).toBe(before)
+      const original = streamed(['{"a":"', ...tail])
+      const settled = view.settle(finalText)
+      expect(settled).not.toBe(view)
+      expect(settled).toEqual(PartialArguments.fromText(finalText))
+      expect(settled.text('a')).toBe(after)
+      expect(settled.stringLength('a')).toBe(after.length)
+      expect(settled.closed()).toBe(true)
+      expect(settled.refresh()).toBe(false)
+      expect(view).toEqual(original)
+      expect(view.text('a')).toBe(before)
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
+      expect(() => { view.append(' ') }).not.toThrow()
+      expect(() => { settled.append(' ') }).toThrow('cannot append to a sealed view')
+    })
+
+    it('does not carry an invalid reader cache into corrected authoritative text', () => {
+      const view = streamed([String.raw`{"a":"ab\q"}`])
+      expect(view.text('a')).toBe('ab')
+      expect(view.invalid).toBe(true)
+      const settled = view.settle(String.raw`{"a":"ab\n"}`)
+      expect(settled).not.toBe(view)
+      expect(settled.text('a')).toBe('ab\n')
+      expect(settled.complete('a')).toBe(true)
+      expect(settled.invalid).toBe(false)
+      expect(view.text('a')).toBe('ab')
+      expect(view.invalid).toBe(true)
+    })
+
+    it('seals empty text and uses authoritative text for an object-backed view', () => {
+      const empty = streamed(['', ''])
+      expect(empty.settle('')).toBe(empty)
+      expect(empty.closed()).toBe(true)
+      expect(empty.keys()).toEqual([])
+      expect(empty).toEqual(PartialArguments.fromText(''))
+      expect(() => { empty.append('{}') }).toThrow('cannot append to a sealed view')
+      const object = PartialArguments.fromObject({ a: 'old' })
+      const settled = object.settle('{"a":"new"}')
+      expect(settled).not.toBe(object)
+      expect(settled.text('a')).toBe('new')
+      expect(object.text('a')).toBe('old')
     })
   })
 
@@ -366,6 +496,41 @@ describe('PartialArguments', () => {
   })
 
   describe('escapes', () => {
+    it.each<[string, string, string, string]>([
+      ['odd backslash run', String.raw`{"command":"a\\`, String.raw`\"b","later":"ok"}`, 'a\\"b'],
+      ['even backslash run', String.raw`{"command":"a\\`, String.raw`\\","later":"ok"}`, 'a\\\\'],
+      ['Unicode quote', String.raw`{"command":"a\u00`, '22b","later":"ok"}', 'a"b'],
+    ])('keeps a split %s inside its string field', (_label, head, tail, expected) => {
+      const view = new PartialArguments()
+      view.append(head)
+      expect(view.keys()).toEqual(['command'])
+      expect(view.complete('command')).toBe(false)
+      expect(view.has('later')).toBe(false)
+      view.text('command')
+      view.stringLength('command')
+      view.append(tail)
+      expect(view.keys()).toEqual(['command', 'later'])
+      expect(view.complete('command')).toBe(true)
+      expect(view.text('command')).toBe(expected)
+      expect(view.stringLength('command')).toBe(expected.length)
+      expect(view.text('later')).toBe('ok')
+      expect(view.invalid).toBe(false)
+    })
+
+    it('keeps escaped nested quotes inside an unread container across one-character chunks', () => {
+      const text = String.raw`{"items":["a\\\"b","a\\\\","\u0022"],"later":"ok"}`
+      const view = new PartialArguments()
+      for (const chunk of text) {
+        view.append(chunk)
+        view.keys()
+      }
+      expect(view.keys()).toEqual(['items', 'later'])
+      expect(view.complete('items')).toBe(true)
+      expect(view.text('later')).toBe('ok')
+      expect(view.value('items')).toEqual(['a\\"b', 'a\\\\', '"'])
+      expect(view.invalid).toBe(false)
+    })
+
     it('decodes every simple escape', () => {
       const view = streamed([String.raw`{"file_path":"\"\\\/\b\f\n\r\t"}`])
       expect(view.stringLength('file_path')).toBe(8)
@@ -387,7 +552,7 @@ describe('PartialArguments', () => {
 
         const eager = new PartialArguments()
         expect(eager.text('file_path')).toBeUndefined()
-        for (const chunk of chunks) eager.append(chunk)
+        for (const chunk of chunks) appendAndRefresh(eager, chunk)
         expect(eager.text('file_path')).toBe('中')
         expect(eager.stringLength('file_path')).toBe(1)
       }
@@ -449,14 +614,14 @@ describe('PartialArguments', () => {
 
       const readBeforeKey = new PartialArguments()
       expect(readBeforeKey.text('file_path')).toBeUndefined()
-      expect(readBeforeKey.append(text)).toBe(true)
+      expect(appendAndRefresh(readBeforeKey, text)).toBe(true)
       expect(readBeforeKey.text('file_path')).toBe('ab')
       expect(readBeforeKey.stringLength('file_path')).toBe(2)
 
       const readMidString = new PartialArguments()
       readMidString.append('{"file_path":"a')
       expect(readMidString.text('file_path')).toBe('a')
-      expect(readMidString.append(String.raw`b\q"}`)).toBe(true)
+      expect(appendAndRefresh(readMidString, String.raw`b\q"}`)).toBe(true)
       expect(readMidString.text('file_path')).toBe('ab')
       expect(readMidString.stringLength('file_path')).toBe(2)
       expect(readMidString.invalid).toBe(true)
@@ -464,16 +629,18 @@ describe('PartialArguments', () => {
 
     it('returns the prefix before an invalid unicode escape, matching a read made before the failure', () => {
       const lazy = PartialArguments.fromText(String.raw`{"file_path":"ab\u12G4"}`)
-      expect(lazy.invalid).toBe(true)
+      expect(lazy.invalid).toBe(false)
       expect(lazy.text('file_path')).toBe('ab')
+      expect(lazy.invalid).toBe(true)
       expect(lazy.stringLength('file_path')).toBe(2)
       expect(lazy.complete('file_path')).toBe(false)
 
       const eager = new PartialArguments()
       expect(eager.text('file_path')).toBeUndefined()
       eager.append(String.raw`{"file_path":"ab\u12G4"}`)
-      expect(eager.invalid).toBe(true)
+      expect(eager.invalid).toBe(false)
       expect(eager.text('file_path')).toBe('ab')
+      expect(eager.invalid).toBe(true)
       expect(eager.stringLength('file_path')).toBe(2)
     })
   })
@@ -507,7 +674,7 @@ describe('PartialArguments', () => {
       expect(PartialArguments.fromText('{"file_path":"x"}}').text('file_path')).toBe('x')
     })
 
-    it('reports a streaming view closed once the object closes or the text turns invalid, never while open', () => {
+    it('reports a streaming object closed when its outer closing brace arrives', () => {
       const view = new PartialArguments()
       expect(view.closed()).toBe(false)
       view.append('{"a":1,"b":"x')
@@ -524,6 +691,8 @@ describe('PartialArguments', () => {
       expect(broken.closed()).toBe(false)
       broken.append('}')
       expect(broken.closed()).toBe(true)
+      expect(broken.invalid).toBe(false)
+      expect(broken.value('a')).toBeUndefined()
       expect(broken.invalid).toBe(true)
     })
 
@@ -560,7 +729,7 @@ describe('PartialArguments', () => {
         for (const chunks of chunkings) {
           const eager = new PartialArguments()
           snapshotOf(eager, expected.keys)
-          for (const chunk of chunks) eager.append(chunk)
+          for (const chunk of chunks) appendAndRefresh(eager, chunk)
           expect(snapshotOf(eager, expected.keys)).toStrictEqual(expected)
           expect(snapshotOf(streamed(chunks))).toStrictEqual(expected)
         }
@@ -574,7 +743,11 @@ describe('PartialArguments', () => {
           view.append(text.slice(0, cut))
           const midway = snapshotOf(view, expected.keys)
           for (const [, field] of midway.fields) {
-            if (field.text !== undefined) expect(field.text.length).toBe(field.length)
+            if (field.text !== undefined) {
+              expect(field.text.length).toBe(field.length)
+              expect(field.prefix).toBe(field.text.slice(0, 4))
+              expect(field.exceeds).toBe(field.text.length > 4)
+            }
           }
           view.append(text.slice(cut))
           expect(snapshotOf(view, expected.keys)).toStrictEqual(expected)
@@ -584,10 +757,22 @@ describe('PartialArguments', () => {
   })
 
   describe('change detection', () => {
+    it('publishes a completion error discovered by a later content read during sealed refresh', () => {
+      const view = streamed(['{"a":"ab"'])
+      expect(view.complete('a')).toBe(true)
+      expect(view.text('a')).toBe('ab')
+      view.append(String.raw`,"a":"ab\q"}`)
+      view.settle(String.raw`{"a":"ab","a":"ab\q"}`)
+      expect(view.refresh()).toBe(true)
+      expect(view.complete('a')).toBe(false)
+      expect(view.text('a')).toBe('ab')
+      expect(view.refresh()).toBe(false)
+    })
+
     it('reports no change while nothing has been read, then answers fully on the first read', () => {
       const view = new PartialArguments()
-      expect(view.append('{"file_path":"src/a.ts","n":1,')).toBe(false)
-      expect(view.append('"todos":[1]}')).toBe(false)
+      expect(appendAndRefresh(view, '{"file_path":"src/a.ts","n":1,')).toBe(false)
+      expect(appendAndRefresh(view, '"todos":[1]}')).toBe(false)
       expect(view.keys()).toEqual(['file_path', 'n', 'todos'])
       expect(view.text('file_path')).toBe('src/a.ts')
       expect(view.value('todos')).toStrictEqual([1])
@@ -597,15 +782,15 @@ describe('PartialArguments', () => {
       const view = new PartialArguments()
       view.append('{"content":"')
       expect(view.stringLength('content', { step: 1024 })).toBe(0)
-      expect(view.append('a')).toBe(true)
-      expect(view.append('a'.repeat(1022))).toBe(false)
-      expect(view.append('a')).toBe(false)
+      expect(appendAndRefresh(view, 'a')).toBe(true)
+      expect(appendAndRefresh(view, 'a'.repeat(1022))).toBe(false)
+      expect(appendAndRefresh(view, 'a')).toBe(false)
       expect(view.stringLength('content', { step: 1024 })).toBe(1024)
-      expect(view.append('a')).toBe(true)
-      expect(view.append('a'.repeat(1023))).toBe(false)
-      expect(view.append('a')).toBe(true)
+      expect(appendAndRefresh(view, 'a')).toBe(true)
+      expect(appendAndRefresh(view, 'a'.repeat(1023))).toBe(false)
+      expect(appendAndRefresh(view, 'a')).toBe(true)
       expect(view.stringLength('content', { step: 1024 })).toBe(2049)
-      expect(view.append('"}')).toBe(false)
+      expect(appendAndRefresh(view, '"}')).toBe(false)
     })
 
     it('treats a missing, zero, or fractional step as its floor of at least one', () => {
@@ -614,39 +799,102 @@ describe('PartialArguments', () => {
       perCharacter.stringLength('c')
       perCharacter.stringLength('c', {})
       perCharacter.stringLength('c', { step: 0 })
-      for (const c of 'abc') expect(perCharacter.append(c)).toBe(true)
+      for (const c of 'abc') expect(appendAndRefresh(perCharacter, c)).toBe(true)
 
       const byTwo = new PartialArguments()
       byTwo.append('{"c":"')
       byTwo.stringLength('c', { step: 2.9 })
-      expect(byTwo.append('a')).toBe(true)
-      expect(byTwo.append('b')).toBe(false)
-      expect(byTwo.append('c')).toBe(true)
-      expect(byTwo.append('d')).toBe(false)
+      expect(appendAndRefresh(byTwo, 'a')).toBe(true)
+      expect(appendAndRefresh(byTwo, 'b')).toBe(false)
+      expect(appendAndRefresh(byTwo, 'c')).toBe(true)
+      expect(appendAndRefresh(byTwo, 'd')).toBe(false)
     })
 
     it('reports a text read on every decoded character and nothing else', () => {
       const view = new PartialArguments()
       view.append('{"description":"')
       expect(view.text('description')).toBe('')
-      for (const c of 'hello') expect(view.append(c)).toBe(true)
-      expect(view.append('\\')).toBe(false)
-      expect(view.append('n')).toBe(true)
-      expect(view.append('"')).toBe(false)
-      expect(view.append(',"n":1}')).toBe(false)
+      for (const c of 'hello') expect(appendAndRefresh(view, c)).toBe(true)
+      expect(appendAndRefresh(view, '\\')).toBe(false)
+      expect(appendAndRefresh(view, 'n')).toBe(true)
+      expect(appendAndRefresh(view, '"')).toBe(false)
+      expect(appendAndRefresh(view, ',"n":1}')).toBe(false)
       expect(view.text('description')).toBe('hello\n')
+    })
+
+    it('stops reporting a bounded text prefix after its decoded limit', () => {
+      const view = new PartialArguments()
+      view.append('{"command":"')
+      expect(view.textPrefix('command', 4)).toBe('')
+      expect(appendAndRefresh(view, 'ab')).toBe(true)
+      expect(appendAndRefresh(view, 'cd')).toBe(true)
+      expect(view.textPrefix('command', 4)).toBe('abcd')
+      expect(appendAndRefresh(view, 'ef')).toBe(false)
+      expect(view.textPrefix('command', 4)).toBe('abcd')
+      expect(view.stringExceeds('command', 4)).toBe(true)
+      expect(view.text('command')).toBe('abcdef')
+    })
+
+    it('evaluates deferred fragments together at the publication point', () => {
+      const view = new PartialArguments()
+      view.append('{"content":"')
+      expect(view.stringLength('content', { step: 4 })).toBe(0)
+      view.append('ab')
+      view.append('cd')
+      expect(view.refresh()).toBe(true)
+      expect(view.stringLength('content', { step: 4 })).toBe(4)
+      expect(view.refresh()).toBe(false)
+      view.append('ef')
+      expect(view.refresh()).toBe(true)
+      view.append('gh')
+      expect(view.refresh()).toBe(false)
+      expect(view.stringLength('content', { step: 4 })).toBe(8)
+    })
+
+    it('bounds decoded prefixes across JSON escapes and parsed objects', () => {
+      expect(PartialArguments.fromText('{"command":"\\u4e2d tail"}').textPrefix('command', 1)).toBe('中')
+      expect(PartialArguments.EMPTY.textPrefix('missing', 4)).toBeUndefined()
+      expect(PartialArguments.fromText(String.raw`{"command":"a\n\u4e2d😀z"}`).textPrefix('command', 4)).toBe('a\n中\ud83d')
+      expect(PartialArguments.fromObject({ command: 'abcdef' }).textPrefix('command', 3)).toBe('abc')
+      expect(PartialArguments.fromObject({ command: 'abcdef' }).stringExceeds('command', 3)).toBe(true)
+      expect(PartialArguments.fromObject({ command: 'abcdef' }).stringExceeds('command', 6)).toBe(false)
+      expect(PartialArguments.fromObject({ command: 1 }).textPrefix('command', 3)).toBeUndefined()
+      expect(PartialArguments.fromObject({ command: 1 }).stringExceeds('command', 3)).toBe(false)
+    })
+
+    it('tracks bounded reads through split Unicode escapes and repeated fields', () => {
+      const view = new PartialArguments()
+      const observe = () => ({ prefix: view.textPrefix('command', 1), exceeds: view.stringExceeds('command', 1) })
+      expect(observe()).toEqual({ prefix: undefined, exceeds: false })
+      for (const [fragment, prefix, exceeds, changed] of [
+        [String.raw`{"command":"\ud83`, '', false, true],
+        ['d', '\ud83d', false, true],
+        [String.raw`\ude`, '\ud83d', false, false],
+        ['00', '\ud83d', true, true],
+        ['x"', '\ud83d', true, false],
+        [',"command":"', '', false, true],
+        [String.raw`\u4e`, '', false, false],
+        ['2d', '中', false, true],
+        ['x"', '中', true, true],
+        [',"command":0}', undefined, false, true],
+      ] as const) {
+        view.append(fragment)
+        expect(observe()).toEqual({ prefix, exceeds })
+        expect(view.refresh()).toBe(changed)
+        expect(view.refresh()).toBe(false)
+      }
     })
 
     it('reports a has read when the field begins: at a string quote or the first character of another value', () => {
       const view = new PartialArguments()
       expect(view.has('x')).toBe(false)
       expect(view.has('y')).toBe(false)
-      expect(view.append('{"a":1,"x"')).toBe(false)
-      expect(view.append(':')).toBe(false)
-      expect(view.append('"')).toBe(true)
-      expect(view.append('v","y":')).toBe(false)
-      expect(view.append('1')).toBe(true)
-      expect(view.append('}')).toBe(false)
+      expect(appendAndRefresh(view, '{"a":1,"x"')).toBe(false)
+      expect(appendAndRefresh(view, ':')).toBe(false)
+      expect(appendAndRefresh(view, '"')).toBe(true)
+      expect(appendAndRefresh(view, 'v","y":')).toBe(false)
+      expect(appendAndRefresh(view, '1')).toBe(true)
+      expect(appendAndRefresh(view, '}')).toBe(false)
     })
 
     it('reports a complete read when the string closes or the value lands', () => {
@@ -654,73 +902,123 @@ describe('PartialArguments', () => {
       view.append('{"file_path":"a')
       expect(view.complete('file_path')).toBe(false)
       expect(view.complete('todos')).toBe(false)
-      expect(view.append('b')).toBe(false)
-      expect(view.append('"')).toBe(true)
-      expect(view.append(',"todos":[1,')).toBe(false)
-      expect(view.append('2]')).toBe(true)
-      expect(view.append('}')).toBe(false)
+      expect(appendAndRefresh(view, 'b')).toBe(false)
+      expect(appendAndRefresh(view, '"')).toBe(true)
+      expect(appendAndRefresh(view, ',"todos":[1,')).toBe(false)
+      expect(appendAndRefresh(view, '2]')).toBe(true)
+      expect(appendAndRefresh(view, '}')).toBe(false)
     })
 
     it('reports a value read only when the value lands, not while its nested text streams', () => {
       const view = new PartialArguments()
       view.append('{"todos":')
       expect(view.value('todos')).toBeUndefined()
-      expect(view.append('[{"content":"x"')).toBe(false)
-      expect(view.append('}')).toBe(false)
-      expect(view.append(']')).toBe(true)
+      expect(appendAndRefresh(view, '[{"content":"x"')).toBe(false)
+      expect(appendAndRefresh(view, '}')).toBe(false)
+      expect(appendAndRefresh(view, ']')).toBe(true)
       expect(view.value('todos')).toStrictEqual([{ content: 'x' }])
-      expect(view.append('}')).toBe(false)
+      expect(appendAndRefresh(view, '}')).toBe(false)
     })
 
     it('reports empty keys and new keys, not repeated keys', () => {
       const view = new PartialArguments()
       expect(view.keys()).toEqual([])
-      expect(view.append('{"":"x"')).toBe(true)
-      expect(view.append(',"":"y"')).toBe(false)
-      expect(view.append(',"b"')).toBe(false)
-      expect(view.append(':1')).toBe(true)
+      expect(appendAndRefresh(view, '{"":"x"')).toBe(true)
+      expect(appendAndRefresh(view, ',"":"y"')).toBe(false)
+      expect(appendAndRefresh(view, ',"b"')).toBe(false)
+      expect(appendAndRefresh(view, ':1')).toBe(true)
       expect(view.keys()).toEqual(['', 'b'])
     })
 
-    it('reports a closed read when the closing brace arrives or the text turns invalid', () => {
+    it('reports a closed read when the outer object closes or indexing fails', () => {
       const view = new PartialArguments()
       expect(view.closed()).toBe(false)
-      expect(view.append('{"a":1,"b":"x"')).toBe(false)
-      expect(view.append('}')).toBe(true)
-      expect(view.append(' ')).toBe(false)
+      expect(appendAndRefresh(view, '{"a":1,"b":"x"')).toBe(false)
+      expect(appendAndRefresh(view, '}')).toBe(true)
+      expect(appendAndRefresh(view, ' ')).toBe(false)
 
       const broken = new PartialArguments()
       expect(broken.closed()).toBe(false)
-      expect(broken.append('{"a":tru')).toBe(false)
-      expect(broken.append('}')).toBe(true)
+      expect(appendAndRefresh(broken, '{"a":')).toBe(false)
+      expect(appendAndRefresh(broken, ']')).toBe(true)
       expect(broken.closed()).toBe(true)
-      expect(broken.append('}')).toBe(false)
+      expect(broken.invalid).toBe(true)
+      expect(appendAndRefresh(broken, '}')).toBe(false)
     })
 
-    it('absorbs a change once the reader has seen it', () => {
+    it('keeps an observed text change pending until refresh', () => {
       const view = new PartialArguments()
       view.append('{"a":"')
       expect(view.text('a')).toBe('')
       view.append('xy')
       expect(view.text('a')).toBe('xy')
-      expect(view.append('')).toBe(false)
-      expect(view.append('z')).toBe(true)
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
+      view.append('z')
+      expect(view.text('a')).toBe('xyz')
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
     })
 
-    it('freezes every answer once the text is invalid', () => {
+    it('keeps changes pending while several readers inspect the same field', () => {
+      const view = new PartialArguments()
+      view.append('{"command":"ab')
+      const observe = () => ({
+        text: view.text('command'),
+        prefix: view.textPrefix('command', 3),
+        exceeds: view.stringExceeds('command', 3),
+      })
+      expect(observe()).toEqual({ text: 'ab', prefix: 'ab', exceeds: false })
+      view.append('cd')
+      expect(observe()).toEqual({ text: 'abcd', prefix: 'abc', exceeds: true })
+      expect(view.stringLength('command', { step: 4 })).toBe(4)
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
+      view.append('e')
+      expect(observe()).toEqual({ text: 'abcde', prefix: 'abc', exceeds: true })
+      expect(view.stringLength('command', { step: 4 })).toBe(5)
+      expect(view.refresh()).toBe(true)
+      expect(view.refresh()).toBe(false)
+    })
+
+    it('keeps length observations independent by step and offset until refresh', () => {
+      const view = new PartialArguments()
+      view.append('{"content":"a')
+      const observe = () => [
+        view.stringLength('content', { step: 4 }),
+        view.stringLength('content', { step: 4, offset: 2 }),
+        view.stringLength('content', { step: 8 }),
+      ]
+      expect(observe()).toEqual([1, 1, 1])
+      for (const [fragment, length, changed] of [
+        ['b', 2, false],
+        ['c', 3, true],
+        ['d', 4, false],
+        ['e', 5, true],
+        ['fgh', 8, true],
+        ['i', 9, true],
+      ] as const) {
+        view.append(fragment)
+        expect(observe()).toEqual([length, length, length])
+        expect(view.refresh()).toBe(changed)
+        expect(view.refresh()).toBe(false)
+      }
+    })
+
+    it('ignores text after structural failure and retains an invalid string prefix', () => {
       const view = new PartialArguments()
       expect(view.has('file_path')).toBe(false)
-      expect(view.append('{"n":1,"b":tru}')).toBe(false)
+      expect(appendAndRefresh(view, '{"n":1,"b":}')).toBe(false)
       expect(view.invalid).toBe(true)
       expect(view.value('n')).toBe(1)
-      expect(view.append(',"file_path":"x"}')).toBe(false)
+      expect(appendAndRefresh(view, ',"file_path":"x"}')).toBe(false)
       expect(view.has('file_path')).toBe(false)
       expect(view.invalid).toBe(true)
 
       const midString = new PartialArguments()
       midString.append('{"file_path":"ab')
       expect(midString.text('file_path')).toBe('ab')
-      expect(midString.append(String.raw`\q"}`)).toBe(false)
+      expect(appendAndRefresh(midString, String.raw`\q"}`)).toBe(false)
       expect(midString.invalid).toBe(true)
       expect(midString.text('file_path')).toBe('ab')
       expect(midString.stringLength('file_path')).toBe(2)
@@ -757,7 +1055,8 @@ describe('PartialArguments', () => {
       let reported = 0
       let previousLength = 0
       for (const chunk of chunks) {
-        const changed = view.append(chunk)
+        view.append(chunk)
+        const changed = view.refresh()
         const after = observe()
         const expectChanged = after.path !== before.path || after.pathDone !== before.pathDone
           || after.steps !== before.steps || after.overwrite !== before.overwrite
@@ -793,14 +1092,10 @@ describe('PartialArguments', () => {
       ['{"a":]', 'a value starting with ]'],
       ['{"a":"b" x', 'text other than , or } after a value'],
       ['{"file_path":"x"}}', 'a second closing brace'],
-      [String.raw`{"file_path":"\q"}`, 'an invalid escape in a string'],
-      [String.raw`{"file_path":"\u12G4"}`, 'a non-hex digit in a unicode escape'],
-      ['{"a":tru}', 'a malformed literal ended by }'],
-      ['{"a":1.,', 'a malformed number ended by ,'],
-      ['{"a":1. ', 'a malformed number ended by whitespace'],
-      ['{"a":[tru]}', 'a malformed literal inside a nested value'],
       ['{"a":[}', 'mismatched nested brackets'],
-      [String.raw`{"a":{"b":"\q"}}`, 'an invalid escape inside a nested string'],
+      ['{"a":{"b":[]]', 'mismatched nested object brackets'],
+      [String.raw`{"a\u12G4":1}`, 'a non-hex digit in a key escape'],
+      ['{"a\nb":1}', 'an unescaped control character in a key'],
     ])('freezes as invalid on %j (%s) and ignores later text', (text) => {
       expect(PartialArguments.fromText(text).invalid).toBe(true)
 
@@ -808,8 +1103,119 @@ describe('PartialArguments', () => {
       expect(view.has('later')).toBe(false)
       view.append(text)
       expect(view.invalid).toBe(true)
-      expect(view.append(',"later":"x"}')).toBe(false)
+      expect(view.closed()).toBe(true)
+      expect(appendAndRefresh(view, ',"later":"x"}')).toBe(false)
       expect(view.has('later')).toBe(false)
+    })
+
+    it.each<[string, string, string | undefined]>([
+      [String.raw`{"file_path":"ab\q","later":"x"}`, 'file_path', 'ab'],
+      [String.raw`{"file_path":"ab\u12G4","later":"x"}`, 'file_path', 'ab'],
+      ['{"file_path":"ab\nc","later":"x"}', 'file_path', 'ab'],
+      ['{"a":tru,"later":"x"}', 'a', undefined],
+      ['{"a":1.,"later":"x"}', 'a', undefined],
+      ['{"a":1. ,"later":"x"}', 'a', undefined],
+      ['{"a":[tru],"later":"x"}', 'a', undefined],
+      [String.raw`{"a":{"b":"\q"},"later":"x"}`, 'a', undefined],
+    ])('indexes later keys before validating the malformed value in %j', (text, key, prefix) => {
+      const view = PartialArguments.fromText(text)
+      expect(view.keys()).toEqual([key, 'later'])
+      expect(view.has(key)).toBe(true)
+      expect(view.complete(key)).toBe(true)
+      expect(view.has('later')).toBe(true)
+      expect(view.invalid).toBe(false)
+      expect(view.text('later')).toBe('x')
+      expect(view.invalid).toBe(false)
+      if (prefix === undefined) {
+        expect(view.value(key)).toBeUndefined()
+      } else {
+        expect(view.text(key)).toBe(prefix)
+        expect(view.stringLength(key)).toBe(prefix.length)
+      }
+      expect(view.invalid).toBe(true)
+      expect(view.complete(key)).toBe(false)
+      expect(view.text('later')).toBe('x')
+    })
+
+    it.each<[string, string | undefined]>([
+      [String.raw`{"bad":"ab\q",`, 'ab'],
+      ['{"bad":[tru],', undefined],
+    ])('keeps the outer object open after reading invalid contents in %j', (head, prefix) => {
+      const view = streamed([head])
+      expect(view.closed()).toBe(false)
+      expect(view.has('later')).toBe(false)
+      expect(view.invalid).toBe(false)
+      if (prefix === undefined) expect(view.value('bad')).toBeUndefined()
+      else expect(view.text('bad')).toBe(prefix)
+      expect(view.invalid).toBe(true)
+      expect(view.closed()).toBe(false)
+      expect(view.refresh()).toBe(false)
+
+      view.append('"later":"ok"')
+      expect(view.refresh()).toBe(true)
+      expect(view.keys()).toEqual(['bad', 'later'])
+      expect(view.text('later')).toBe('ok')
+      expect(view.invalid).toBe(true)
+      expect(view.closed()).toBe(false)
+      view.append('}')
+      expect(view.refresh()).toBe(true)
+      expect(view.closed()).toBe(true)
+      expect(view.refresh()).toBe(false)
+    })
+
+    it('rejects an incomplete Unicode escape when its closed string is first read', () => {
+      const view = PartialArguments.fromText(String.raw`{"a":"\u12"}`)
+      expect(view.complete('a')).toBe(true)
+      expect(view.invalid).toBe(false)
+      expect(view.text('a')).toBe('')
+      expect(view.invalid).toBe(true)
+      expect(view.complete('a')).toBe(false)
+    })
+
+    it('indexes past a nested unescaped newline and reports it when the container is read', () => {
+      const view = PartialArguments.fromText('{"a":{"b":"x\ny"},"later":1}')
+      expect(view.keys()).toEqual(['a', 'later'])
+      expect(view.complete('a')).toBe(true)
+      expect(view.invalid).toBe(false)
+      expect(view.value('a')).toBeUndefined()
+      expect(view.invalid).toBe(true)
+      expect(view.complete('a')).toBe(false)
+      expect(view.value('later')).toBe(1)
+    })
+
+    it('discovers malformed escapes from a length-only read', () => {
+      const view = PartialArguments.fromText(String.raw`{"content":"ab\q","later":1}`)
+      expect(view.complete('content')).toBe(true)
+      expect(view.invalid).toBe(false)
+      expect(view.stringLength('content')).toBe(2)
+      expect(view.invalid).toBe(true)
+      expect(view.complete('content')).toBe(false)
+      expect(view.value('later')).toBe(1)
+    })
+
+    it('caches a malformed container result without parsing unrelated containers', () => {
+      const view = PartialArguments.fromText('{"bad":[tru],"good":[1]}')
+      const parse = vi.spyOn(JSON, 'parse')
+      try {
+        expect(view.keys()).toEqual(['bad', 'good'])
+        expect(view.has('bad')).toBe(true)
+        expect(view.complete('bad')).toBe(true)
+        expect(view.complete('good')).toBe(true)
+        expect(view.invalid).toBe(false)
+        expect(parse).not.toHaveBeenCalled()
+        expect(view.value('bad')).toBeUndefined()
+        expect(parse).toHaveBeenCalledExactlyOnceWith('[tru]')
+        expect(view.value('bad')).toBeUndefined()
+        expect(view.complete('bad')).toBe(false)
+        expect(view.invalid).toBe(true)
+        expect(parse).toHaveBeenCalledTimes(1)
+        const good = view.value('good')
+        expect(good).toEqual([1])
+        expect(view.value('good')).toBe(good)
+        expect(parse).toHaveBeenCalledTimes(2)
+      } finally {
+        parse.mockRestore()
+      }
     })
 
     it('stops at the first invalid character of a fragment and ignores the rest of it', () => {

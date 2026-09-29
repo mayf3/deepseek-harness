@@ -22,11 +22,33 @@ function activity(name: string): ProcessActivity {
 }
 
 const LIVE_TOOL_DETAIL_MAX_CHARS = 160
+const LIVE_TOOL_DETAIL_PREFIX_CHARS = 512
 const LIVE_TOOL_DETAIL_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const LIVE_TOOL_DETAIL_KEYS = [
   'title', 'description', 'objective', 'task', 'task_name', 'name', 'question', 'questions', 'prompt', 'message',
   'command', 'cmd', 'queries', 'query', 'pattern', 'url', 'uri', 'file_path', 'path', 'target', 'action', 'status',
 ] as const
+
+interface NormalizedDetail {
+  readonly text: string
+  readonly truncated: boolean
+}
+
+function normalizeLiveToolText(text: string): NormalizedDetail {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= LIVE_TOOL_DETAIL_MAX_CHARS) return { text: normalized, truncated: false }
+  const chars: string[] = []
+  for (const { segment } of LIVE_TOOL_DETAIL_SEGMENTER.segment(normalized)) {
+    if (chars.length === LIVE_TOOL_DETAIL_MAX_CHARS) {
+      return {
+        text: `${chars.slice(0, LIVE_TOOL_DETAIL_MAX_CHARS - 1).join('').trimEnd()}…`,
+        truncated: true,
+      }
+    }
+    chars.push(segment)
+  }
+  return { text: normalized, truncated: false }
+}
 
 function normalizeLiveToolDetail(value: unknown): string {
   const text = typeof value === 'string'
@@ -34,15 +56,18 @@ function normalizeLiveToolDetail(value: unknown): string {
     : Array.isArray(value) && value.every(item => typeof item === 'string')
       ? value.join(', ')
       : ''
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  const chars: string[] = []
-  for (const { segment } of LIVE_TOOL_DETAIL_SEGMENTER.segment(normalized)) {
-    if (chars.length === LIVE_TOOL_DETAIL_MAX_CHARS) {
-      return `${chars.slice(0, LIVE_TOOL_DETAIL_MAX_CHARS - 1).join('').trimEnd()}…`
-    }
-    chars.push(segment)
+  return normalizeLiveToolText(text).text
+}
+
+function argumentTextDetail(args: ToolArgs, key: string): string | undefined {
+  let limit = LIVE_TOOL_DETAIL_PREFIX_CHARS
+  while (true) {
+    const prefix = args.textPrefix(key, limit)
+    if (prefix === undefined) return undefined
+    const detail = normalizeLiveToolText(prefix)
+    if (detail.truncated || !args.stringExceeds(key, limit)) return detail.text
+    limit *= 2
   }
-  return normalized
 }
 
 function questionDetail(value: unknown): string {
@@ -81,7 +106,9 @@ function liveReasoningDetail(nodes: readonly ChatNode[]): string {
 function liveToolDetail(name: string, args: ToolArgs): string {
   for (const key of LIVE_TOOL_DETAIL_KEYS) {
     if (!args.has(key)) continue
-    const detail = key === 'questions' ? questionDetail(args.value(key)) : normalizeLiveToolDetail(args.text(key) ?? args.value(key))
+    const detail = key === 'questions'
+      ? questionDetail(args.value(key))
+      : argumentTextDetail(args, key) ?? normalizeLiveToolDetail(args.value(key))
     if (detail !== '') return detail
   }
   return args.closed() ? normalizeLiveToolDetail(name) : ''

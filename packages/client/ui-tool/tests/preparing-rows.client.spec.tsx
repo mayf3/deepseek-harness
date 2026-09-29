@@ -35,6 +35,13 @@ function preparation(name: string, args = new PartialArguments()): Extract<Props
 }
 
 describe('tool preparation', () => {
+  it.each(['read', 'write', 'edit'])('%s does not expose a malformed completed path as a file link', (name) => {
+    const args = PartialArguments.fromText(String.raw`{"file_path":"unsafe.txt\q"}`)
+    const props = preparation(name, args)
+    expect(toolRowModel(name, props.block).filePath).toBeUndefined()
+    expect(args.invalid).toBe(true)
+  })
+
   it.each([
     ['read', ReadRow], ['read_image', ReadImageRow], ['write', FileMutationRow], ['edit', FileMutationRow],
     ['grep', SearchRow], ['glob', SearchRow], ['web_search', WebRow], ['web_fetch', WebRow],
@@ -55,12 +62,27 @@ describe('tool preparation', () => {
     expect(view.container.querySelector('[aria-expanded="true"]')).toBeNull()
   })
 
+  it.each([['write', 'content'], ['edit', 'new_string']])('%s hides content progress without a path', (name, field) => {
+    const args = new PartialArguments()
+    args.append(`{"${field}":"hello`)
+    const view = render(<FileMutationRow {...preparation(name, args)} />)
+    expect(view.queryByText('Preparing content 1KB')).toBeNull()
+    expect(view.queryByRole('button')).toBeNull()
+  })
+
   it('retains the file row through streamed arguments, dispatch, and result', () => {
     const args = new PartialArguments()
     const props = preparation('write', args)
     const view = render(<FileMutationRow {...props} />)
     const preparingRow = view.container.querySelector('[data-tool="write"]')
-    args.append('{"file_path":"hello.txt","content":"hello')
+    args.append('{"file_path":"hello')
+    view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
+    expect(view.queryByRole('button')).toBeNull()
+    args.append('.txt"')
+    view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
+    expect(view.getByText('hello.txt')).toBeTruthy()
+    expect(view.queryByText('Preparing content 1KB')).toBeNull()
+    args.append(',"content":"hello')
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('hello.txt')).toBeTruthy()
     expect(view.getByText('Preparing content 1KB')).toBeTruthy()
@@ -120,8 +142,10 @@ describe('tool preparation', () => {
     const props = preparation('edit', args)
     const view = render(<FileMutationRow {...props} />)
     expect(view.getByText('Preparing content 1KB')).toBeTruthy()
-    expect(args.append('b'.repeat(424))).toBe(false)
-    expect(args.append('b')).toBe(true)
+    args.append('b'.repeat(424))
+    expect(args.refresh()).toBe(false)
+    args.append('b')
+    expect(args.refresh()).toBe(true)
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('Preparing content 2KB')).toBeTruthy()
   })
