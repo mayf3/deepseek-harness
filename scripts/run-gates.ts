@@ -12,12 +12,7 @@ import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { CLIENT_BUILD_PROFILE_SELECTOR } from './client-build-environment.ts'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './coverage-exempt.ts'
-import {
-  COVERAGE_PARTITIONS_ENV,
-  COVERAGE_TEST_TIMEOUT_ENV,
-  coverageTestTimeoutArgs,
-  parseCoveragePartitionCount,
-} from './coverage-partitions.ts'
+import { COVERAGE_PARTITIONS_ENV, parseCoveragePartitionCount } from './coverage-partitions.ts'
 import { pnpmInvocation } from './pnpm-invocation.ts'
 
 /** A named aggregate exposed by the gate runner. */
@@ -662,9 +657,8 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // small share. A budget of 1 gives each gate 1 worker; lanes that need a strict
 // total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
 // which keeps the gates from overlapping at all.
-// DSH_COVERAGE_TEST_TIMEOUT_MS raises Vitest's per-test, expect.poll, and hook
-// defaults together for lanes whose scheduling overhead exceeds those
-// defaults. Explicit fixture timeouts remain authoritative.
+// DSH_COVERAGE_TEST_TIMEOUT_MS is not a gate argument: vitest.config.ts reads
+// it from the environment every gate inherits (coverageTestTimeoutOptions).
 function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   const [flag] = positiveIntArg('DSH_COVERAGE_MAX_WORKERS', '--maxWorkers')
   if (flag === undefined) return { instrumented: [], exempt: [] }
@@ -679,7 +673,6 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
 
 function coverageGates(): Gate[] {
   const workers = coverageWorkerArgs()
-  const timeouts = coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV])
   const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
   const instrumented = partitions === undefined
     ? pnpmExec('coverage', [
@@ -687,7 +680,6 @@ function coverageGates(): Gate[] {
       'run',
       '--coverage',
       ...workers.instrumented,
-      ...timeouts,
     ], {
       label: 'test:coverage',
       env: { [COVERAGE_EXEMPT_ENV]: '1' },
@@ -706,7 +698,6 @@ function coverageGates(): Gate[] {
       'run',
       ...coverageExemptHeavySuites.map(suite => suite.filter),
       ...workers.exempt,
-      ...timeouts,
     ], {
       label: 'test:coverage-exempt-heavy',
       needs: ['native-system'],
@@ -715,19 +706,15 @@ function coverageGates(): Gate[] {
 }
 
 // The uninstrumented unit inventory for a whole-inventory reference lane
-// (the Sandbox workflow's darwin parity job). It is `pnpm run test` with the
-// same DSH_COVERAGE_TEST_TIMEOUT_MS budget the coverage gates take: a shared
-// hosted runner delays cases that inherit Vitest's defaults past them. The
-// package script itself has no environment hook. Output streams so the job
-// log keeps per-file timestamps for a 15–30 minute run.
+// (the Sandbox workflow's darwin parity job). It is `pnpm run test`; the lane
+// sets DSH_COVERAGE_TEST_TIMEOUT_MS, which vitest.config.ts reads from the
+// inherited environment, because a shared hosted runner delays cases that
+// inherit Vitest's defaults past them. Output streams so the job log keeps
+// per-file timestamps for a 15–30 minute run.
 function ciUnitGates(): Gate[] {
   return [
     pnpmScript('native-system', 'build:native-system'),
-    pnpmExec('unit', [
-      'vitest',
-      'run',
-      ...coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV]),
-    ], {
+    pnpmExec('unit', ['vitest', 'run'], {
       label: 'test',
       needs: ['native-system'],
       streamOutput: true,
