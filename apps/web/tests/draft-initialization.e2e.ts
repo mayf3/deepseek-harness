@@ -196,7 +196,7 @@ async function launchDraftFixture(beforeBrowserOpen?: (page: Page, scaffold: Web
   onTestFinished(() => browser.close())
   const page = await newEnglishPage(browser)
   const console = watchConsole(page)
-  page.on('pageerror', error => { globalThis.console.error(error.stack ?? error.message) })
+  page.on('pageerror', (error) => { globalThis.console.error(error.stack ?? error.message) })
   await observeDraftApi(page)
   onTestFinished(async ({ task }) => {
     if (task.result?.state !== 'fail') return
