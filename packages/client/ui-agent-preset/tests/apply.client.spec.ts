@@ -97,8 +97,7 @@ async function bench(options: {
       value: {
         writable: true,
         hasDocument: true,
-        // The shared Developer tools preference the surfaces read: this browser
-        // has it on, so the roster is editable.
+        // The accepted Developer tools preference shared by both preset surfaces.
         namespaces: [{
           ns: 'ui-settings',
           schema: { type: 'object', dict: { enabled: { type: 'boolean' } } },

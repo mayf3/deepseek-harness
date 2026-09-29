@@ -257,7 +257,7 @@ describe('web e2e: agent-preset selection', () => {
     await page.getByRole('button', { name: 'Minimal mode', exact: true }).waitFor()
     await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings' })
-    const codingTools = dialog.getByRole('switch', { name: 'Coding Tools' })
+    const codingTools = dialog.getByRole('switch', { name: 'Show coding view' })
     await codingTools.click()
     await expect.poll(() => codingTools.getAttribute('aria-checked')).toBe('false')
     await dialog.getByRole('button', { name: 'Close' }).last().click()

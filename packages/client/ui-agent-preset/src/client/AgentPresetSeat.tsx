@@ -12,7 +12,7 @@
  * Picking stages; the choice reaches a session when one becomes current.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -93,9 +93,11 @@ export function AgentPresetSeat({
     void load()
   }, [load])
 
-  const options = state.options.filter(option => developerTools || !requiresCodingTools(option))
+  const options = useMemo(
+    () => state.options.filter(option => developerTools || !requiresCodingTools(option)),
+    [state.options, developerTools],
+  )
 
-  // Close a menu whose available choices just changed.
   useEffect(() => {
     setOpen(false)
   }, [developerTools, options.length])
