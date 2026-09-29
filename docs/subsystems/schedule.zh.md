@@ -514,11 +514,12 @@ async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: Abor
  *
  * Each supplied field replaces its stored value; an omitted field keeps it. A name or
  * instruction change alone does not reset the committed target. A Session that subagent
- * routing owns rejects with `subagent_session`, so an edit cannot re-arm a task bound
- * to a Session delivery can never reach.
+ * routing owns returns the non-mutating `subagent_session` result, so an edit cannot
+ * re-arm a task bound to a Session delivery can never reach, and the Web editor can
+ * explain the refusal through the ordinary result it already renders.
  * @param request - Task binding, complete observed record, and any combination of timing, name, and instruction.
  * @param signal - Cancellation checked after domain readiness and FIFO waits, before persistence begins.
- * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict result.
+ * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict/refusal result.
  * Storage and lifecycle failures reject; cancellation after a write starts does not roll it back.
  */
 @Remote('update') async update(request: ScheduleUpdateRequest, signal?: AbortSignal): Promise<ScheduleUpdateResult>
