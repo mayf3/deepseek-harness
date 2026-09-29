@@ -79,28 +79,6 @@ interface SidebarRightSessions {
   readonly openTabs: SidebarTabInventory['source']
 }
 
-/** What the controller needs from the page around it: the viewport rule and focus continuity. */
-export interface SidebarRightHost {
-  /**
-   * Whether the viewport is narrow enough that an expanded panel is presented fullscreen.
-   * @returns the rule's verdict for the frame width the seats last rendered at.
-   */
-  readonly autoFullscreen: () => boolean
-  /**
-   * Commit a page operation and focus the pane it selects.
-   * @param sessionId - the Session whose page is opening.
-   * @param open - the synchronous operation; returns the selected pane, or `undefined` when unchanged.
-   */
-  readonly openWithFocus: (sessionId: SessionId, open: () => PaneId | undefined) => void
-  /**
-   * Commit a keyboard/menu close and retain focus on a surviving visible pane.
-   * @param sessionId - the Session whose page is closing.
-   * @param paneId - the pane whose page is closing.
-   * @param close - the synchronous cleanup and removal.
-   */
-  readonly closeWithFocus: (sessionId: SessionId, paneId: PaneId, close: () => void) => void
-}
-
 /**
  * Create the public controller and the plugin-private Session callbacks.
  * Adoption reconciles restored records before any seat renders, then follows commits.
@@ -145,6 +123,28 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
       }
     },
   }
+}
+
+/** What the controller needs from the page around it: the viewport rule and focus continuity. */
+export interface SidebarRightHost {
+  /**
+   * Whether the viewport is narrow enough that an expanded panel is presented fullscreen.
+   * @returns the rule's verdict for the frame width the seats last rendered at.
+   */
+  readonly autoFullscreen: () => boolean
+  /**
+   * Commit a page operation and focus the pane it selects.
+   * @param sessionId - the Session whose page is opening.
+   * @param open - the synchronous operation; returns the selected pane, or `undefined` when unchanged.
+   */
+  readonly openWithFocus: (sessionId: SessionId, open: () => PaneId | undefined) => void
+  /**
+   * Commit a keyboard/menu close and retain focus on a surviving visible pane.
+   * @param sessionId - the Session whose page is closing.
+   * @param paneId - the pane whose page is closing.
+   * @param close - the synchronous cleanup and removal.
+   */
+  readonly closeWithFocus: (sessionId: SessionId, paneId: PaneId, close: () => void) => void
 }
 
 /** Where an open lands; every field is optional and the defaults are the common case. */
