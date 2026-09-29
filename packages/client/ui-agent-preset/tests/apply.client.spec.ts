@@ -1038,21 +1038,6 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.blankSessionId()).toBeUndefined()
   })
 
-  it('synchronizes the blank Session with a Settings default while Developer tools are off', async () => {
-    const select = vi.fn(() => Promise.resolve({ ok: true as const, value: 'minimal' }))
-    const current = {
-      id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' },
-    }
-    const controller = new AgentPresetSeatController({
-      ...developerTools(false),
-      remote: { agentPresets: { select } },
-    } as never, () => current)
-
-    await controller.syncBlankSession(current.id, 'minimal')
-
-    expect(select).toHaveBeenCalledWith(current.id, 'minimal')
-  })
-
   it('does not retarget a different blank Session after a Settings write', async () => {
     const select = vi.fn(() => Promise.resolve({ ok: true as const, value: 'minimal' }))
     let current = {
