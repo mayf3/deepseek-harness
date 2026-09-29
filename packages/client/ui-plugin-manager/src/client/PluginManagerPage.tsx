@@ -653,6 +653,7 @@ function terminalLabels(t: Translate): TerminalBlockLabels {
 const INPUT_PROBLEM_KEYS = {
   'invalid-spec': 'installProblemInvalid',
   'already-installed': 'installProblemInstalled',
+  'shipped': 'installProblemShipped',
   'not-found': 'installProblemNotFound',
   'not-a-package': 'installProblemNotPackage',
   'not-a-bundle': 'installProblemNotBundle',
@@ -728,7 +729,8 @@ function failureText(failure: InstallState['failure'], t: Translate, install?: P
   if (failure === null) return t('installFailureGeneric')
   // A compatibility refusal is the package's own answer, whatever pnpm's exit classified the run as.
   if (failure.code === 'incompatible-version') {
-    return managementText({ code: failure.code, ...failure.incompatible === undefined ? {} : { incompatible: failure.incompatible } }, t)
+    const incompatible = failure.incompatible === undefined ? {} : { incompatible: failure.incompatible }
+    return managementText({ code: failure.code, installing: true, ...incompatible }, t)
   }
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')

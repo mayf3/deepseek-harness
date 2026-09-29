@@ -602,7 +602,7 @@ ask_user_question 默认保持原有阻塞行为；设置 `mode: timed` 后才�
 
 ### `bash`
 
-执行 bash 命令（`bash -c`）并返回 stdout/stderr。每次调用都在新 shell 中运行；请传入 `workdir`，不要使用 `cd`。托管的 `$DSH_*` 变量公开当前 harness 环境信息。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝：请勿换一种方式重试。
+执行 bash 命令（`bash -c`）并返回 stdout/stderr。每次调用都在新 shell 中运行；请传入 `workdir`，不要使用 `cd`。托管的 `$DSH_*` 变量公开当前 harness 环境信息。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。在任何删除或移动之前，请确认解析后的绝对目标路径正是预期路径；绝不要对未经检查的计算路径执行此类操作。未设置的变量会展开为空字符串，因此请用 `${VAR:?}` 保护此类路径中的变量。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝：请勿换一种方式重试。
 
 ```json
 {
@@ -690,7 +690,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。组合中有 job �
 
 ### `pwsh`
 
-执行 PowerShell 命令（`pwsh -Command`）并返回 stdout/stderr。每次调用都在新的 pwsh 进程中运行；请传入 `workdir`，不要使用 `cd`。路径采用 Windows 原生形式（`C:\...`）；使用 `$env:NAME` 读取环境变量。托管的 `$env:DSH_*` 变量公开当前 harness 环境信息。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。在 Windows 上，被强制终止的命令会以 `[exit code: 1]` 结算且不带信号标记，请将其视为中断，而不是命令失败。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝：请勿换一种方式重试。
+执行 PowerShell 命令（`pwsh -Command`）并返回 stdout/stderr。每次调用都在新的 pwsh 进程中运行；请传入 `workdir`，不要使用 `cd`。路径采用 Windows 原生形式（`C:\...`）；使用 `$env:NAME` 读取环境变量。托管的 `$env:DSH_*` 变量公开当前 harness 环境信息。较长的输出会截断，只保留尾部；如可用，完整输出会保存到文件并报告其路径。在 Windows 上，被强制终止的命令会以 `[exit code: 1]` 结算且不带信号标记，请将其视为中断，而不是命令失败。在任何删除或移动之前，请确认解析后的绝对目标路径正是预期路径；绝不要对未经检查的计算路径执行此类操作。不要给 `$HOME` 等自动变量赋值；变量名不区分大小写，因此 `$home` 就是同一个只读变量。命令可能在文件沙箱中运行；被阻止的文件操作报告为 `[sandbox: file access denied under <mode> mode]`，这是策略拒绝：请勿换一种方式重试。
 
 ```json
 {
@@ -747,7 +747,7 @@ pwsh 工具是 Windows 组合中 bash 执行器 seam 的 PowerShell 方言消费
 
 ### `cordis_inspect_query`
 
-执行 Inspect Provider 声明的只读查询。platform、provider 和 method 必须来自 cordis_inspect_list，input 必须符合该方法的 schema。编写插件代码前，用本工具读取准确的 Service 方法、Event 模式、插件 Config schema、Tool schema、主题 token，或实时 Slot 树与 props。Host 查询在本地运行。Client 查询等待页面首个有效响应，直到页面回应或工具取消。本工具不能调用业务 Service 方法或修改运行时。
+执行 Inspect Provider 声明的只读查询。platform、provider 和 method 必须来自 cordis_inspect_list，input 必须符合该方法的 schema。编写插件代码前，用本工具读取准确的 Service 方法、Event 模式、插件 Config schema、Tool schema、主题 token，或实时 Slot 树与 props。Host 查询在本地运行。Client 查询在配置的超时内等待页面首个有效响应；否则返回 Client 错误，或提示重新连接后重试。本工具不能调用业务 Service 方法或修改运行时。
 
 ```json
 {

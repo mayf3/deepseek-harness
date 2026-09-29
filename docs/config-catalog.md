@@ -184,7 +184,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-gateway`
 
 - `inject`: `typert`
-- `source`: [`packages/api/gateway/src/index.ts:145`](../packages/api/gateway/src/index.ts)
+- `source`: [`packages/api/gateway/src/index.ts:146`](../packages/api/gateway/src/index.ts)
 
 ```ts config-catalog
 /** Gateway transport configuration. */
@@ -754,6 +754,8 @@ export interface ToolResultPruneConfig {
 export interface Config {
   /** Maximum synchronous VM evaluation time in milliseconds. */
   vmTimeoutMs?: number
+  /** Maximum wait for a valid Client inspect response in milliseconds. */
+  clientInspectTimeoutMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-cordis-host-runner -->
@@ -3714,7 +3716,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-pwsh-persistent`
 
 - `inject`: `tools` · `terminals`
-- `source`: [`packages/shell/tool-pwsh-persistent/src/index.ts:456`](../packages/shell/tool-pwsh-persistent/src/index.ts)
+- `source`: [`packages/shell/tool-pwsh-persistent/src/index.ts:457`](../packages/shell/tool-pwsh-persistent/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for the persistent pwsh tool. */
