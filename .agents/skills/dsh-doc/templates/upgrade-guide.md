@@ -1,6 +1,6 @@
 # Template: upgrade-guide
 
-Use this kind for `docs/upgrade-guide/v<version>/<item>/guide.md`. The guides are English-only and have no folder index. [dsh-create-upgrade-guide](../../dsh-create-upgrade-guide/SKILL.md) owns scope, placement, maintenance, and length rules; `pnpm run verify-upgrade-guides` enforces them.
+Use this kind for `docs/upgrade-guide/v<version>/<item>/guide.md` and its Chinese sibling `guide.zh.md`, whose sections are `## 变更` and `## 迁移`. The tree has no folder index. [dsh-create-upgrade-guide](../../dsh-create-upgrade-guide/SKILL.md) owns scope, placement, maintenance, and length rules; `pnpm run verify-upgrade-guides` enforces them.
 
 ## Frontmatter
 
@@ -15,6 +15,8 @@ description: "The externally perceptible surface that breaks and what replaces i
 
 ````markdown
 # <Specific break, for example: `--profile` replaces `--preset`>
+
+English | [中文](guide.zh.md)
 
 ## Change
 

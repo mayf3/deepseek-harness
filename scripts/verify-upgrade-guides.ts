@@ -1,6 +1,7 @@
 /**
  * Enforce the `docs/upgrade-guide/v<version>/<item>/guide.md` layout, metadata,
  * sections, and word ceiling defined by the `dsh-create-upgrade-guide` skill.
+ * `verify-translation-pairing` owns the Chinese sibling's pairing record.
  * @module scripts/verify-upgrade-guides
  */
 
@@ -11,17 +12,20 @@ import { fromMarkdown } from 'mdast-util-from-markdown'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const GUIDE_ROOT = 'docs/upgrade-guide'
-const MAX_WORDS = 500
 const FRONTMATTER_KEYS = ['description', 'kind']
-const SECTIONS = ['Change', 'Migration']
+/** Required `##` sections for each guide language; the word ceiling applies to the English source. */
+const LANGUAGES = {
+  'guide.md': { sections: ['Change', 'Migration'], maxWords: 500 },
+  'guide.zh.md': { sections: ['变更', '迁移'], maxWords: undefined },
+} as const
 const SEMVER = String.raw`(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?`
-const GUIDE_PATH = new RegExp(`^v${SEMVER}/[a-z0-9]+(?:-[a-z0-9]+)*/guide\\.md$`, 'u')
+const GUIDE_PATH = new RegExp(`^v${SEMVER}/[a-z0-9]+(?:-[a-z0-9]+)*/(guide\\.md|guide\\.zh\\.md|guide\\.i18n\\.yaml)$`, 'u')
 
 /** Return one guide's frontmatter and structure violations. */
-function guideViolations(source: string): string[] {
+function guideViolations(source: string, language: typeof LANGUAGES[keyof typeof LANGUAGES]): string[] {
   const violations: string[] = []
   const words = source.split(/\s+/u).filter(Boolean).length
-  if (words > MAX_WORDS) violations.push(`${String(words)} words exceeds the ${String(MAX_WORDS)}-word ceiling`)
+  if (language.maxWords !== undefined && words > language.maxWords) violations.push(`${String(words)} words exceeds the ${String(language.maxWords)}-word ceiling`)
 
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/u.exec(source)
   if (frontmatter === null) return [...violations, 'must start with YAML frontmatter']
@@ -36,7 +40,7 @@ function guideViolations(source: string): string[] {
   const body = source.slice(frontmatter[0].length)
   const outline = fromMarkdown(body).children
     .flatMap(node => node.type === 'heading' && node.depth <= 2 ? [body.slice(node.position?.start.offset, node.position?.end.offset)] : [])
-  const expected = SECTIONS.map(section => `## ${section}`)
+  const expected = language.sections.map(section => `## ${section}`)
   if (outline.length !== expected.length + 1 || !outline[0]?.startsWith('# ') || outline.slice(1).join('\n') !== expected.join('\n')) {
     violations.push(`headings must be one "#" title followed by ${expected.map(heading => `"${heading}"`).join(', ')}; got ${outline.map(heading => `"${heading}"`).join(', ') || 'none'}`)
   }
@@ -58,11 +62,14 @@ export function collectUpgradeGuideViolations(root: string): string[] {
     .sort()
   for (const file of files) {
     const path = `${GUIDE_ROOT}/${file}`
-    if (!GUIDE_PATH.test(file)) {
-      violations.push(`${path}: only v<semver>/<kebab-case-item>/guide.md files belong in ${GUIDE_ROOT}`)
+    const name = GUIDE_PATH.exec(file)?.[1]
+    if (name === undefined) {
+      violations.push(`${path}: only v<semver>/<kebab-case-item>/guide.{md,zh.md,i18n.yaml} files belong in ${GUIDE_ROOT}`)
       continue
     }
-    for (const violation of guideViolations(readFileSync(join(directory, file), 'utf8'))) violations.push(`${path}: ${violation}`)
+    if (name === 'guide.md' || name === 'guide.zh.md') {
+      for (const violation of guideViolations(readFileSync(join(directory, file), 'utf8'), LANGUAGES[name])) violations.push(`${path}: ${violation}`)
+    }
   }
   return violations
 }

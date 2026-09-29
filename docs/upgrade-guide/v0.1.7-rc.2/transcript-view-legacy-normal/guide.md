@@ -5,6 +5,8 @@ description: "The legacy ui-chat.transcriptView value normal, and an unset value
 
 # Legacy `normal` work details display as Detailed
 
+English | [中文](guide.zh.md)
+
 ## Change
 
 The Host setting `ui-chat.transcriptView` selects Settings → General → Work details. In v0.1.7-rc.2 the client displayed the legacy saved value `normal` as `standard`, and every client used `standard` when the setting was missing, `null`, or invalid.

@@ -5,6 +5,8 @@ description: "The Web composition no longer carries the Schedule rows; the Autom
 
 # Schedule moves into the Automation tasks optional bundle
 
+English | [中文](guide.zh.md)
+
 ## Change
 
 In v0.1.7-rc.2, `@deepseek-ai/dsh-web-app` carried the `time-context`, `schedule`, and `ui-schedule` rows with `disabled: true`. Turning Schedule on in the Plugins page, or by hand, wrote id-targeted overrides such as `- id: schedule` with `disabled: false` into `$DSH_HOME/profiles/<name>/cordis.patch.yml` or a `--patch` overlay.

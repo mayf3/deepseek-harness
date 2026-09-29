@@ -25,7 +25,7 @@ Pre-stable internal APIs whose consumers are all updated in the same change need
 
 - `<version>` is the `version` field of the root `package.json` when you write the guide, for example `v0.1.7-rc.2`. The guide describes the upgrade from that release to the next one.
 - `<item>` is a kebab-case name of the changed surface, for example `profile-flag-rename`.
-- No other files belong in the tree: no index, no Chinese counterpart, no attachments.
+- Each item directory holds exactly `guide.md`, its Chinese counterpart `guide.zh.md`, and the pairing record `guide.i18n.yaml`: no index, no attachments.
 
 ## Maintenance
 
@@ -36,18 +36,19 @@ While the root version is unchanged, the current version directory describes the
 Start from the [upgrade-guide template](../dsh-doc/templates/upgrade-guide.md). `verify-upgrade-guides` enforces:
 
 - frontmatter with exactly `kind: upgrade-guide` and a one-sentence `description` naming what breaks; add a key only together with its gate check, then backfill every guide;
-- one `#` title, then exactly the `## Change` and `## Migration` sections, in that order;
-- at most 500 words, frontmatter included.
+- one `#` title, then exactly the `## Change` and `## Migration` sections in `guide.md`, and `## 变更` and `## 迁移` in `guide.zh.md`, in that order;
+- at most 500 words in `guide.md`, frontmatter included.
 
 `Change` states the old and new behavior of the surface and who is affected. `Migration` lists ordered steps that name exact files, keys, commands, or symbols, and states how to confirm the migration worked.
 
 When a guide needs more than 500 words, the extra text belongs elsewhere: link source files or symbols instead of restating code, move rationale into an [Agent Note](../../notes/README.md), and turn repeated mechanical steps into a script or `dsh` command that the guide invokes.
 
-Write English only, following [dsh-prose-standard](../dsh-prose-standard/SKILL.md).
+Follow [dsh-prose-standard](../dsh-prose-standard/SKILL.md). Write the Chinese counterpart in the same change under the [bilingual pairing rules](../../../docs/AGENTS.md), then record the pair with `pnpm run verify-translation-pairing --write docs/upgrade-guide/v<version>/<item>/guide.md`.
 
 ## Verify
 
 ```sh
 pnpm run verify-upgrade-guides
+pnpm run verify-translation-pairing docs/upgrade-guide/v<version>/<item>/guide.md
 pnpm run verify-md-links
 ```
