@@ -290,14 +290,17 @@ export class PluginManager extends TypertRemoteService {
       const installed = dependencies.includes(name)
       const optional = OPTIONAL_BUNDLES.includes(name)
       const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
-      // Bundle resolution reads the installation first, so a profile dependency it also supplies is not the loaded copy.
-      const source = removable ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir) } : {}
+      // Bundle resolution reads the installation first, so a profile dependency the installation manifest also names,
+      // like one it forbids removing, is not the loaded copy.
+      const sourceOf = (packageName?: string): { source?: string } =>
+        removable ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir, packageName) } : {}
       const enabled = selected.includes(name)
       const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
       try {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (info === undefined) {
-          if (enabled) bundles.push({ name, ...source, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
+          if (enabled) bundles.push({ name, ...sourceOf(), enabled, installed, optional,
+            removable: removable && readOnlyReason === undefined,
             ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: { code: 'not-bundle' }, rows: [], overrides: [] })
           continue
         }
@@ -308,12 +311,12 @@ export class PluginManager extends TypertRemoteService {
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           ...meta === undefined ? {} : { meta },
-          ...source, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
+          ...sourceOf(info.name), enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
           ...this.declaredRows(name, info) })
       } catch (error) {
         if (enabled || installed) {
-          bundles.push({ name, ...source, enabled, installed, optional, removable: removable && readOnlyReason === undefined,
+          bundles.push({ name, ...sourceOf(), enabled, installed, optional, removable: removable && readOnlyReason === undefined,
             ...(readOnlyReason === undefined ? {} : { readOnlyReason }), error: managementError(error), rows: [], overrides: [] })
         }
       }

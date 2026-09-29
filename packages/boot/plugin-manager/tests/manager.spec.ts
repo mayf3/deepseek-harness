@@ -241,7 +241,7 @@ it.each(['missing package', 'invalid manifest', 'not a bundle', 'missing patch',
     })
     expect([...ctx.loader.entries()].some(entry => entry.id === 'include:managed')).toBe(false)
     expect((await manager.listBundles()).find(row => row.name === 'extra')).toMatchObject({
-      enabled: true, error: { code: failure === 'not a bundle' ? 'not-bundle' : 'operation-error' }, rows: [],
+      enabled: true, source: 'extra@1.0.0', error: { code: failure === 'not a bundle' ? 'not-bundle' : 'operation-error' }, rows: [],
     })
     expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ changed: true, application: 'applied' })
     expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core'])
@@ -340,13 +340,16 @@ it('names where each installed bundle comes from as a spec pnpm installs', async
   const { manager, dir, bundle, profile } = await fixture()
   const recorded: Record<string, string> = {
     extra: '^1.0.0', tagged: 'latest', aliased: 'npm:@acme/aliased@2', jsr: 'jsr:@acme/jsr@^1', github: 'github:someone/dsh-plugin#v1',
-    ssh: 'git@github.com:someone/dsh-plugin.git', sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git',
+    ssh: 'git@github.com:someone/dsh-plugin.git', deploy: 'deploy@git.corp:team/dsh-plugin.git',
+    sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git', email: 'git+http://user@example.com:secret@git.example.com/repo.git',
     tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz', token: 'https://ghp_secret@cdn.example.com/dsh-x-1.0.0.tgz',
     password: 'git+https://someone:secret@git.example.com/someone/dsh-plugin.git#main',
     relative: 'file:../plugins/relative', linked: 'link:/plugins/linked', home: 'file:~/plugins/home',
-    shadowed: '1.0.0',
+    aliasLocal: 'file:../plugins/original', shadowed: '1.0.0',
   }
   for (const name of Object.keys(recorded)) bundle(name, [])
+  // Installed under a name other than its own, the package keeps that name only when the spec carries it.
+  writeFileSync(join(dir, 'node_modules', 'aliasLocal', 'package.json'), JSON.stringify({ name: 'original', version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
   const manifest = readProfileManifest('test', dir)
   manifest.dependencies = recorded
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
@@ -354,11 +357,12 @@ it('names where each installed bundle comes from as a spec pnpm installs', async
   writeFileSync(profile.installAnchor, JSON.stringify({ name: 'installation', dependencies: { shadowed: '1.0.0' } }))
   expect(Object.fromEntries((await manager.listBundles()).map(row => [row.name, row.source]))).toEqual({
     core: undefined, extra: 'extra@^1.0.0', tagged: 'tagged@latest', aliased: 'aliased@npm:@acme/aliased@2', jsr: 'jsr@jsr:@acme/jsr@^1',
-    github: 'github:someone/dsh-plugin#v1', ssh: 'git@github.com:someone/dsh-plugin.git', sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git',
+    github: 'github:someone/dsh-plugin#v1', ssh: 'git@github.com:someone/dsh-plugin.git', deploy: 'deploy@git.corp:team/dsh-plugin.git',
+    sshUrl: 'git+ssh://git@github.com/someone/dsh-plugin.git', email: 'git+http://git.example.com/repo.git',
     tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz', token: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
     password: 'git+https://git.example.com/someone/dsh-plugin.git#main',
     relative: `file:${resolve(dir, '../plugins/relative')}`, linked: `link:${resolve(dir, '/plugins/linked')}`,
-    home: `file:${resolve(homedir(), 'plugins/home')}`, shadowed: undefined,
+    home: `file:${resolve(homedir(), 'plugins/home')}`, aliasLocal: `aliasLocal@file:${resolve(dir, '../plugins/original')}`, shadowed: undefined,
   })
 })
 

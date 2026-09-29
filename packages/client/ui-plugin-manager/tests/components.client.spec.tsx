@@ -205,6 +205,7 @@ describe('PluginManagerPage', () => {
     const b = renderTab({ packages: [
       pkg({ source: 'github:someone/dsh-better-sidebar' }),
       { name: 'dsh-official', installed: false, optional: true, enabled: false, rows: [] },
+      { name: 'dsh-shadowed', installed: true, optional: false, enabled: true, rows: [] },
       { name: 'dsh-missing', installed: false, optional: false, enabled: true, error: { code: 'unknown-plugin' }, rows: [] },
     ] })
     const facts = (): string[] => [...document.querySelectorAll('[data-plugin-source] dt, [data-plugin-source] dd')].map(node => node.textContent)
@@ -212,6 +213,9 @@ describe('PluginManagerPage', () => {
     expect(within(document.querySelector('[data-plugin-source]') as HTMLElement).getByRole('heading').textContent).toBe(en.sourceTitle)
     expect(facts()).toEqual([en.sourceSpec, 'github:someone/dsh-better-sidebar', en.sourceVersion, '0.16.0'])
     act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-official' }) })
+    expect(facts()).toEqual([en.sourceSpec, en.sourceBuiltIn])
+    // A profile dependency the installation also supplies loads the installation's copy.
+    act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-shadowed' }) })
     expect(facts()).toEqual([en.sourceSpec, en.sourceBuiltIn])
     act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-missing' }) })
     expect(document.querySelector('[data-plugin-source]')).toBeNull()

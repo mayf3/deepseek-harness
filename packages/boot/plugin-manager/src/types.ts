@@ -57,7 +57,7 @@ export interface BundleInfo {
   installed: boolean
   /**
    * Present for a profile dependency the installation does not also supply: the spec `pnpm add` accepts, with local
-   * paths made absolute and http(s) credentials removed.
+   * paths made absolute and the user information of an http(s) URL removed.
    */
   source?: string
   /**
