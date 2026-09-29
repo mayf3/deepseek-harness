@@ -19,7 +19,7 @@ import {
 import type {
   DeliveryRetentionBounds, ScheduleCatalogEntry, ScheduleCreateRequest, ScheduleDeleteRequest, ScheduleDeleteResult,
   ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult, ScheduleListRequest, ScheduleRecord,
-  ScheduleUpdateRequest, ScheduleUpdateResult,
+  ScheduleUpdateRequest, ScheduleUpdateResult, SubagentSessionError,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -249,7 +249,8 @@ export class ScheduleService extends TypertRemoteService {
     else if (request.cron !== undefined) record = createCronScheduleRecord(id, request.prompt, request.cron, now, title)
     else throw new ScheduleInputError('invalid_selector', 'Exactly one reminder selector is required.')
     return this.serialize(async () => {
-      this.assertReminderTarget(sessionId)
+      const refusal = this.reminderTargetRefusal(sessionId)
+      if (refusal !== undefined) throw new ScheduleInputError('subagent_session', refusal.message)
       const domain = await this.getDomain()
       signal?.throwIfAborted()
       await domain.table('tasks').put(id, {
@@ -343,17 +344,19 @@ export class ScheduleService extends TypertRemoteService {
    *
    * Each supplied field replaces its stored value; an omitted field keeps it. A name or
    * instruction change alone does not reset the committed target. A Session that subagent
-   * routing owns rejects with `subagent_session`, so an edit cannot re-arm a task bound
-   * to a Session delivery can never reach.
+   * routing owns returns the non-mutating `subagent_session` result, so an edit cannot
+   * re-arm a task bound to a Session delivery can never reach, and the Web editor can
+   * explain the refusal through the ordinary result it already renders.
    * @param request - Task binding, complete observed record, and any combination of timing, name, and instruction.
    * @param signal - Cancellation checked after domain readiness and FIFO waits, before persistence begins.
-   * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict result.
+   * @returns The committed record, unchanged record for a no-op, or a non-mutating input/lookup/conflict/refusal result.
    * Storage and lifecycle failures reject; cancellation after a write starts does not roll it back.
    */
   @Remote('update')
   async update(request: ScheduleUpdateRequest, signal?: AbortSignal): Promise<ScheduleUpdateResult> {
     return this.serialize<ScheduleUpdateResult>(async () => {
-      this.assertReminderTarget(request.sessionId)
+      const refusal = this.reminderTargetRefusal(request.sessionId)
+      if (refusal !== undefined) return refusal
       const tasks = (await this.getDomain()).table('tasks')
       signal?.throwIfAborted()
       const current = tasks.get(request.id)
@@ -403,14 +406,14 @@ export class ScheduleService extends TypertRemoteService {
    * the shared predicate rather than a second ownership rule that could diverge from
    * the delivery-time rejection.
    * @param sessionId - Session the task would be bound to.
+   * @returns The stable refusal for a Session subagent routing owns, or undefined when the Session is eligible.
    */
-  private assertReminderTarget(sessionId: SessionId): void {
+  private reminderTargetRefusal(sessionId: SessionId): SubagentSessionError | undefined {
     const agent = this.ctx.agents.get(sessionId)
-    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      throw new ScheduleInputError(
-        'subagent_session',
-        'This Session belongs to subagent routing, which never receives reminder delivery.',
-      )
+    if (agent === undefined || !hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) return undefined
+    return {
+      code: 'subagent_session',
+      message: 'This Session belongs to subagent routing, which never receives reminder delivery.',
     }
   }
 

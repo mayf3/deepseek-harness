@@ -78,9 +78,11 @@ it('refuses to update a stored reminder bound to a Session that subagent routing
   const changed = vi.fn()
   test.ctx.on('schedule/changed', changed)
 
+  // The refusal travels the ordinary non-mutating result so the Web editor renders
+  // `timing.subagentSession` instead of a generic Remote failure.
   await expect(test.service.update({
     sessionId: childId, id: record.id, expected: record, change: { kind: 'every', every_seconds: 600 },
-  })).rejects.toMatchObject({ code: 'subagent_session' })
+  })).resolves.toMatchObject({ code: 'subagent_session', message: expect.any(String) })
 
   expect(put).not.toHaveBeenCalled()
   expect(changed).not.toHaveBeenCalled()
