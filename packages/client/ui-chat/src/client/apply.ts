@@ -156,7 +156,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
     id: 'performance-usage',
-    order: 95,
+    order: 30,
     locale: NS,
     inject: (): PerformanceUsageRowInjected => ({
       hooks: { performanceUsage },
