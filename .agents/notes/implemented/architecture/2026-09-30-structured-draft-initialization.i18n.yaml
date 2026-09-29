@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-09-30-structured-draft-initialization.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-30-structured-draft-initialization.md
+/agent-note-initial-draft-content-and-structured-reference-restoration:
+  en: 88202480bcf49e10
+  zh: 3f2aff8ad2be0faa
+/agent-note-initial-draft-content-and-structured-reference-restoration/problem:
+  en: 6aa396e12264ee48
+  zh: 56849a18acaf830a
+/agent-note-initial-draft-content-and-structured-reference-restoration/decision:
+  en: 28c7f9a2f2c6bbfd
+  zh: 2586b5e5c96eb0fe
+/agent-note-initial-draft-content-and-structured-reference-restoration/decision/data-model:
+  en: e55a4326cc40f5f7
+  zh: 089d8243a3ab9d8c
+/agent-note-initial-draft-content-and-structured-reference-restoration/decision/classes-and-methods:
+  en: 6f895b21233fae0e
+  zh: 4a1e92a97edcd519
+/agent-note-initial-draft-content-and-structured-reference-restoration/decision/data-flow:
+  en: dd57e639e9328f1d
+  zh: 5e16cb2e3a73597c
+/agent-note-initial-draft-content-and-structured-reference-restoration/decision/asynchronous-skill-matching:
+  en: afbbf0faf308c575
+  zh: b0fda2d70a4e186b
+/agent-note-initial-draft-content-and-structured-reference-restoration/alternatives-considered:
+  en: eddaec471425fafc
+  zh: b206ecdb12e8c33d
+/agent-note-initial-draft-content-and-structured-reference-restoration/verification:
+  en: 284eee6cc40f7304
+  zh: 3c550e38df3e1c2c
+/agent-note-initial-draft-content-and-structured-reference-restoration/consequences:
+  en: 2ffae2dca902341d
+  zh: fb33a64aaabfd89c

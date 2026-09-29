@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[English](2026-09-30-structured-draft-initialization.md) | 中文
+
 ## 问题
 
 新任务入口需要把一段尚未发送的内容放入输入框。草稿不仅包含文字，也包含用户已经选定的文件、目录和 Session 引用；只保存引用的文字投影，会在输入对象销毁后丢失胶囊的来源、目标和展示字段。页面挂载后的填字也不能保证第一次读取输入模型时已经得到完整内容。
@@ -44,17 +46,17 @@ Status: implemented
 ### 数据流
 
 ```text
-保存记录／初始化参数
-  → 字符串或 DraftSnapshot
-  → 输入 owner 导入文字和引用
-  → Lexical 变换、引用投影、InputState
-  → 第一次对外读取即得到可用文档
-  → React 挂载已有 editor
+stored draft / startSession options
+  → DraftInput
+  → SessionInputShell.setDraft
+  → DraftEditorRuntime → Lexical → InputState
+  → InputHub.shellFor returns
+  → React mounts the editor
 
-用户编辑／模型 API 编辑
-  → 同一 editor 与投影
-  → 导出 DraftSnapshot
-  → 原 Conversation store 保存
+user edits / input actions
+  → editor → projection
+  → DraftSnapshot
+  → Conversation store
 ```
 
 ### 异步 skill 匹配
