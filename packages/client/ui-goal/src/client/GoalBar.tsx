@@ -8,11 +8,11 @@
  * process-local activation arrives through the injected activation hook.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
-  IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, Tooltip,
+  IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
@@ -46,17 +46,6 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
   const pendingRef = useRef(false)
-  const editorRef = useRef<HTMLTextAreaElement>(null)
-
-  // The editor grows with the draft up to the CSS cap, then scrolls. An inline
-  // error shares the editor's row, so its arrival or removal changes the width.
-  useLayoutEffect(() => {
-    const node = editorRef.current
-    if (node === null) return
-    node.style.height = 'auto'
-    // scrollHeight excludes the border that the border-box height includes.
-    node.style.height = `${node.scrollHeight + node.offsetHeight - node.clientHeight}px`
-  }, [draft, editing, actionError])
 
   // A new goal identity (cleared/completed/replaced externally) invalidates the local edit
   // state: without the reset a surviving draft's Enter would write over the NEW goal.
@@ -100,24 +89,12 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
     return (
       <div className={css.dock} data-goal-bar>
         <div className={`${css.bar} ${css.editBar}`}>
-          <textarea
-            ref={editorRef}
-            className={css.objectiveInput}
-            rows={1}
-            aria-label={t('objective.aria')}
+          <InlineEditor
             value={draft}
-            onChange={(e) => { setDraft(e.target.value) }}
-            onKeyDown={(e) => {
-              // Shift+Enter breaks the line; IME confirmation keeps its commit behavior.
-              // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
-              const composing = e.nativeEvent.isComposing || Reflect.get(e.nativeEvent, 'keyCode') === 229
-              if (e.key === 'Enter' && !e.shiftKey && !composing) {
-                e.preventDefault()
-                void handleEdit()
-              }
-              if (e.key === 'Escape') setEditing(false)
-            }}
-            autoFocus
+            label={t('objective.aria')}
+            onChange={setDraft}
+            onSave={() => { void handleEdit() }}
+            onCancel={() => { setEditing(false) }}
           />
           {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
           <div className={css.actions}>

@@ -90,38 +90,9 @@
   height: auto;
   min-height: 36px;
   align-items: flex-end;
-}
-
-.objectiveInput {
-  flex: 1;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 26px;
-  /* Six 20px text lines plus padding and border, then the editor scrolls. */
-  max-height: 125px;
-  margin: 0;
-  padding: 2px 8px;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: var(--dsw-radius-sm);
-  background: var(--dsw-alias-bg-base);
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-primary);
-  outline: none;
-  overflow-y: auto;
-  resize: none;
-  /* The editor scrolls inside the elevated menu-surface strip. */
+  /* The editor scrolls inside this elevated menu-surface strip. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.objectiveInput:focus {
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.objectiveInput::placeholder {
-  color: var(--dsw-alias-label-caption);
 }
 
 /* ---- Icon actions ---- */
