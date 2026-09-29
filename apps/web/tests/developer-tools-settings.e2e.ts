@@ -14,7 +14,7 @@ it('persists developer tools in the Host settings document and restores the acce
   const page = await newEnglishPage(browser)
   await page.goto(scaffold.authenticatedUrl)
   await openSettings(page, 'en')
-  const toggle = page.getByRole('switch', { name: 'Coding Tools' })
+  const toggle = page.getByRole('switch', { name: 'Show coding view' })
   expect(await toggle.getAttribute('aria-checked')).toBe('true')
   expect(await readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8')).not.toMatch(/id: ui-settings(?:\r?\n|$)/)
   await toggle.click()
