@@ -20,6 +20,7 @@ import type {
   BedrockCompat,
   ChatTemplateKwargValue,
   KnownApi,
+  MistralConversationsCompat,
   Model,
   ModelCost,
   ModelThinkingLevel,
@@ -253,7 +254,8 @@ const COMPLETIONS_COMPAT_GATE = {
   zaiToolStream: 'withhold',
   supportsOpenAIGrammarTools: 'withhold',
   sendSessionAffinityHeaders: 'withhold',
-  deferredToolsMode: 'withhold',
+  supportsMidConvoSystemMessages: 'withhold',
+  supportsMidConvoToolAdditions: 'withhold',
   sessionAffinityFormat: 'withhold',
 } as const satisfies Record<keyof OpenAICompletionsCompat, CompatDisposition>
 
@@ -268,6 +270,7 @@ const RESPONSES_COMPAT_GATE = {
   supportsAdditionalTools: 'withhold',
   supportsToolSearch: 'withhold',
   supportsExplicitPromptCacheMode: 'withhold',
+  supportsMidConvoSystemMessages: 'withhold',
 } as const satisfies Record<keyof OpenAIResponsesCompat, CompatDisposition>
 
 /** Disposition of every `AnthropicMessagesCompat` field; a drift gate like the one above. */
@@ -280,7 +283,9 @@ const ANTHROPIC_COMPAT_GATE = {
   allowEmptySignature: 'offer',
   supportsStrictTools: 'offer',
   sendSessionAffinityHeaders: 'withhold',
-  supportsToolReferences: 'withhold',
+  sessionAffinityFormat: 'withhold',
+  supportsMidConvoSystemMessages: 'withhold',
+  supportsMidConvoToolChanges: 'withhold',
   supportsMidConvoEffort: 'withhold',
   allowedFallbackModels: 'withhold',
 } as const satisfies Record<keyof AnthropicMessagesCompat, CompatDisposition>
@@ -289,6 +294,11 @@ const ANTHROPIC_COMPAT_GATE = {
 const BEDROCK_COMPAT_GATE = {
   supportsStrictMode: 'offer',
 } as const satisfies Record<keyof BedrockCompat, CompatDisposition>
+
+/** Disposition of every `MistralConversationsCompat` field. */
+const MISTRAL_COMPAT_GATE = {
+  supportsMidConvoSystemMessages: 'withhold',
+} as const satisfies Record<keyof MistralConversationsCompat, CompatDisposition>
 
 /**
  * Every wire protocol pi-ai gives a compat type. Derived from `Model.compat`'s
@@ -309,6 +319,7 @@ type ApiWithCompat = { [K in KnownApi]: NonNullable<Model<K>['compat']> extends 
  * models declare.
  */
 const COMPAT_GATES: Readonly<Record<ApiWithCompat, Readonly<Record<string, CompatDisposition>>>> = {
+  'mistral-conversations': MISTRAL_COMPAT_GATE,
   'openai-completions': COMPLETIONS_COMPAT_GATE,
   'openai-responses': RESPONSES_COMPAT_GATE,
   'azure-openai-responses': RESPONSES_COMPAT_GATE,
