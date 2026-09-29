@@ -848,7 +848,7 @@ function InstallDialog({
               variant="primary"
               autoFocus
               onClick={() => {
-                // The mirror is already asked, so the form opens with the guide to the other kinds of spec.
+                // The mirror is already asked, so the form opens with the package-name guide.
                 if (anotherWay) setGuideOpen(true)
                 onUseGithubMirror()
               }}

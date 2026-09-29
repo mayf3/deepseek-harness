@@ -535,7 +535,7 @@
   box-shadow: inset 0 0 0 0.5px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
-/* The guide under the field: opened by a text button, it says what an ID is and shows the three forms with examples. */
+/* The guide under the field: opened by a text button, it names the npm package name and shows its example. */
 .guideToggle {
   display: inline-flex;
   align-items: center;
@@ -581,13 +581,6 @@
 }
 
 /* Trust guidance stays beside the install action, including while examples are collapsed. */
-.installSafetyText {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
 .installSafety {
   display: flex;
   align-items: flex-start;
@@ -599,6 +592,13 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+}
+
+.installSafetyText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .installSafety > svg {

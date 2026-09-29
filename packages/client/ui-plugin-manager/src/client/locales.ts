@@ -1,8 +1,8 @@
 /** Plugin management interface copy. */
 
-/** Git template shared by the displayed example and replacement reminder. */
+/** Git template a field still holding it reports as needing the actual address; no guide entry shows it. */
 export const INSTALL_GIT_EXAMPLE = 'https://github.com/author/dsh-plugin'
-/** Local-path template shared by the displayed example and replacement reminder. */
+/** Local-path template a field still holding it reports as needing the actual path; no guide entry shows it. */
 export const INSTALL_PATH_EXAMPLE = '/Users/name/my-plugin'
 
 /** Simplified Chinese dictionary and key source of truth. */

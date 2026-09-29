@@ -835,9 +835,9 @@ describe('web e2e: plugin manager', () => {
     const install = dialog.getByRole('button', { name: '安装', exact: true })
     expect(await install.isDisabled()).toBe(true)
     expect(await dialog.getByRole('note').textContent()).toContain('请确认插件来源可信')
-    expect(await dialog.innerText()).toContain('暂不支持自动更新')
+    expect(await dialog.getByRole('note').textContent()).toContain('暂不支持自动更新')
     await dialog.getByRole('button', { name: '插件安装引导和示例' }).click()
-    // The guide carries the package-name example only; Git and path specs stay valid without guide copy.
+    // The guide carries the package-name example only; the former template strings keep their replacement reminder.
     await expect.poll(() => dialog.getByRole('listitem').count()).toBe(1)
     await dialog.getByRole('button', { name: '填入示例 dsh-plugin-whale-pet' }).click()
     expect(await field.inputValue()).toBe('dsh-plugin-whale-pet')
