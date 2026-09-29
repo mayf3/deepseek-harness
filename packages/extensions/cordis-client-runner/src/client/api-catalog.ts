@@ -360,9 +360,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a Session already addressable through the Session Controller.',
       },
       {
-        signature: 'startSession(workspaceId?: WorkspaceId): void',
+        signature: 'startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void',
         description: 'Start a New Session flow and navigate to its Session; a creation the Host refuses is shown through the Workspace notice and leaves the selection as it was.',
-        parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
+        parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }, { name: 'options', description: 'initial content; existing text or attachments are preserved unless clearPreviousDraft is true.' }],
       },
       {
         signature: 'archiveSession(sessionId: SessionId, options?: { readonly stopActivity?: boolean }): Promise<void>',
@@ -580,6 +580,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionStateSource {\n    getSnapshot(): ConnectionState | undefined;\n    subscribe(listener: () => void): () => void;\n}',
   },
   {
+    name: 'DraftInitializationOptions',
+    declaration: 'export interface DraftInitializationOptions {\n    readonly prompt?: DraftInput;\n    readonly clearPreviousDraft?: boolean;\n}',
+  },
+  {
+    name: 'DraftInput',
+    declaration: 'export type DraftInput = string | DraftSnapshot;',
+  },
+  {
+    name: 'DraftReference',
+    declaration: 'export type DraftReference = Omit<Occurrence, \'occurrenceId\'>;',
+  },
+  {
+    name: 'DraftSnapshot',
+    declaration: 'export interface DraftSnapshot {\n    readonly text: string;\n    readonly references: readonly DraftReference[];\n}',
+  },
+  {
     name: 'EntryKeyOf',
     declaration: 'export type EntryKeyOf<K extends keyof SlotMap & string> = SlotMap[K] extends {\n    kind: \'keyed\';\n    keyProps: infer P extends object;\n} ? keyof P & string : string;',
   },
@@ -708,6 +724,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ObservableSnapshot<T> {\n    getSnapshot(): T;\n    subscribe(fn: () => void): () => void;\n}',
   },
   {
+    name: 'Occurrence',
+    declaration: 'export interface Occurrence {\n    readonly occurrenceId: number;\n    readonly source: string;\n    readonly ref: string;\n    readonly offset: number;\n    readonly length: number;\n    readonly label: string;\n    readonly appearance?: ReferenceInsert[\'appearance\'];\n    readonly clipboardText: string;\n    readonly invalid?: boolean;\n}',
+  },
+  {
     name: 'OpenState',
     declaration: 'export type OpenState = \'cold\' | \'loading\' | \'open\' | \'error\';',
   },
@@ -790,6 +810,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'QueueAction',
     declaration: 'export type QueueAction = {\n    readonly kind: \'edit\';\n    readonly content: readonly TextBlock[];\n} | {\n    readonly kind: \'remove\';\n} | {\n    readonly kind: \'steer\';\n};',
+  },
+  {
+    name: 'ReferenceInsert',
+    declaration: 'export interface ReferenceInsert {\n    readonly source: string;\n    readonly ref: string;\n    readonly label: string;\n    readonly appearance?: \'session\' | \'file\' | \'folder\';\n    readonly clipboardText: string;\n}',
   },
   {
     name: 'RegisterFactory',
@@ -966,6 +990,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SnapshotSelectorHook',
     declaration: 'export type SnapshotSelectorHook<T> = <S>(sel: (s: T) => S, eq?: (a: S, b: S) => boolean) => S;',
+  },
+  {
+    name: 'StartSessionOptions',
+    declaration: 'export type StartSessionOptions = DraftInitializationOptions;',
   },
   {
     name: 'StoreDecl',

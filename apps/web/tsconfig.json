@@ -73,6 +73,7 @@
     "tests/plugin-install-registry.e2e.ts",
     "tests/plugin-install-github.e2e.ts",
     "tests/client-plugin-live.e2e.ts",
+    "tests/draft-initialization.e2e.ts",
     "tests/settings-chrome.e2e.ts",
     "tests/session-log-upload.e2e.ts",
     "tests/caption-overlays.e2e.ts",

@@ -354,8 +354,8 @@ describe('scenario H: backspace breaks the token', () => {
   })
 })
 
-describe('scenario: reference decoration lights up when the lexicon settles', () => {
-  it('a typed /name token gains the text-ref mark without further input once the roll goes hot', async () => {
+describe('scenario: reference decoration follows the current lexicon', () => {
+  it('keeps provisional slash decoration for a matching catalog and removes it for an empty catalog', async () => {
     let roll: readonly string[] | undefined
     let notify: (() => void) | undefined
     const b = await scopedBench((inputTriggers) => {
@@ -370,9 +370,8 @@ describe('scenario: reference decoration lights up when the lexicon settles', ()
         },
       } as never)
     })
-    // Typed before the catalog settled: a plain token, no decoration.
     b.type('/deploy now')
-    expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull()
+    expect(b.view.container.querySelector('[data-composer-text-ref]')?.textContent).toBe('/deploy')
     // The catalog settles (ui-skill's settle path fires the same notification).
     act(() => {
       roll = ['deploy']
@@ -381,6 +380,13 @@ describe('scenario: reference decoration lights up when the lexicon settles', ()
     act(() => { b.shell.editor.update(() => {}, { discrete: true }) }) // flush the queued re-scan
     const mark = b.view.container.querySelector('[data-composer-text-ref]')
     expect(mark?.textContent).toBe('/deploy')
+    act(() => {
+      roll = []
+      notify?.()
+    })
+    act(() => { b.shell.editor.update(() => {}, { discrete: true }) })
+    expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull()
+    expect(b.shell.snapshot.draft).toBe('/deploy now')
   })
 })
 

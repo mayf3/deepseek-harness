@@ -192,7 +192,7 @@ describe('Conversation inject API', () => {
     const b = await bench()
     const { injected } = b.conversationApi(ROOT)
     expect(b.sessionFake.loadOlder).not.toHaveBeenCalled()
-    expect(Object.keys(injected)).toEqual(['hooks', 'bindDraftMirror', 'openView'])
+    expect(Object.keys(injected)).toEqual(['hooks', 'bindDraftPersistence', 'openView'])
     expect(b.viewSource(ROOT).getSnapshot()).toEqual([])
     await b.runtime.dispose()
   })
@@ -364,7 +364,7 @@ describe('Conversation inject API', () => {
     expect(state.getSnapshot().draft).toBe('retry me')
 
     const mirrored: string[] = []
-    const unbind = injected.bindDraftMirror(text => mirrored.push(text))
+    const unbind = injected.bindDraftPersistence(draft => mirrored.push(draft.text))
     actions.setDraft('mirrored text')
     expect(mirrored).toEqual(['mirrored text'])
     unbind()
@@ -541,6 +541,25 @@ describe('Conversation inject API', () => {
     expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
     await vi.waitFor(() => { expect(targetUpload).toHaveBeenCalledOnce() })
     expect(b.inputApi(other).state.getSnapshot().attachmentIds).toHaveLength(1)
+    await b.runtime.dispose()
+  })
+
+  it('carries structured references through Workspace selection without flattening them', async () => {
+    const b = await bench()
+    const draft = {
+      text: 'carry @one.ts',
+      references: [{ source: 'reference', ref: '@one.ts', label: 'one.ts', appearance: 'file' as const,
+        clipboardText: '@one.ts', offset: 6, length: 7 }],
+    }
+    b.inputApi(ROOT).actions.setDraft(draft)
+    const other = 'structured-target' as SessionId
+    await b.runtime.sessions.add({ id: other, session: {} })
+    b.connectWorkspace.mockResolvedValueOnce(other)
+    await b.residentApi(ROOT).selectWorkspace('workspace-structured' as WorkspaceId)
+    expect(b.inputApi(other).state.getSnapshot().draft).toBe(draft.text)
+    expect(b.inputApi(other).state.getSnapshot().occurrences).toMatchObject(draft.references)
+    expect(b.inputApi(ROOT).state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(ROOT).state.getSnapshot().occurrences).toEqual([])
     await b.runtime.dispose()
   })
 

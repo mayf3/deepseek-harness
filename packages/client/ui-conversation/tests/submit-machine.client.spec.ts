@@ -362,8 +362,9 @@ describe('decorations: scanTextRefs', () => {
     ])
   })
 
-  it('a cold (empty) lexicon scans nothing lexicon-based', () => {
-    expect(scanTextRefs('/goal x', new Map())).toEqual([])
+  it('matches slash syntax while the catalog is unavailable and narrows when it arrives', () => {
+    expect(scanTextRefs('/goal x', new Map())).toEqual([{ start: 0, end: 5, trigger: '/' }])
+    expect(scanTextRefs('/goal x', new Map([['/', []]]))).toEqual([])
   })
 
   it('recognizes directory paths independently of the dynamic lexicon', () => {

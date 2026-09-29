@@ -20,7 +20,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
-  DraftAttachmentId, DraftAttachmentSerializationResult, InputTriggerController,
+  DraftAttachmentId, DraftAttachmentSerializationResult, DraftInitializationOptions, DraftInitializationResult, InputTriggerController,
   SessionInputResolver, SessionInput, SubmitOutcome,
 } from '../contract/input.ts'
 import type { ComposerKeyboard } from '../contract/draft-editor.ts'
@@ -28,6 +28,7 @@ import type { InputSubmitMode } from '../contract/composer-submission.ts'
 import type { PopupDismissFace } from './facade.ts'
 import { SessionInputShell } from './facade.ts'
 import { reportMessageSubmission } from './submission-analytics.ts'
+import { readConversationDraft } from '../stores.ts'
 
 /** Structural command face for per-session popup resolution. */
 interface CommandFace {
@@ -79,6 +80,13 @@ export class InputHub implements SessionInputResolver {
       throw new Error('conversation.input.for requires a retained Session scope')
     }
     return this.shellFor(binding)
+  }
+
+  requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions): DraftInitializationResult {
+    if (this.sessions().binding(binding.sessionId) !== binding) {
+      throw new Error('conversation.input.requestDraftInitialization requires a retained Session binding')
+    }
+    return this.shellFor(binding).requestDraftInitialization(options)
   }
 
   /**
@@ -157,6 +165,13 @@ export class InputHub implements SessionInputResolver {
         for (const attachmentId of drafts) conversation?.releaseDraftAttachment(attachmentId)
       }
     }, 'conversation.input: session shell')
+    actx.inject(['inputTriggers'], (scope) => {
+      scope.effect(() => {
+        shell.refreshLexiconSubscription()
+        return () => { shell.refreshLexiconSubscription() }
+      }, 'conversation.input: reference catalogs')
+    })
+    shell.setDraft(readConversationDraft(binding.sessionId))
     return shell
   }
 
