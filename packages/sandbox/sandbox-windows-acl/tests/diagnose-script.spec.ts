@@ -402,14 +402,14 @@ describe.skipIf(!isWin32 || !pwshAvailable())('diagnose-windows-sandbox-acl scri
       expect(grant.code, `${grant.output}\n${aclLines(target).join('\n')}`).toBe(2)
       expect(grant.output, grant.output).toContain('GRANT_FAILED')
       expect(grant.output).toContain('GRANTED=0 REFUSED=1')
-      expect(aclLines(target).join('\n')).toContain('(DENY)(WO)')
+      // Rollback must preserve the complete descriptor.
+      expect(sddlOf(target)).toBe(before)
       expect(reports(grant)).toEqual(containingArray([
         containingObject({ kind: 'action', operation: 'grant_dacl', status: 'completed' }),
         containingObject({ kind: 'verification', operation: 'grant', status: 'failed', details: containingObject({ recovery: containingString('-Restore') }) }),
         containingObject({ kind: 'verification', operation: 'restore', status: 'verified' }),
         containingObject({ kind: 'summary', details: containingObject({ automaticRollback: true, granted: 0, restored: 1, rollback: 'verified', rollbackCommands: [], nextAction: 'stop' }) }),
       ]))
-      expect(sddlOf(target)).toBe(before)
       const transcript = reports(grant)
         .filter(entry => entry.path === target && entry.kind !== 'observation')
         .map(entry => `${entry.kind} ${entry.operation} ${entry.status} path={{target}}: ${entry.reason.replaceAll(meSid, '{{caller_sid}}')}`)

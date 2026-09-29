@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi, type MockInstance } from 'vitest'
 import {
   cliGateOptions,
   ciWorkerEnvironment,
@@ -28,12 +28,14 @@ afterEach(() => vi.unstubAllEnvs())
 
 /**
  * Capture output a gate streams through runGate's streamOutput path.
+ * @param onOutput - optional observer called after each captured chunk.
  * @returns the accumulated chunks and the stdout spy to restore in finally.
  */
-function captureStreamedOutput(): { writes: string[]; write: MockInstance } {
+function captureStreamedOutput(onOutput?: (chunks: readonly string[]) => void): { writes: string[]; write: MockInstance } {
   const writes: string[] = []
   const write = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
     writes.push(String(chunk))
+    onOutput?.(writes)
     return true
   })
   return { writes, write }
@@ -533,6 +535,44 @@ describe('gate graph validation', () => {
     expect(results.some(result => result.status === 'skipped')).toBe(false)
   })
 
+  it.each(['ci-windows-complete', 'ci-windows-observational-ready'] as const)(
+    'provisions the locked Electron binary before built smoke in %s', (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      const install = gates.find(gate => gate.id === 'electron-install')
+      expect(install).toMatchObject({
+        command: process.execPath,
+        args: ['/private/pnpm.cjs', '--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron'],
+        env: { ELECTRON_GET_USE_PROXY: '1' },
+      })
+      expect(gates.find(gate => gate.id === 'built-bin-smoke')?.needs).toContain('electron-install')
+      expect(gates.filter(gate => gate.id !== 'electron-install').every(gate => gate.env?.ELECTRON_GET_USE_PROXY === undefined)).toBe(true)
+    },
+  )
+
+  it.each(['ci-windows-complete', 'ci-windows-observational-ready'] as const)(
+    'keeps failed Electron provisioning visible without stopping unrelated diagnostics in %s', async (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      const attempted: string[] = []
+      const results = await runGates(gates, 8, async (subject) => {
+        attempted.push(subject.id)
+        return resultFor(subject, subject.id === 'electron-install' ? 'failed' : 'passed')
+      })
+      expect(results.filter(result => result.status === 'failed').map(result => result.gate.id)).toEqual(['electron-install'])
+      expect(attempted).not.toContain('built-bin-smoke')
+      expect(results.find(result => result.gate.id === 'built-bin-smoke')?.status).toBe('skipped')
+      expect(results.find(result => result.gate.id === 'doc-graphs')?.status).toBe('passed')
+      if (mode === 'ci-windows-complete') {
+        expect(results.filter(result => result.status === 'failed' && !result.gate.allowFailure)).toEqual([])
+      }
+    },
+  )
+
+  it.each(['ci-primary', 'ci-linux-primary', 'ci-artifacts', 'ci-windows-blocking'] as const)(
+    'does not provision the observational Electron dependency in %s', (mode) => {
+      expect(withPnpmEntrypoint(() => gatesForMode(mode)).some(gate => gate.id === 'electron-install')).toBe(false)
+    },
+  )
+
   it('leaves the lane test budget to the inherited environment on both coverage gates', () => {
     // vitest.config.ts reads DSH_COVERAGE_TEST_TIMEOUT_MS per inline project
     // (coverageTestTimeoutOptions); a gate argument would add a second owner.
@@ -935,29 +975,41 @@ describe('fail-fast scheduling', () => {
   })
 
   it.skipIf(process.platform === 'win32')('marks a zero-exit child as aborted when the signal fired', async () => {
-    const { writes, write } = captureStreamedOutput()
+    const marker = 'signal-trap-armed'
+    const armed = Promise.withResolvers<undefined>()
+    const controller = new AbortController()
+    let promise: Promise<GateResult> | undefined
+    const { write } = captureStreamedOutput((chunks) => {
+      if (chunks.join('').split('\n').slice(0, -1).includes(marker)) armed.resolve(undefined)
+    })
+    const cleanup = async (): Promise<void> => {
+      controller.abort()
+      try { await promise } finally { write.mockRestore() }
+    }
+    onTestFinished(cleanup)
     try {
-      const controller = new AbortController()
-      const child = gate('traps-signal', {
-        args: ['-e', "process.stdout.write('ready\\n'); process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)"],
-        streamOutput: true,
-      })
-      const promise = runGate(child, controller.signal)
-      // Wait for the child to register its SIGTERM trap before aborting, so
-      // the signal is caught and the child really exits zero.
-      const deadline = Date.now() + 5000
-      while (!writes.join('').includes('ready') && Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
+      // Readiness belongs after native signal-handler registration.
+      const script = [
+        "process.on('SIGTERM', () => process.exit(0))",
+        `process.stdout.write(${JSON.stringify(`${marker}\n`)})`,
+        'setInterval(() => {}, 1000)',
+      ].join(';')
+      const child = gate('traps-signal', { args: ['-e', script], streamOutput: true })
+      promise = runGate(child, controller.signal)
+      await Promise.race([
+        armed.promise,
+        promise.then((result) => { throw new Error(`signal fixture exited before readiness: ${formatGateResultReason(result)}`) }),
+      ])
       controller.abort()
       const result = await promise
 
       // The child trapped the signal and exited zero; the drain must not
       // report this gate passed, so the raw outcome carries the abort mark.
-      expect(result.status).toBe('passed')
-      expect(result.aborted).toBe(true)
+      expect(result, formatGateResultReason(result)).toMatchObject({
+        status: 'passed', exitCode: 0, signalCode: null, aborted: true,
+      })
     } finally {
-      write.mockRestore()
+      await cleanup()
     }
   })
 

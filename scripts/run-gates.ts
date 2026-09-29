@@ -610,6 +610,14 @@ function ciWindowsCompleteGates(): Gate[] {
 function ciWindowsObservationalGates(): Gate[] {
   const predecessors = [
     ...ciStaticGates({ ownsBuild: true }),
+    // Electron's lazy download must finish before Vitest removes ambient proxies.
+    {
+      id: 'electron-install',
+      label: 'Electron binary',
+      displayCommand: 'pnpm --filter @deepseek-ai/dsh-desktop exec install-electron',
+      ...pnpmInvocation(['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron']),
+      env: { ELECTRON_GET_USE_PROXY: '1' },
+    },
     // Linux owns required lint and snapshots; Windows omits those duplicates.
     pnpmScript('duplication', 'duplication'),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
@@ -622,7 +630,7 @@ function ciWindowsObservationalGates(): Gate[] {
   return [
     ...predecessors,
     {
-      ...builtBinSmokeGate(),
+      ...builtBinSmokeGate(['build', 'electron-install']),
       // This smoke starts real application children with bounded startup
       // deadlines. Let other Windows processes settle before measuring startup.
       after: predecessors.map(gate => gate.id),
