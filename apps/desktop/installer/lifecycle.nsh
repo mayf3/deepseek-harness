@@ -74,7 +74,6 @@ Function InstallerProgressShow
 FunctionEnd
 
 Function .onInstFailed
-    Call dshCleanupDirectories
     MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_FAILED)" /SD IDOK
     SetErrorLevel 2
     Quit

@@ -16,7 +16,7 @@ Var dshNewMoved
   !endif
   ${If} $R0 != 0
     DetailPrint $R1
-    Call dshCleanupDirectories
+    Call dshRollbackDirectories
     !ifmacrodef customInstallerExtractFailed
       !insertmacro customInstallerExtractFailed "${FILE}"
     !else
@@ -31,7 +31,6 @@ Var dshNewMoved
   StrCpy $dshFinalDirectory $INSTDIR
   System::Call 'ole32::CoCreateGuid(g .r0) i .r1'
   ${If} $1 != 0
-    Call dshCleanupDirectories
     SetErrorLevel 2
     Quit
   ${EndIf}
@@ -42,7 +41,6 @@ Var dshNewMoved
   ClearErrors
   CreateDirectory $dshNewDirectory
   ${If} ${Errors}
-    Call dshCleanupDirectories
     SetErrorLevel 2
     Quit
   ${EndIf}
