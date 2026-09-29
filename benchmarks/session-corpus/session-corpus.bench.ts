@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runBuiltBenchmarkWorker } from '../support/built-worker.ts'
 import { PERFORMANCE_BUDGET_HEADROOM } from '../support/calibration.ts'
 import { anchorShape, ANCHOR_COUNT, sessionShape } from './corpus-shape.ts'
+import { subagentRank } from './synthetic-corpus.ts'
 import type {
   AnchorsReport,
   ForkReport,
@@ -17,28 +18,39 @@ import type {
   SessionCorpusReport,
 } from './session-corpus.worker.ts'
 
-/** Session counts: search and fork share the query corpus; the list corpus is the largest that fits the time limit. */
-const CORPUS = { query: 1_000, list: 3_000 } as const
+/**
+ * Sessions per corpus. Search and fork use separate roots, so fork children never reach the search index;
+ * the list corpus is the largest that keeps this file within its time limit.
+ */
+const CORPUS = { search: 1_000, fork: 1_000, list: 3_000 } as const
 /** Upper bound on this file's hosted CI wall time, from seeding through the last case. */
 const FILE_LIMIT_MS = 300_000
+/** Per-child deadline: an endpoint slower than its budget still reports a measurement instead of a kill. */
+const WORKER_TIMEOUT_MS = FILE_LIMIT_MS
 /** Fresh processes per list and fork-strata scenario; the median enforces each budget. */
 const ATTEMPTS = { list: 3, fork: 3 } as const
-/** Midpoints of ten equal length strata of the query corpus, then its p99 Session. */
-const FORK_STRATA = [50, 150, 250, 350, 450, 550, 650, 750, 850, 950] as const
-const FORK_P99_RANK = 990
-/** The longest Session; one sample, because one fork takes about 20 s on standard hosted CI. */
-const FORK_LONGEST_RANK = 999
-const WORKER_TIMEOUT_MS = 240_000
 /** Concurrent anchor-preparation processes; standard hosted runners have two CPUs. */
 const PREPARATION_PROCESSES = 2
+/** Midpoints of ten equal length strata of the fork corpus. */
+const FORK_STRATA = Array.from({ length: 10 }, (_, stratum) => Math.floor(((stratum + 0.5) * CORPUS.fork) / 10))
+/** The highest top-level rank at the measured p99; forking a subagent child adds a lineage lookup. */
+const FORK_P99_RANK = topLevelRank(Math.ceil(0.99 * CORPUS.fork) - 1)
+/** The longest Session; one sample, because one fork takes about 20 s on standard hosted CI. */
+const FORK_LONGEST_RANK = CORPUS.fork - 1
 const WORKER = join(import.meta.dirname, '..', '.dsh-build', 'session-corpus', 'session-corpus.worker.js')
 
-/**
- * Standard two-CPU hosted CI expectations, rounded above the higher recorded median of the EPYC 7763 and
- * EPYC 9V74 runners before variance headroom. Recorded 7763 / 9V74 medians: list 2,317.8 / 2,204.5,
- * 3,228.7 / 2,633.6, and 2,636.4 / 2,235.1 ms; search 144,359 / 135,065 and 3,417 / 2,704 ms;
- * fork 94.0 / 73.5, 1,522.7 / 1,485.5, and 18,871.9 / 20,326.7 ms.
- */
+/** Higher recorded median of the standard EPYC 7763 and EPYC 9V74 hosted runners, per budgeted endpoint. */
+const RECORDED_CI_MS = {
+  listBoot: 2_317.8,
+  listFirst: 3_228.7,
+  listRepeat: 2_636.4,
+  searchFirst: 144_359,
+  searchRepeat: 3_417,
+  forkStratumMedian: 94,
+  forkP99: 1_522.7,
+  forkLongest: 20_326.7,
+} as const
+/** Hosted CI expectations, rounded above {@link RECORDED_CI_MS} before variance headroom. */
 const EXPECTED_CI_MS = {
   listBoot: 2_400,
   listFirst: 3_300,
@@ -48,16 +60,32 @@ const EXPECTED_CI_MS = {
   forkStratumMedian: 100,
   forkP99: 1_600,
   forkLongest: 20_400,
-} as const
-
-function budget(expectedCiMs: number): number {
-  return Math.ceil(expectedCiMs * PERFORMANCE_BUDGET_HEADROOM)
-}
+} as const satisfies Record<keyof typeof RECORDED_CI_MS, number>
+/** Higher recorded peak RSS of the two runner models; memory takes headroom but no time scale. */
+const RECORDED_CI_PEAK_RSS_MB = { list: 742.2, search: 1_197.8, fork: 737.8 } as const
+const EXPECTED_CI_PEAK_RSS_MB = {
+  list: 750,
+  search: 1_200,
+  fork: 750,
+} as const satisfies Record<keyof typeof RECORDED_CI_PEAK_RSS_MB, number>
 
 type CorpusName = keyof typeof CORPUS
 
-async function run<Report extends SessionCorpusReport>(args: readonly string[], timeoutMs = WORKER_TIMEOUT_MS): Promise<Report> {
-  const outcome = await runBuiltBenchmarkWorker<Report>({ worker: WORKER, args, timeoutMs, exposeGc: true })
+function topLevelRank(rank: number): number {
+  return subagentRank(rank) ? rank - 1 : rank
+}
+
+function budget(expected: number): number {
+  return Math.ceil(expected * PERFORMANCE_BUDGET_HEADROOM)
+}
+
+/** Test deadline for sequential workers; it outlasts their deadlines, so every child is reaped before cleanup. */
+function serialDeadline(workers: number): number {
+  return workers * WORKER_TIMEOUT_MS + 30_000
+}
+
+async function run<Report extends SessionCorpusReport>(args: readonly string[]): Promise<Report> {
+  const outcome = await runBuiltBenchmarkWorker<Report>({ worker: WORKER, args, timeoutMs: WORKER_TIMEOUT_MS, exposeGc: true })
   if (outcome.report === undefined) {
     const stderr = outcome.stderr.trim().split('\n').slice(-20).join('\n')
     throw new Error(`session-corpus worker ${args[1] ?? ''} failed: exit=${String(outcome.exitCode)}, `
@@ -104,7 +132,7 @@ function environment() {
 }
 
 describe('Session corpus workload', () => {
-  it('is at least the measured distribution at every rank of both corpora', () => {
+  it('is at least the measured distribution at every rank of every corpus', () => {
     for (const count of Object.values(CORPUS)) {
       const shapes = Array.from({ length: count }, (_, rank) => sessionShape(rank, count))
       expect(new Set(shapes.map(shape => shape.anchor)).size).toBe(ANCHOR_COUNT)
@@ -116,50 +144,61 @@ describe('Session corpus workload', () => {
         expect(current?.logicalBytes).toBeGreaterThanOrEqual(previous?.logicalBytes ?? 0)
       }
     }
-    expect(() => sessionShape(CORPUS.query, CORPUS.query)).toThrow('outside')
+    expect(() => sessionShape(CORPUS.fork, CORPUS.fork)).toThrow('outside')
   })
 
-  it('accepts recorded hosted medians and rejects medians a quarter above their expectation', () => {
-    const recorded = [
-      [median([2_317.8, 2_322.2, 2_264.6]), EXPECTED_CI_MS.listBoot],
-      [median([3_294.7, 3_228.7, 3_144.8]), EXPECTED_CI_MS.listFirst],
-      [144_359, EXPECTED_CI_MS.searchFirst],
-      [20_326.7, EXPECTED_CI_MS.forkLongest],
-      [median([92.5, 94, 106.7]), EXPECTED_CI_MS.forkStratumMedian],
-    ] as const
-    for (const [value, expected] of recorded) {
-      expectWithinBudget(value, budget(expected))
+  it('forks top-level Sessions at the strata midpoints, the measured p99, and the maximum', () => {
+    const ranks = [...FORK_STRATA, FORK_P99_RANK, FORK_LONGEST_RANK]
+    expect(ranks.filter(subagentRank)).toEqual([])
+    expect(FORK_STRATA).toEqual([50, 150, 250, 350, 450, 550, 650, 750, 850, 950])
+    expect(sessionShape(FORK_P99_RANK, CORPUS.fork).events).toBe(7_229)
+    expect(sessionShape(FORK_LONGEST_RANK, CORPUS.fork).events).toBe(84_467)
+  })
+
+  it('accepts every recorded hosted median and rejects one a quarter above its expectation', () => {
+    const endpoints = [
+      ...(Object.keys(EXPECTED_CI_MS) as (keyof typeof EXPECTED_CI_MS)[])
+        .map(key => [RECORDED_CI_MS[key], EXPECTED_CI_MS[key]] as const),
+      ...(Object.keys(EXPECTED_CI_PEAK_RSS_MB) as (keyof typeof EXPECTED_CI_PEAK_RSS_MB)[])
+        .map(key => [RECORDED_CI_PEAK_RSS_MB[key], EXPECTED_CI_PEAK_RSS_MB[key]] as const),
+    ]
+    expect(endpoints).toHaveLength(11)
+    for (const [recorded, expected] of endpoints) {
+      expect(recorded).toBeLessThanOrEqual(expected)
+      expectWithinBudget(recorded, budget(expected))
       expect(() => expectWithinBudget(Math.ceil(expected * 1.26), budget(expected))).toThrow()
     }
-    expect(budget(EXPECTED_CI_MS.forkLongest)).toBe(25_500)
   })
 })
 
 describe('Session corpus operations', () => {
   let scratch = ''
   let started = 0
-  let seeded: SeedReport | undefined
-  const root = (name: CorpusName): string => join(scratch, `corpus-${String(CORPUS[name])}`)
+  let seeded: readonly SeedReport[] = []
+  const root = (name: CorpusName): string => join(scratch, `corpus-${name}`)
 
   beforeAll(async () => {
     started = performance.now()
     scratch = await mkdtemp(join(tmpdir(), 'dsh-session-corpus-bench-'))
     const prepared = await Promise.all(anchorGroups().map(group => run<AnchorsReport>([scratch, 'anchors', ...group.map(String)])))
-    seeded = await run<SeedReport>([scratch, 'seed', String(CORPUS.query), String(CORPUS.list)])
-    console.log(JSON.stringify({ benchmark: 'session-corpus/seed', prepared, ...seeded, environment: environment() }))
-  }, WORKER_TIMEOUT_MS)
+    seeded = await Promise.all((Object.keys(CORPUS) as CorpusName[])
+      .map(name => run<SeedReport>([scratch, 'seed', name, String(CORPUS[name])])))
+    console.log(JSON.stringify({ benchmark: 'session-corpus/seed', prepared, seeded, environment: environment() }))
+  }, serialDeadline(2))
 
   afterAll(async () => {
     if (scratch !== '') await rm(scratch, { recursive: true, force: true })
   })
 
   it('writes corpora at least as long as the measured distribution', () => {
-    for (const count of [CORPUS.query, CORPUS.list]) {
-      const facts = seeded?.corpora.find(corpus => corpus.sessions === count)
+    expect(seeded.map(report => report.name).sort()).toEqual(Object.keys(CORPUS).sort())
+    for (const { name, corpus } of seeded) {
+      const count = CORPUS[name as CorpusName]
       const shapes = Array.from({ length: count }, (_, rank) => sessionShape(rank, count))
-      expect(facts?.distinctBodies).toBe(ANCHOR_COUNT)
-      expect(facts?.events).toBeGreaterThanOrEqual(shapes.reduce((sum, shape) => sum + shape.events, 0))
-      expect(facts?.logicalBytes).toBeGreaterThanOrEqual(shapes.reduce((sum, shape) => sum + shape.logicalBytes, 0))
+      expect(corpus.sessions).toBe(count)
+      expect(corpus.distinctBodies).toBe(ANCHOR_COUNT)
+      expect(corpus.events).toBeGreaterThanOrEqual(shapes.reduce((sum, shape) => sum + shape.events, 0))
+      expect(corpus.logicalBytes).toBeGreaterThanOrEqual(shapes.reduce((sum, shape) => sum + shape.logicalBytes, 0))
     }
   })
 
@@ -168,6 +207,7 @@ describe('Session corpus operations', () => {
       bootMs: budget(EXPECTED_CI_MS.listBoot),
       firstMs: budget(EXPECTED_CI_MS.listFirst),
       repeatMs: budget(EXPECTED_CI_MS.listRepeat),
+      peakRssMb: budget(EXPECTED_CI_PEAK_RSS_MB.list),
     }
     const reports: ListReport[] = []
     for (let attempt = 0; attempt < ATTEMPTS.list; attempt++) {
@@ -185,28 +225,35 @@ describe('Session corpus operations', () => {
     expectWithinBudget(median(samples.bootMs), budgets.bootMs)
     expectWithinBudget(median(samples.firstMs), budgets.firstMs)
     expectWithinBudget(median(samples.repeatMs), budgets.repeatMs)
-  })
+    expectWithinBudget(median(samples.peakRssMb), budgets.peakRssMb)
+  }, serialDeadline(ATTEMPTS.list))
 
-  it(`searches ${String(CORPUS.query)} Sessions with a cold and then a built content index`, async () => {
-    const budgets = { firstMs: budget(EXPECTED_CI_MS.searchFirst), repeatMs: budget(EXPECTED_CI_MS.searchRepeat) }
+  it(`searches ${String(CORPUS.search)} Sessions with a cold and then a built content index`, async () => {
+    const budgets = {
+      firstMs: budget(EXPECTED_CI_MS.searchFirst),
+      repeatMs: budget(EXPECTED_CI_MS.searchRepeat),
+      peakRssMb: budget(EXPECTED_CI_PEAK_RSS_MB.search),
+    }
     // One sample: the cold index build dominates this file's time.
-    const report = await run<SearchReport>([root('query'), 'search'])
+    const report = await run<SearchReport>([root('search'), 'search'])
     console.log(JSON.stringify({ benchmark: 'session-corpus/search', report, budgets, environment: environment() }))
     expectWithinBudget(report.firstMs, budgets.firstMs)
     expectWithinBudget(report.repeatMs, budgets.repeatMs)
-  }, WORKER_TIMEOUT_MS)
+    expectWithinBudget(report.memory.peakRssMb, budgets.peakRssMb)
+  }, serialDeadline(1))
 
-  it(`forks Sessions across the length distribution of ${String(CORPUS.query)} Sessions`, async () => {
+  it(`forks Sessions across the length distribution of ${String(CORPUS.fork)} Sessions`, async () => {
     const budgets = {
       stratumMedianMs: budget(EXPECTED_CI_MS.forkStratumMedian),
       p99Ms: budget(EXPECTED_CI_MS.forkP99),
       longestMs: budget(EXPECTED_CI_MS.forkLongest),
+      peakRssMb: budget(EXPECTED_CI_PEAK_RSS_MB.fork),
     }
     const reports: ForkReport[] = []
     for (let attempt = 0; attempt < ATTEMPTS.fork; attempt++) {
-      reports.push(await run<ForkReport>([root('query'), 'fork', ...[...FORK_STRATA, FORK_P99_RANK].map(String)]))
+      reports.push(await run<ForkReport>([root('fork'), 'fork', ...[...FORK_STRATA, FORK_P99_RANK].map(String)]))
     }
-    const longest = await run<ForkReport>([root('query'), 'fork', String(FORK_LONGEST_RANK)])
+    const longest = await run<ForkReport>([root('fork'), 'fork', String(FORK_LONGEST_RANK)])
     const forkMs = (report: ForkReport, rank: number): number => {
       const fork = report.forks.find(entry => entry.rank === rank)
       if (fork === undefined) throw new Error(`fork report omits rank ${String(rank)}`)
@@ -223,7 +270,8 @@ describe('Session corpus operations', () => {
     expectWithinBudget(median(samples.stratumMedianMs), budgets.stratumMedianMs)
     expectWithinBudget(median(samples.p99Ms), budgets.p99Ms)
     expectWithinBudget(samples.longestMs, budgets.longestMs)
-  }, WORKER_TIMEOUT_MS)
+    expectWithinBudget(Math.max(...samples.peakRssMb), budgets.peakRssMb)
+  }, serialDeadline(ATTEMPTS.fork + 1))
 
   it(`completes within ${String(FILE_LIMIT_MS / 60_000)} minutes`, () => {
     const elapsedMs = performance.now() - started

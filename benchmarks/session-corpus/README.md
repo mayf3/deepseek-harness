@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Measure the Web Host's Session list, content search, and fork over synthetic corpora in which every Session is at least as long as the same quantile of a measured local DSH corpus. Search and fork run over 1,000 Sessions; the list runs over 3,000, the largest count that keeps this file within five minutes on standard hosted CI. No case uses network services, recorded Sessions, or a browser.
+Measure the Web Host's Session list, content search, and fork over synthetic corpora in which every Session is at least as long as the same quantile of a measured local DSH corpus. Search and fork run over separate 1,000-Session corpora; the list runs over 3,000, the largest count that keeps this file within five minutes on standard hosted CI. Content search models a deployment that opts in with `openAt: first-search`; shipped profiles disable it. No case uses network services, recorded Sessions, or a browser.
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ Measure the Web Host's Session list, content search, and fork over synthetic cor
 
 ## Run
 
-From the repository root, build the libraries and workers with `pnpm run build:bench`, then run `pnpm exec vitest run --config vitest.bench.config.ts benchmarks/session-corpus/session-corpus.bench.ts`. Do not overlap timing runs with builds or other benchmarks. Seeding writes about 1.2 GB of Zstandard logs under a private temporary root, which the test removes after success or failure.
+From the repository root, build the libraries and workers with `pnpm run build:bench`, then run `pnpm exec vitest run --config vitest.bench.config.ts benchmarks/session-corpus/session-corpus.bench.ts`. Do not overlap timing runs with builds or other benchmarks. Seeding writes about 1.5 GB of Zstandard logs under a private temporary root, which the test removes after success or failure.
 
 The test reports every fresh-process sample, the CPU model, available parallelism, platform, and Node version, and enforces median budgets. Its last case fails when the file, including seeding, exceeds five minutes. A failed worker reports its exit, signal, timeout, and stderr tail. The required benchmark lane discovers this file automatically.
 

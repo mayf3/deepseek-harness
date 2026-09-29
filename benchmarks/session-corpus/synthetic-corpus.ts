@@ -306,6 +306,15 @@ export interface WrittenCorpus {
 }
 
 /**
+ * Tell whether one corpus rank stores a subagent child.
+ * @param rank - zero-based ascending length rank.
+ * @returns whether the rank is a child of the preceding rank.
+ */
+export function subagentRank(rank: number): boolean {
+  return rank % CHILD_EVERY === CHILD_EVERY - 1
+}
+
+/**
  * Build the stored header of one corpus rank.
  * @param rank - zero-based ascending length rank.
  * @param count - corpus size.
@@ -313,8 +322,9 @@ export interface WrittenCorpus {
  */
 export function corpusHeader(rank: number, count: number): SessionHeader {
   if (count % CREATION_STRIDE === 0) throw new Error('corpus size must be coprime with the creation stride')
-  const child = rank % CHILD_EVERY === CHILD_EVERY - 1
-  // Creation order is a fixed permutation of length rank, so list order does not track length.
+  const child = subagentRank(rank)
+  // Creation time is a fixed permutation of length rank. List order follows each body's last prompt time,
+  // which Sessions sharing an anchor also share.
   const createdAt = TIME_ZERO - (((rank * CREATION_STRIDE) % count) + 1) * 60_000
   return {
     version: SESSION_FORMAT_VERSION,

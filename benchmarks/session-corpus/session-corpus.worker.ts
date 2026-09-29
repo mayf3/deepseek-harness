@@ -52,10 +52,11 @@ export interface AnchorsReport {
   readonly prepareMs: number
 }
 
-/** Seeding report: facts of every corpus written from prepared anchors, and the time spent writing them. */
+/** Seeding report: facts of one named corpus written from prepared anchors, and the time spent writing it. */
 export interface SeedReport {
   readonly mode: 'seed'
-  readonly corpora: readonly (SyntheticCorpusFacts & { readonly writeMs: number })[]
+  readonly name: string
+  readonly corpus: SyntheticCorpusFacts
   readonly seedMs: number
 }
 
@@ -221,8 +222,8 @@ async function readPreparedAnchor(root: string, anchor: number): Promise<AnchorB
   }
 }
 
-/** Write every corpus from prepared anchors, rebinding each projection record to its Session header. */
-async function seed(root: string, counts: readonly number[]): Promise<SeedReport> {
+/** Write one named corpus from prepared anchors, rebinding each projection record to its Session header. */
+async function seed(root: string, name: string, count: number): Promise<SeedReport> {
   const started = performance.now()
   const writer = new SyntheticCorpusWriter()
   const records = new Map<number, CheckpointRecord>()
@@ -231,27 +232,23 @@ async function seed(root: string, counts: readonly number[]): Promise<SeedReport
     await writer.loadBody(join(root, 'bodies'), anchor, facts)
     records.set(anchor, record)
   }
-  const corpora: SeedReport['corpora'][number][] = []
-  for (const count of counts) {
-    const corpusRoot = join(root, `corpus-${String(count)}`)
-    const writeStarted = performance.now()
-    const written = await writer.writeCorpus(join(corpusRoot, 'sessions'), count)
-    // Sessions of one anchor share events, so their records differ only in the header-bound identity.
-    // Per-record documents are written directly: the domain's one-fsync-per-put chain would dominate seeding,
-    // and the list endpoint rejects a corpus whose rows the cache does not serve.
-    const table = join(corpusRoot, 'storages', projectionCacheDomainSpec.name, 'sessions')
-    await mkdir(table, { recursive: true })
-    await forEachConcurrently(written.sessions.length, async (rank) => {
-      const { header, anchor } = written.sessions[rank] as WrittenSession
-      const source = records.get(anchor) as CheckpointRecord
-      await writeFile(join(table, `${header.id}.json`), serializeRecord(projectionCacheDomainSpec.version, {
-        identity: { ...source.identity, createdAt: header.createdAt, cwd: header.cwd },
-        rows: source.rows,
-      }))
-    })
-    corpora.push({ ...written.facts, writeMs: performance.now() - writeStarted })
-  }
-  return { mode: 'seed', corpora, seedMs: performance.now() - started }
+  const corpusRoot = join(root, `corpus-${name}`)
+  const written = await writer.writeCorpus(join(corpusRoot, 'sessions'), count)
+  // Sessions of one anchor share events, so their records differ only in the header-bound identity.
+  // Per-record documents are written directly: the domain's one-fsync-per-put chain would dominate seeding,
+  // and the list endpoint rejects a corpus whose rows the cache does not serve.
+  const table = join(corpusRoot, 'storages', projectionCacheDomainSpec.name, 'sessions')
+  await mkdir(table, { recursive: true })
+  await forEachConcurrently(written.sessions.length, async (rank) => {
+    const { header, anchor } = written.sessions[rank] as WrittenSession
+    const source = records.get(anchor)
+    if (source === undefined) throw new Error(`corpus anchor ${String(anchor)} has no folded projection record`)
+    await writeFile(join(table, `${header.id}.json`), serializeRecord(projectionCacheDomainSpec.version, {
+      identity: { ...source.identity, createdAt: header.createdAt, cwd: header.cwd },
+      rows: source.rows,
+    }))
+  })
+  return { mode: 'seed', name, corpus: written.facts, seedMs: performance.now() - started }
 }
 
 async function measureList(root: string, expected: number): Promise<ListReport> {
@@ -335,27 +332,35 @@ assertBuiltBenchmarkRuntime(import.meta.url, Object.fromEntries([
   '@deepseek-ai/dsh-session-projection-cache',
 ].map(name => [name, import.meta.resolve(name)])))
 
+const USAGE = 'usage: session-corpus.worker.js <root> <anchors anchors...|seed name count|list count|search|fork ranks...>'
 const [root, mode, ...rest] = process.argv.slice(2)
-const numbers = rest.map(Number)
-if (root === undefined || numbers.some(value => !Number.isSafeInteger(value) || value < 0)) {
-  throw new Error('usage: session-corpus.worker.js <root> <anchors anchors...|seed counts...|list count|search|fork ranks...>')
+if (root === undefined) throw new Error(USAGE)
+
+function counts(values: readonly string[]): number[] {
+  const parsed = values.map(Number)
+  if (parsed.some(value => !Number.isSafeInteger(value) || value < 0)) throw new Error(USAGE)
+  return parsed
 }
+
 let report: SessionCorpusReport
 switch (mode) {
   case 'anchors':
-    report = await prepareAnchors(root, numbers)
+    report = await prepareAnchors(root, counts(rest))
     break
-  case 'seed':
-    report = await seed(root, numbers)
+  case 'seed': {
+    const [name, count] = rest
+    if (name === undefined || !/^[a-z]+$/.test(name) || count === undefined) throw new Error(USAGE)
+    report = await seed(root, name, counts([count])[0] as number)
     break
+  }
   case 'list':
-    report = await measureList(root, numbers[0] ?? 0)
+    report = await measureList(root, counts(rest)[0] ?? 0)
     break
   case 'search':
     report = await measureSearch(root)
     break
   case 'fork':
-    report = await measureFork(root, numbers)
+    report = await measureFork(root, counts(rest))
     break
   default:
     throw new Error(`unknown Session corpus mode ${String(mode)}`)
