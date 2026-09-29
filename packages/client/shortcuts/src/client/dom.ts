@@ -36,21 +36,23 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   let pendingTimer: number | undefined
   const reset = (): void => { fixed?.({ type: 'reset' }) }
   let deadKey = false
+  let dialogs: NodeListOf<HTMLElement> | undefined
   const blur = (): void => { deadKey = false; reset() }
   const containsModal = (node: Node): boolean => node instanceof Element
     && (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)
   const changedModals = (records: MutationRecord[]): void => {
+    if (records.length > 0) dialogs = undefined
     if (records.some(record => record.type === 'attributes'
       ? record.oldValue === 'dialog' || record.oldValue === 'true' || containsModal(record.target)
       : [...record.addedNodes, ...record.removedNodes].some(containsModal))) reset()
   }
-  const observer = fixed === undefined ? undefined : new MutationObserver(changedModals)
-  observer?.observe(document.documentElement, { childList: true, subtree: true,
+  const observer = new MutationObserver(changedModals)
+  observer.observe(document.documentElement, { childList: true, subtree: true,
     attributes: true, attributeFilter: ['role', 'aria-modal'], attributeOldValue: true })
   const capture = (): void => {
     if (pending) reset()
     window.clearTimeout(pendingTimer)
-    if (observer !== undefined) changedModals(observer.takeRecords())
+    changedModals(observer.takeRecords())
     pending = true
     // Native event listeners can yield a microtask checkpoint before bubbling.
     pendingTimer = window.setTimeout(() => {
@@ -67,8 +69,9 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
     const element = target instanceof Element ? target : document.activeElement
     const region = element?.closest('.xterm') ? 'terminal'
       : element?.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]') ? 'editable' : 'page'
-    const dialogs = document.querySelectorAll<HTMLElement>(modalSelector)
-    const top = [...dialogs].at(-1)
+    changedModals(observer.takeRecords())
+    dialogs ??= document.querySelectorAll<HTMLElement>(modalSelector)
+    const top = dialogs[dialogs.length - 1]
     const context: ShortcutContext = { region, modal: top === undefined ? null : top.dataset.shortcutModal ?? 'other', target: element }
     const guarded = composition.guards(event) || deadKey
       || event.getModifierState('AltGraph')
@@ -98,7 +101,8 @@ export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry
   return () => {
     pending = false
     window.clearTimeout(pendingTimer)
-    observer?.disconnect()
+    observer.disconnect()
+    dialogs = undefined
     composition.dispose()
     document.removeEventListener('compositionstart', reset, true)
     document.removeEventListener('compositionend', reset, true)

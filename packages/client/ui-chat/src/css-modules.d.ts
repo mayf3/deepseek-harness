@@ -4,3 +4,8 @@ declare module '*.module.css' {
 }
 
 declare module '*.css'
+
+declare module '*running-whale@2x.png' {
+  const url: string
+  export default url
+}

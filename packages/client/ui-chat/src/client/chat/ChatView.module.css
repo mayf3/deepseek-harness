@@ -155,10 +155,22 @@
 }
 
 .runningIcon {
+  position: relative;
   display: inline-flex;
   flex: none;
   width: calc(14px + var(--dsh-content-font-delta, 0px));
   height: calc(14px + var(--dsh-content-font-delta, 0px));
+  contain: strict;
+  overflow: hidden;
+}
+
+.runningWhaleAnimated {
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  mask: var(--dsh-whale-image) center / 100% 100% no-repeat;
+  mask-mode: alpha;
+  will-change: transform;
 }
 
 .runningWhaleStill {
@@ -168,6 +180,8 @@
 @media (prefers-reduced-motion: reduce) {
   .runningWhaleAnimated {
     display: none;
+    mask-image: none;
+    will-change: auto;
   }
 
   .runningWhaleStill {
