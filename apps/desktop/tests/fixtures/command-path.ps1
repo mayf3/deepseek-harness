@@ -54,8 +54,8 @@ try {
     [void](Apply 'install' $other)
     $newer = UserPath
     [void](Apply 'remove' $desktop)
-    Require ((UserPath) -eq $newer) 'old uninstaller removed the newer command'
-    Require ((State $other).managed) 'old uninstaller deleted newer ownership'
+    Require ((UserPath) -eq $newer) 'old installation removed the newer command'
+    Require ((State $other).managed) 'old installation deleted newer ownership'
     [IO.File]::WriteAllText((Join-Path $system 'dsh.exe'), 'fixture')
     $options.MachinePath = $system
     Require ((State $other).activeCommand -eq (Join-Path $system 'dsh.exe')) 'machine PATH precedence was hidden'

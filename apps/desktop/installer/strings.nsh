@@ -55,7 +55,3 @@ LangString INSTALLER_EXTRACT_UNSAVED ${LANG_ENGLISH} "The full report could not 
 LangString INSTALLER_EXTRACT_UNSAVED ${LANG_SIMPCHINESE} "无法保存完整错误报告，请使用“复制错误信息”保留。"
 LangString INSTALLER_EXTRACT_COPIED ${LANG_ENGLISH} "Error details were copied to the clipboard."
 LangString INSTALLER_EXTRACT_COPIED ${LANG_SIMPCHINESE} "错误信息已复制到剪贴板。"
-LangString INSTALLER_DSH_COMMAND ${LANG_ENGLISH} "Add dsh command to PATH"
-LangString INSTALLER_DSH_COMMAND ${LANG_SIMPCHINESE} "将 dsh 命令添加到 PATH"
-LangString INSTALLER_DSH_COMMAND_FAILED ${LANG_ENGLISH} "Desktop was installed, but the dsh command could not be added. Open Manage dsh Command in the application to retry."
-LangString INSTALLER_DSH_COMMAND_FAILED ${LANG_SIMPCHINESE} "Desktop 已安装，但无法添加 dsh 命令。请在应用中打开“管理 dsh 命令”重试。"

@@ -12,7 +12,6 @@ import { resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './des
 import { preparePrimaryRuntime } from './prepare-primary-runtime.ts'
 import { prepareDesktopCli } from './prepare-cli.ts'
 import { prepareCommandLink } from './prepare-command-link.ts'
-import { en, zh } from '../src/locale.ts'
 
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
 const RUNTIME_ROOT = BUILD_PATHS.runtime
@@ -61,8 +60,6 @@ async function main(): Promise<void> {
   if (macosMinimumVersion !== undefined) prepareCommandLink(join(RUNTIME_ROOT, 'cli'), arch, macosMinimumVersion)
   cpSync(join(import.meta.dirname, '..', 'lib', 'command-manager-entry.js'), join(RUNTIME_ROOT, 'cli', 'command-manager.js'))
   cpSync(join(import.meta.dirname, 'command-path.ps1'), join(RUNTIME_ROOT, 'cli', 'command-path.ps1'))
-  cpSync(join(import.meta.dirname, 'command-installer.ps1'), join(RUNTIME_ROOT, 'cli', 'command-installer.ps1'))
-  writeFileSync(join(RUNTIME_ROOT, 'cli', 'command-messages.json'), JSON.stringify({ en, zh }) + '\n')
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'prepare:primary-runtime',
     () => preparePrimaryRuntime({ deferSmoke: values['defer-primary-runtime-smoke'] }))
 }

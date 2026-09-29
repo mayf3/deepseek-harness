@@ -45,11 +45,6 @@ ManifestDPIAware true
   StrCpy $hasPerMachineInstallation 0
   StrCpy $hasPerUserInstallation 1
   StrCpy $InstallerPath $INSTDIR
-  StrCpy $InstallerCommandSelected 0
-  ReadRegStr $0 HKCU "Software\DeepSeekHarness\Command" "Directory"
-  ${If} $0 != ""
-    StrCpy $InstallerCommandSelected 1
-  ${EndIf}
   StrCpy $InstallerTheme "auto"
   ${GetParameters} $0
   ${GetOptions} $0 "/THEME=" $1
@@ -93,17 +88,6 @@ ManifestDPIAware true
 !macroend
 
 !macro customUnInstall
-  Push $0
-  Push $1
-  ${IfNot} ${isUpdated}
-    ${If} ${FileExists} "$INSTDIR\resources\runtime\cli\command-installer.ps1"
-      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\runtime\cli\command-installer.ps1" -Operation remove -Directory "$INSTDIR\resources\runtime\cli\bin" -Language "$LANGUAGE" -Silent'
-      Pop $0
-      Pop $1
-    ${EndIf}
-  ${EndIf}
-  Pop $1
-  Pop $0
   Call un.CleanData
 !macroend
 
@@ -217,8 +201,6 @@ ManifestDPIAware true
 
 !macro customInstall
   Push $0
-  Push $1
-  Push $2
   StrCpy $0 0
   ${If} ${Errors}
     StrCpy $0 1
@@ -227,25 +209,10 @@ ManifestDPIAware true
   !insertmacro dshFinishDirectories
   ; Standard uninstall-entry metadata read by inventory tools; the upstream template records it only under its private key.
   WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" InstallLocation "$INSTDIR"
-  ${If} $InstallerCommandSelected == 1
-    ${If} ${Silent}
-      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\runtime\cli\command-installer.ps1" -Operation install -Directory "$INSTDIR\resources\runtime\cli\bin" -Language "$LANGUAGE" -Silent'
-    ${Else}
-      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\runtime\cli\command-installer.ps1" -Operation install -Directory "$INSTDIR\resources\runtime\cli\bin" -Language "$LANGUAGE"'
-    ${EndIf}
-    Pop $1
-    Pop $2
-    ${If} $1 != 0
-    ${AndIfNot} ${Silent}
-      MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_DSH_COMMAND_FAILED)" /SD IDOK
-    ${EndIf}
-  ${EndIf}
   ${If} $0 == 1
     SetErrors
   ${Else}
     ClearErrors
   ${EndIf}
-  Pop $2
-  Pop $1
   Pop $0
 !macroend
