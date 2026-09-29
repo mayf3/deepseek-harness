@@ -1,4 +1,4 @@
-/** Host Schedule refuses to arm delivery for a Session that subagent routing owns. */
+/** Host Schedule refuses to arm delivery for a Session a delegated child owns. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -42,7 +42,7 @@ function childTask(record: ScheduleRecord): ScheduleTask {
 
 it('refuses to create a reminder for a live subagent Session and stores nothing', async () => {
   const test = await setup()
-  const child = agentFor(test.ctx, childId, { origin: 'subagent', parentSession: parentId })
+  const child = agentFor(test.ctx, childId, { origin: 'subagent', parentSession: parentId, delegationDepth: 1 })
   await test.ctx.agents.register(child)
   const changed = vi.fn()
   test.ctx.on('schedule/changed', changed)
@@ -59,7 +59,7 @@ it('refuses to create for a Session whose live Agent a delegating parent owns', 
   const test = await setup()
   const parent = agentFor(test.ctx, parentId)
   await test.ctx.agents.register(parent)
-  const child = agentFor(test.ctx, childId, { parentSession: parentId })
+  const child = agentFor(test.ctx, childId, { parentSession: parentId, delegationDepth: 1 })
   test.ctx.agents.enter(child, parent)
 
   await expect(test.service.create(childId, { prompt: 'Check', title: 'Check', after_seconds: 60 }))
@@ -68,11 +68,11 @@ it('refuses to create for a Session whose live Agent a delegating parent owns', 
   expect([...table(test).entries()]).toEqual([])
 })
 
-it('refuses to update a stored reminder bound to a Session that subagent routing owns', async () => {
+it('refuses to update a stored reminder bound to a delegated child Session', async () => {
   const record = createAfterScheduleRecord(ScheduleId('subagent-task'), 'Exact prompt', 60, Date.now(), 'Child task')
   const task = childTask(record)
   const test = await setup(task)
-  const child = agentFor(test.ctx, childId, { origin: 'subagent' })
+  const child = agentFor(test.ctx, childId, { origin: 'subagent', delegationDepth: 1 })
   await test.ctx.agents.register(child)
   const put = vi.spyOn(table(test), 'put')
   const changed = vi.fn()
@@ -106,7 +106,7 @@ it('refuses a delegated child recorded only by its delegation depth', async () =
   expect([...table(test).entries()]).toEqual([])
 })
 
-it('still creates a reminder for a live Agent that subagent routing does not own', async () => {
+it('still creates a reminder for a top-level Agent', async () => {
   const test = await setup()
   const owner = agentFor(test.ctx, parentId)
   await test.ctx.agents.register(owner)
@@ -117,10 +117,10 @@ it('still creates a reminder for a live Agent that subagent routing does not own
   expect(await test.service.list({ sessionId: parentId })).toEqual([record])
 })
 
-it('still lists and deletes a stored reminder bound to a Session that subagent routing owns', async () => {
+it('still lists and deletes a stored reminder bound to a delegated child Session', async () => {
   const record = createAfterScheduleRecord(ScheduleId('legacy-subagent-task'), 'Exact prompt', 60, Date.now(), 'Legacy task')
   const test = await setup(childTask(record))
-  const child = agentFor(test.ctx, childId, { origin: 'subagent' })
+  const child = agentFor(test.ctx, childId, { origin: 'subagent', delegationDepth: 1 })
   await test.ctx.agents.register(child)
 
   expect(await test.service.list({ sessionId: childId })).toEqual([record])

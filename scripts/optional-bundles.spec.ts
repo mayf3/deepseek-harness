@@ -98,7 +98,7 @@ describe('optional bundles', () => {
     for (const id of ['preset-standard', 'preset-cordis', 'preset-ptc']) {
       const plugins = presetPlugins(id)
       for (const plugin of [
-        { id: 'preset-time-context', name: '@deepseek-ai/dsh-time-context' },
+        { id: 'time-context', name: '@deepseek-ai/dsh-time-context' },
         { id: 'tool-schedule', name: '@deepseek-ai/dsh-tool-schedule' },
       ]) {
         const matches = plugins.filter(row => row.id === plugin.id && row.name === plugin.name)

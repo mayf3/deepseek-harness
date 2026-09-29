@@ -63,6 +63,26 @@ describe('Schedule model tools', () => {
     }
   })
 
+  it('refuses every tool for a delegated child caller', async () => {
+    const test = await harness(); tests.push(test)
+    const child = agentFor(test.ctx, 'delegated-child', { delegationDepth: 1 })
+    await test.ctx.agents.register(child)
+    await test.ctx.plugin(ToolSchedule)
+    const cases = [
+      ['schedule_create', { prompt: 'Check', after_seconds: 60, title: 'Check' }],
+      ['schedule_list', {}],
+      ['schedule_delete', { id: 'task-1' }],
+      ['schedule_update', { id: 'task-1', title: 'Check' }],
+    ] as const
+    for (const [name, args] of cases) {
+      const result = await test.ctx.tools.execute({
+        callId: ToolCallId('child-call'), signal: new AbortController().signal, name, arguments: args, agent: child,
+      })
+      expect(result.isError).toBe(false)
+      expect(result.value).toEqual({ code: 'subagent_session', message: 'A delegated subagent cannot use reminders.' })
+    }
+  })
+
   it('creates and lists a lossless daily JSON rule rather than a one-shot', async () => {
     const test = await setup()
     const created = await execute(test, 'schedule_create', {

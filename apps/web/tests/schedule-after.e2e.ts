@@ -80,7 +80,7 @@ const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, (JSON.parse(readFileSync(join(W
  * The shipped Web composition carries no `time-context` row and the `standard`
  * preset owns the clock, so an overlay naming a Host row reaches nothing. The
  * overlay therefore restates the shipped `preset-standard` row with its
- * `preset-time-context` plugin configured to re-read on every step.
+ * `time-context` plugin configured to re-read on every step.
  * @param dir - Directory that receives the overlay file.
  * @returns Absolute path of the written overlay.
  */
@@ -92,7 +92,7 @@ async function writeEveryStepOverlay(dir: string): Promise<string> {
   const row = composeEntries(layers).find(entry => entry.id === 'preset-standard')
   if (row === undefined) throw new Error('the shipped Web surface declares no preset-standard row')
   const config = row.config as { plugins: Array<{ id?: string; config?: unknown }> }
-  const plugins = config.plugins.map(plugin => plugin.id === 'preset-time-context'
+  const plugins = config.plugins.map(plugin => plugin.id === 'time-context'
     ? { ...plugin, config: { refreshIntervalMs: 0 } }
     : plugin)
   const path = join(dir, 'time-context-every-step.patch.yml')
@@ -916,7 +916,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     }
     for (const id of ['preset-standard', 'preset-ptc', 'preset-cordis']) {
       const plugins = presetPlugins(id)
-      expect(plugins.filter(row => row.id === 'preset-time-context'
+      expect(plugins.filter(row => row.id === 'time-context'
         && row.name === '@deepseek-ai/dsh-time-context')).toHaveLength(1)
       expect(plugins.filter(row => row.id === 'tool-schedule'
         && row.name === '@deepseek-ai/dsh-tool-schedule')).toHaveLength(1)

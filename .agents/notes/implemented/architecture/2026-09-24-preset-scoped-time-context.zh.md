@@ -30,8 +30,8 @@ Status: implemented
 - `standard`、`cordis` 与 `ptc` 会话保持发布版的 10 分钟最小间隔读数，且四个提醒工具仍留在这三个 preset 中。
 - 读数对模型可见且持久，因此它参与回放、压缩并出现在导出的 Session 日志中；`snapshots/web/minimal-preset/session.v4.jsonl` 不再记录它。
 - profile patch 层无法按 id 禁用或改配该行：`applyEntryPatches` 只能触达已加载的条目或某个 group 的子项，而 preset 声明的插件位于 preset 行的 `config.plugins` 内。改动该行意味着重述该行，这也是 Web 编辑器保存 preset 编辑的机制。
-- preset 挂载会覆盖该 preset 的子 agent，因此 `standard`、`cordis` 或 `ptc` 的子 agent 会收到与其父级相同的读数。
+- preset 挂载会覆盖该 preset 的子 agent，因此 `standard`、`cordis` 或 `ptc` 的子 agent 会收到与其父级相同的读数；这些 preset 中的提醒工具仍对该子 agent 保持 deny，并拒绝其调用。
 
 ## Testing
 
-`apps/web/tests/schedule-after.e2e.ts` 固化随发行版交付的组合：`schedule` 与 `ui-schedule` 两行，`preset-time-context`（`@deepseek-ai/dsh-time-context`）与 `tool-schedule`（`@deepseek-ai/dsh-tool-schedule`）在 `standard`、`ptc` 与 `cordis` preset 中各声明一次且未禁用，也不在 `minimal` 中，且不含 `time-context` 行。其每步读数 overlay 通过重述 `preset-standard` 声明的插件实现，而不是按 id patch 该行。`apps/cli/tests/profiles/web/tests/web-default-isolation.expected.e2e.ts` 断言随发行版交付的组合含 `schedule` 与 `ui-schedule` 条目，且不含 `time-context` 条目。
+`apps/web/tests/schedule-after.e2e.ts` 固化随发行版交付的组合：`schedule` 与 `ui-schedule` 两行，`time-context`（`@deepseek-ai/dsh-time-context`）与 `tool-schedule`（`@deepseek-ai/dsh-tool-schedule`）在 `standard`、`ptc` 与 `cordis` preset 中各声明一次且未禁用，也不在 `minimal` 中，且不含 `time-context` 行。其每步读数 overlay 通过重述 `preset-standard` 声明的插件实现，而不是按 id patch 该行。`apps/cli/tests/profiles/web/tests/web-default-isolation.expected.e2e.ts` 断言随发行版交付的组合含 `schedule` 与 `ui-schedule` 条目，且不含 `time-context` 条目。

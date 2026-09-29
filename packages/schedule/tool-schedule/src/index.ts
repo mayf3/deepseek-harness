@@ -7,7 +7,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 import {
@@ -213,6 +215,18 @@ function internalError(): InternalScheduleError {
 /** Translate invalid input while withholding internal storage failures. */
 function operationError(error: unknown): ScheduleToolError {
   return error instanceof ScheduleInputError ? { code: error.code, message: error.message } : internalError()
+}
+
+/**
+ * Refuse a caller that is a delegated child. A subagent cannot use reminders at
+ * all, so every tool rejects before dispatch instead of relying on the mounting
+ * preset's tool filter alone.
+ * @param agent - the calling agent, when the outer call has one.
+ * @returns the stable refusal, or undefined for a top-level caller.
+ */
+function subagentCallerRefusal(agent: Agent | undefined): ScheduleToolError | undefined {
+  if (agent === undefined || delegationDepthOf(agent) === 0) return undefined
+  return { code: 'subagent_session', message: 'A delegated subagent cannot use reminders.' }
 }
 
 /** One supplied fixed-rate interval: a safe integer at or above the Host floor, or undefined. */
@@ -452,6 +466,8 @@ function registerScheduleTools(ctx: Context): void {
     async execute(args, exec): Promise<ScheduleCreateValue> {
       const agent = exec.agent
       if (agent === undefined) return internalError()
+      const refusal = subagentCallerRefusal(agent)
+      if (refusal !== undefined) return refusal
       const invalid = validateCreateArgs(args)
       if (invalid !== undefined) return invalid
       if (exec.signal.aborted) return internalError()
@@ -472,6 +488,8 @@ function registerScheduleTools(ctx: Context): void {
     async execute(_args, exec): Promise<ScheduleListValue> {
       const agent = exec.agent
       if (agent === undefined) return internalError()
+      const refusal = subagentCallerRefusal(agent)
+      if (refusal !== undefined) return refusal
       if (exec.signal.aborted) return internalError()
       try {
         const records = await ctx.schedule.list({ sessionId: agent.session.id })
@@ -497,6 +515,8 @@ function registerScheduleTools(ctx: Context): void {
       const id = ScheduleId(args.id)
       const agent = exec.agent
       if (agent === undefined) return internalError()
+      const refusal = subagentCallerRefusal(agent)
+      if (refusal !== undefined) return refusal
       if (exec.signal.aborted) return internalError()
       try {
         return await ctx.schedule.delete({ sessionId: agent.session.id, id }, exec.signal)
@@ -526,6 +546,8 @@ function registerScheduleTools(ctx: Context): void {
     async execute(args, exec): Promise<ScheduleUpdateValue> {
       const agent = exec.agent
       if (agent === undefined) return internalError()
+      const refusal = subagentCallerRefusal(agent)
+      if (refusal !== undefined) return refusal
       const invalid = validateUpdateArgs(args)
       if (invalid !== undefined) return invalid
       if (exec.signal.aborted) return internalError()

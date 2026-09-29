@@ -4,7 +4,6 @@ import z from '@deepseek-ai/schemastery'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
-import { hasApiSessionSubagentOwner } from '@deepseek-ai/dsh-api-session-controller'
 import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
@@ -217,8 +216,7 @@ export class ScheduleService extends TypertRemoteService {
    * The request must supply a title; a missing, blank-after-trim, or over-long
    * title rejects with `invalid_prompt` instead of deriving one from the prompt.
    * A Session a delegated child owns rejects with `subagent_session`, because delivery
-   * can never reach it: the child is one whose delegation depth is above zero, or one
-   * whose Session subagent routing owns.
+   * can never reach it: the child is one whose delegation depth is above zero.
    * The record is built from the clock reading taken before the request joins the
    * serialized queue, so a create that waits behind a longer operation keeps its
    * request-time anchor and may already be due when the queue reaches it.
@@ -317,8 +315,8 @@ export class ScheduleService extends TypertRemoteService {
    * Delete one task belonging to the selected Session, leaving queued messages intact.
    *
    * The row is removed: the task no longer schedules, leaves `list` and `catalog`, and its
-   * saved delivery records go with it. A task bound to a Session owned by subagent routing
-   * stays deletable even though creation and timing edits reject that binding, so a task
+   * saved delivery records go with it. A task bound to a Session a delegated child owns
+   * stays deletable even though creation and timing edits refuse that binding, so a task
    * stored before that rule existed remains removable.
    * @param request - Session and exact task identity.
    * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
@@ -404,21 +402,14 @@ export class ScheduleService extends TypertRemoteService {
    * which rejects the live Agent of a delegated child; a stored task for such a Session
    * would stay permanently overdue and retry on every drive. Both operations that can
    * arm a delivery read that same fact here instead of restating it: a delegated child
-   * is one whose {@link delegationDepthOf} is above zero — the accounting the delegation
-   * cap itself enforces, surviving a cold resume through the persisted header — or one
-   * whose Session {@link hasApiSessionSubagentOwner} reports subagent routing owns, which
-   * also covers a child that records no depth.
+   * is one whose {@link delegationDepthOf} is above zero, the accounting the delegation
+   * cap itself enforces, which survives a cold resume through the persisted header.
    * @param sessionId - Session the task would be bound to.
    * @returns The stable refusal for a delegated child's Session, or undefined when the Session is eligible.
    */
   private reminderTargetRefusal(sessionId: SessionId): SubagentSessionError | undefined {
     const agent = this.ctx.agents.get(sessionId)
-    if (agent === undefined) return undefined
-    // Two authorities report the same fact, so either one refuses. `delegationDepthOf`
-    // is the accounting the delegation cap itself reads, and it survives a cold resume
-    // through the persisted header; the Session-ownership test covers a Session
-    // subagent routing owns without a depth record.
-    if (delegationDepthOf(agent) === 0 && !hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) return undefined
+    if (agent === undefined || delegationDepthOf(agent) === 0) return undefined
     return {
       code: 'subagent_session',
       message: 'This Session belongs to subagent routing, which never receives reminder delivery.',

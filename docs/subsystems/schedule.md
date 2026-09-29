@@ -116,7 +116,7 @@ interface LocalAtInput {
 type AtInput = string | LocalAtInput
 ```
 
-The shipped Web composition mounts the `schedule` service and the `ui-schedule` task page. The clock reading and the four reminder tools are preset-owned: `standard`, `cordis`, and `ptc` declare `time-context` and `@deepseek-ai/dsh-tool-schedule` together, and `minimal` declares neither. The `tool-subagent` and `tool-subagent-fork` rows in those three presets deny the four tools, so a delegated child sees none of them. Time-context tells the model to interpret otherwise-unqualified natural-language dates and times in that request-local zone when the open turn has one unambiguous browser zone; mixed or missing browser-zone records tell the model to ask. That guidance is not a durable Session default: the model must still pass an offset in the string form or `time_zone` in the local form, and Schedule never reads browser, Session, process, or model context.
+The shipped Web composition mounts the `schedule` service and the `ui-schedule` task page. The clock reading and the four reminder tools are preset-owned: `standard`, `cordis`, and `ptc` declare `time-context` and `@deepseek-ai/dsh-tool-schedule` together, and `minimal` declares neither. The `tool-subagent` and `tool-subagent-fork` rows in those three presets deny the four tools, and each tool refuses a delegated caller with `subagent_session`, so a delegated child neither sees the tools nor has a call accepted. Time-context tells the model to interpret otherwise-unqualified natural-language dates and times in that request-local zone when the open turn has one unambiguous browser zone; mixed or missing browser-zone records tell the model to ask. That guidance is not a durable Session default: the model must still pass an offset in the string form or `time_zone` in the local form, and Schedule never reads browser, Session, process, or model context.
 
 Schedule rejects invalid offsets and zones, offset-free strings, non-future targets, and local times inside daylight-saving gaps. A daylight-saving overlap chooses its first, earlier instant. Successful creation stores only canonical UTC `scheduledAt`, so replay never depends on ambient time-zone state.
 
@@ -262,7 +262,7 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-The [tool catalog](../tool-catalog.md#deepseek-aidsh-tool-schedule) owns schemas for `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update`, which [`@deepseek-ai/dsh-tool-schedule`](../../packages/schedule/tool-schedule/README.md) contributes to each preset that mounts it; the Host service owns storage and delivery. Create, delete, and update acknowledge the storage-domain write. A Host-wide queue serializes these mutations against due delivery; deleting a task does not remove an already queued message. Model tools address the current Session, while the shared Host create, list, update, and delete methods accept an explicit Session binding. `create` and `update` refuse a Session a delegated child owns with `subagent_session`: either its delegation depth is above zero or subagent routing owns it without a recorded depth, and delivery cannot reach either. `list`, `catalog`, `history`, and `delete` still serve that Session. Creation requires a `title` that must be non-empty after trimming and at most 120 characters; a missing, blank, or over-long title is rejected with `invalid_prompt`, and creation never derives one from the instruction. Create and list views carry the stored `title` alongside the instruction, and a stored record whose `title` is missing or invalid is rejected at decode.
+The [tool catalog](../tool-catalog.md#deepseek-aidsh-tool-schedule) owns schemas for `schedule_create`, `schedule_list`, `schedule_delete`, and `schedule_update`, which [`@deepseek-ai/dsh-tool-schedule`](../../packages/schedule/tool-schedule/README.md) contributes to each preset that mounts it; the Host service owns storage and delivery. Create, delete, and update acknowledge the storage-domain write. A Host-wide queue serializes these mutations against due delivery; deleting a task does not remove an already queued message. Model tools address the current Session, while the shared Host create, list, update, and delete methods accept an explicit Session binding. `create` and `update` refuse a Session a delegated child owns with `subagent_session` when its delegation depth is above zero, and delivery cannot reach such a Session. The four model tools refuse a delegated caller in the tool layer, while `list`, `catalog`, `history`, and `delete` still serve that Session. Creation requires a `title` that must be non-empty after trimming and at most 120 characters; a missing, blank, or over-long title is rejected with `invalid_prompt`, and creation never derives one from the instruction. Create and list views carry the stored `title` alongside the instruction, and a stored record whose `title` is missing or invalid is rejected at decode.
 
 ```ts type-equiv
 /** Reminder creation selector, shared by the model consumer and Host service. */
@@ -460,8 +460,7 @@ Shared management service; reads, deletion, and timing edits never activate a Se
  * The request must supply a title; a missing, blank-after-trim, or over-long
  * title rejects with `invalid_prompt` instead of deriving one from the prompt.
  * A Session a delegated child owns rejects with `subagent_session`, because delivery
- * can never reach it: the child is one whose delegation depth is above zero, or one
- * whose Session subagent routing owns.
+ * can never reach it: the child is one whose delegation depth is above zero.
  * The record is built from the clock reading taken before the request joins the
  * serialized queue, so a create that waits behind a longer operation keeps its
  * request-time anchor and may already be due when the queue reaches it.
@@ -500,8 +499,8 @@ async create(sessionId: SessionId, request: ScheduleCreateRequest, signal?: Abor
  * Delete one task belonging to the selected Session, leaving queued messages intact.
  *
  * The row is removed: the task no longer schedules, leaves `list` and `catalog`, and its
- * saved delivery records go with it. A task bound to a Session owned by subagent routing
- * stays deletable even though creation and timing edits reject that binding, so a task
+ * saved delivery records go with it. A task bound to a Session a delegated child owns
+ * stays deletable even though creation and timing edits refuse that binding, so a task
  * stored before that rule existed remains removable.
  * @param request - Session and exact task identity.
  * @param signal - Optional cancellation checked before persistence begins, including after FIFO waits.
