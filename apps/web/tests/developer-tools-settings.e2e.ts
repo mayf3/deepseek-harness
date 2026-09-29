@@ -26,12 +26,13 @@ it('persists developer tools in the Host settings document and restores the acce
 
   await page.getByRole('button', { name: 'Agent presets', exact: true }).click()
   await expect.poll(() => page.getByRole('heading', { name: 'Agent presets', exact: true }).count()).toBe(1)
-  // The page owns no selection switch, and the cards choose a default with Coding Tools off.
+  // The page owns no selection switch; the cards and the Creator entry stay usable with Coding Tools off.
   const section = page.locator('section')
     .filter({ has: page.getByRole('heading', { name: 'Agent presets', exact: true }) })
   const setDefault = section.getByRole('button', { name: 'Set as new task default: Minimal mode' })
   expect(await section.getByRole('switch').count()).toBe(0)
   await expect.poll(() => setDefault.isEnabled()).toBe(true)
+  expect(await section.getByRole('button', { name: 'Let the agent help me create a preset', exact: true }).isEnabled()).toBe(true)
   await scaffold.ctx.settings.update('ui-settings', { enabled: true })
   await expect.poll(() => setDefault.isEnabled()).toBe(true)
   expect(await section.getByRole('switch').count()).toBe(0)
