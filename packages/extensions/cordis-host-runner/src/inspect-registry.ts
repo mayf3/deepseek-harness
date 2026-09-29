@@ -3,6 +3,7 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-api-gateway'
 import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
@@ -112,7 +113,7 @@ export class CordisInspectRegistryService extends Service {
    * @param input - optional lossless JSON input.
    * @param agent - requesting Agent and scope.
    * @param signal - tool-call cancellation.
-   * @returns provider JSON data; Client queries time out with the first failure, or reconnect/retry guidance if none was received.
+   * @returns provider JSON data; Client queries fail fast when Gateway has no live Client and retain failure diagnostics on timeout.
    */
   async query(
     platform: CordisInspectPlatform,
@@ -179,6 +180,10 @@ export class CordisInspectRegistryService extends Service {
     const method = findMethod(provider, methodName)
     validateInput('Client', providerId, method, input)
     signal.throwIfAborted()
+    const gateway = this.ctx.get('typertGateway')
+    if (gateway !== undefined && !gateway.hasLiveClient()) {
+      throw new Error(`Client inspect query ${providerId}.${methodName} has no connected Harness page. Open or reconnect the Harness page, then retry.`)
+    }
     const requestId = `inspect-${this.nextRequest++}` as CordisInspectRequestId
     const request: CordisInspectQueryRequest = {
       requestId,

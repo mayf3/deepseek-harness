@@ -1,5 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
+import TypertGateway from '@deepseek-ai/dsh-api-gateway'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DynamicCordisRunnerService from '../src/index.ts'
 import { CordisInspectRegistryService } from '../src/inspect-registry.ts'
@@ -49,7 +51,7 @@ afterEach(async () => {
   try {
     for (const controller of controllers) controller.abort()
     await Promise.allSettled(results)
-    await fiber.dispose()
+    await ctx.fiber.dispose()
   } finally {
     for (const dispose of disposers) dispose()
     vi.restoreAllMocks()
@@ -73,7 +75,61 @@ function answer(query: ReturnType<typeof start>) {
   return registry.resolveClientQuery(AGENT_A, query.request.requestId, { ok: true, data: { name: 'theme' } })
 }
 
+async function connectGatewayClient(): Promise<AbortController> {
+  await ctx.plugin(TypertRegistry)
+  await ctx.plugin(TypertGateway)
+  ctx.effect(() => ctx.typertGateway.registerRemoteEvents(async function* (signal) {
+    await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+  }, { home: '/fixture' }))
+  const connection = new AbortController()
+  const stream = await ctx.typertGateway.wireStream.open('$events', { args: {} }, (async function* () {})(), undefined, connection.signal)
+  const client = stream[Symbol.asyncIterator]()
+  ctx.effect(() => async () => {
+    connection.abort()
+    await client.return?.()
+  })
+  await client.next()
+  expect(ctx.typertGateway.hasLiveClient()).toBe(true)
+  return connection
+}
+
 describe('Client inspect completion', () => {
+  it('returns a result when the Gateway has a connected Client', async () => {
+    await connectGatewayClient()
+    registry.syncClientManifest([manifest])
+    const query = start()
+    expect(requests).toHaveLength(1)
+    expect(answer(query)).toEqual({ accepted: true })
+    expect(await query.result).toEqual({ value: { name: 'theme' } })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not dispatch a query when the Gateway has no connected Client', async () => {
+    await ctx.plugin(TypertRegistry)
+    await ctx.plugin(TypertGateway)
+    const query = start()
+    expect(requests).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+    expect(await query.result).toEqual({
+      error: 'Error: Client inspect query Service.listService has no connected Harness page. Open or reconnect the Harness page, then retry.',
+    })
+    expect(registry.list()).toHaveLength(1)
+  })
+
+  it('keeps the response deadline when the Client disconnects after dispatch', async () => {
+    const connection = await connectGatewayClient()
+    const query = start()
+    expect(requests).toHaveLength(1)
+    connection.abort()
+    expect(ctx.typertGateway.hasLiveClient()).toBe(false)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(query.settled()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await query.result).toEqual({ error: timeout + 'Open or reconnect the Harness page, then retry.' })
+    expect(answer(query)).toEqual({ accepted: false })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('returns the Client catalog failure at the deadline instead of losing it', async () => {
     const query = start()
     expect(registry.resolveClientQuery(AGENT_A, query.request.requestId, {
