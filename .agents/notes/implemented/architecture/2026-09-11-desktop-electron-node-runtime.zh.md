@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-Desktop 通过自己的 Electron 可执行文件运行共享 Web Host 和内置 pnpm，并设置 `ELECTRON_RUN_AS_NODE=1`。应用不携带独立的上游 Node 可执行文件。目标 Electron 分发包同时作为打包输入，以及准备和验证生产依赖的运行时；发布元数据记录其实际 Node 版本。开发模式使用已安装的 Electron 分发包。
+Desktop 通过自己的 Electron 可执行文件运行共享 Web Host 和内置 pnpm，并设置 `ELECTRON_RUN_AS_NODE=1`。[主运行时](../feature/2026-09-14-desktop-primary-runtime.zh.md)另行提供 Office 创作使用的 Node。目标 Electron 分发包同时作为打包输入，以及准备和验证生产依赖的运行时；发布元数据记录其实际 Node 版本。开发模式使用已安装的 Electron 分发包。[安装包中的 CLI](../feature/2026-09-27-desktop-cli-runtime.zh.md)复用此执行环境。
 
-此决策替代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)和[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)中的独立 Node 选择。独立插件存储和普通资源目录布局仍然适用。[Web 薄壳](2026-09-10-desktop-web-wrapper.zh.md)保留共享 profile runner 和 HTTP 传输。
+此决策替代[打包决策](2026-08-25-electron-desktop-packaging-and-updates.zh.md)和[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)中的独立 Node 选择。独立插件存储仍然适用。[Web 薄壳](2026-09-10-desktop-web-wrapper.zh.md)保留共享 profile runner 和 HTTP 传输。
 
 ## 后果
 
@@ -24,4 +24,4 @@ Electron 的 Node 补丁和原生 ABI 属于发布兼容性责任。打包原生
 
 ## 考虑过的替代方案
 
-独立 Node 可执行文件可以让 Host 与 Electron 运行时分离，但会增加另一份二进制文件、下载、签名和版本选择。Electron RunAsNode 消除这一重复。将生产包移入 ASAR 是另一项涉及原生模块、包解析和子进程路径的改动；Host 继续加载普通资源文件。
+独立 Node 可执行文件可以让 Host 与 Electron 运行时分离，但会为该职责增加另一份二进制文件、下载、签名和版本选择。Electron RunAsNode 复用 GUI 可执行文件。生产包位于 ASAR 中，原生资源解包存放；打包与物理资源解析仍独立于执行引擎选择。
