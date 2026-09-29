@@ -48,14 +48,15 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const pendingRef = useRef(false)
   const editorRef = useRef<HTMLTextAreaElement>(null)
 
-  // The editor grows with the draft up to the CSS cap, then scrolls.
+  // The editor grows with the draft up to the CSS cap, then scrolls. An inline
+  // error shares the editor's row, so its arrival or removal changes the width.
   useLayoutEffect(() => {
     const node = editorRef.current
     if (node === null) return
     node.style.height = 'auto'
     // scrollHeight excludes the border that the border-box height includes.
     node.style.height = `${node.scrollHeight + node.offsetHeight - node.clientHeight}px`
-  }, [draft, editing])
+  }, [draft, editing, actionError])
 
   // A new goal identity (cleared/completed/replaced externally) invalidates the local edit
   // state: without the reset a surviving draft's Enter would write over the NEW goal.
@@ -108,7 +109,9 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
             onChange={(e) => { setDraft(e.target.value) }}
             onKeyDown={(e) => {
               // Shift+Enter breaks the line; IME confirmation keeps its commit behavior.
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
+              const composing = e.nativeEvent.isComposing || Reflect.get(e.nativeEvent, 'keyCode') === 229
+              if (e.key === 'Enter' && !e.shiftKey && !composing) {
                 e.preventDefault()
                 void handleEdit()
               }

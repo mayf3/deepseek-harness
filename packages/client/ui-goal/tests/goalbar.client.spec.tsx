@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
@@ -103,10 +103,13 @@ describe('GoalBar', () => {
 
     fireEvent.keyDown(box, { key: 'Enter', shiftKey: true })
     fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+    fireEvent.keyDown(box, { key: 'Enter', keyCode: 229 })
     expect(actions.onEdit).not.toHaveBeenCalled()
 
     fireEvent.change(box, { target: { value: 'Line one\nLine three' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
+    const enter = createEvent.keyDown(box, { key: 'Enter' })
+    fireEvent(box, enter)
+    expect(enter.defaultPrevented).toBe(true)
     expect(actions.onEdit).toHaveBeenCalledWith('Line one\nLine three')
   })
 
