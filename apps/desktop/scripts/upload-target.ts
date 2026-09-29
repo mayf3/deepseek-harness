@@ -1,4 +1,4 @@
-/** Upload one validated Desktop release to its Tencent COS update directory. */
+/** Upload validated Desktop update artifacts or a fixed installer to Tencent COS. */
 
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -58,8 +58,13 @@ export function resolveCredentialUploadEnvironment(
   }
 }
 
-async function main(): Promise<void> {
-  const { positionals, values } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {
+/**
+ * Upload the selected target and record a release tag only for production update uploads.
+ * @param args Target and upload options from the command line.
+ * @returns Resolves after upload and any release-tag attempt complete.
+ */
+export async function uploadDesktopTarget(args: string[]): Promise<void> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: {
     latest: { type: 'boolean' },
     'credential-launcher': { type: 'boolean' }, environment: { type: 'string' }, bucket: { type: 'string' },
   } })
@@ -117,7 +122,7 @@ function recordProductionRelease(plan: DesktopUploadPlan): void {
 }
 
 if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
-  main().catch(() => {
+  uploadDesktopTarget(process.argv.slice(2)).catch(() => {
     process.stderr.write('desktop upload: failed; inspect the printed record directory if allocated. No automatic retry; reconcile remote state before another upload.\n')
     process.exitCode = 1
   })

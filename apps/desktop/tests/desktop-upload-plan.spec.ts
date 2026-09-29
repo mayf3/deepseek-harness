@@ -145,6 +145,17 @@ describe('desktop upload plan', () => {
     await expect(`${JSON.stringify(published, null, 2)}\n`).toMatchFileSnapshot('./expected/latest-installer-uploads.json')
   })
 
+  it('allows an explicitly selected production prerelease at the fixed installer URL', async () => {
+    const paths = await fixture('win-x64', '1.2.3-alpha.4', 'production')
+    const plan = await createDesktopUploadPlan('win-x64', { ...paths, latest: true })
+    expect(plan.version).toBe('1.2.3-alpha.4')
+    expect(plan.artifacts).toHaveLength(1)
+    expect(plan.artifacts[0]).toMatchObject({
+      path: join(paths.artifactsRoot, 'deepseek-harness-1.2.3-alpha.4-win-x64.exe'),
+      key: 'desktop/dsh-latest-windows-x64.exe', channelMetadata: false,
+    })
+  })
+
   it.each(['completion', 'deployment', 'checksum'] as const)('rejects invalid %s before planning a latest upload', async (failure) => {
     const paths = await fixture('win-x64', '1.2.3', 'production')
     if (failure === 'completion') await rm(join(paths.artifactsRoot, 'win-x64-release.json'))

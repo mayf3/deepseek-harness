@@ -43,6 +43,7 @@ export interface DesktopUploadPlan {
   readonly environment: 'test' | 'production'
   readonly target: DesktopPackageTargetName
   readonly version: string
+  /** Update feed directory URL, or the single installer URL for a fixed download. */
   readonly publicUrl: string
   readonly bucket: string
   readonly secretIdEnvName: string
@@ -239,23 +240,26 @@ export async function createDesktopUploadPlan(
   const updaterPath = await verifyChecksummedArtifact(artifactsRoot, updaterInfo)
   const artifacts: DesktopUploadArtifact[] = []
   const binaryPrefix = update.binaryKeyPrefix
+  let installerArtifact: DesktopUploadArtifact
 
   if (target.platform === 'darwin') {
     const dmgPath = await requireArtifact(artifactsRoot, `${base}.dmg`)
     const blockmapPath = await requireArtifact(artifactsRoot, `${base}.zip.blockmap`)
+    installerArtifact = uploadArtifact(dmgPath, binaryPrefix, 'application/x-apple-diskimage')
     artifacts.push(
-      uploadArtifact(dmgPath, binaryPrefix, 'application/x-apple-diskimage'),
+      installerArtifact,
       uploadArtifact(updaterPath, binaryPrefix, 'application/zip'),
       uploadArtifact(blockmapPath, binaryPrefix, 'application/octet-stream'),
     )
   }
   else {
     const blockmapPath = await requireArtifact(artifactsRoot, `${base}.exe.blockmap`)
-    artifacts.push(uploadArtifact(
+    installerArtifact = uploadArtifact(
       updaterPath,
       binaryPrefix,
       'application/vnd.microsoft.portable-executable',
-    ))
+    )
+    artifacts.push(installerArtifact)
     artifacts.push(uploadArtifact(blockmapPath, binaryPrefix, 'application/octet-stream'))
   }
 
@@ -284,7 +288,7 @@ export async function createDesktopUploadPlan(
     bucket: update.bucket,
     secretIdEnvName: update.secretIdEnvName,
     secretKeyEnvName: update.secretKeyEnvName,
-    artifacts: options.latest ? [{ ...artifacts[0]!, filename: latestFilename, key: latestKey }] : artifacts,
+    artifacts: options.latest ? [{ ...installerArtifact, filename: latestFilename, key: latestKey }] : artifacts,
     ...typeof buildRecord.commit === 'string' ? { commit: buildRecord.commit } : {},
     ...typeof buildRecord.dirty === 'boolean' ? { dirty: buildRecord.dirty } : {},
   }
