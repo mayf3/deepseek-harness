@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
@@ -301,7 +301,7 @@ it('lists bundle versions and current-profile plugin targets', async () => {
       rows: [{ rowId: 'manager', moduleName: 'cordis:manager', entryId: 'include:manager' }], overrides: [],
     },
     {
-      name: 'extra', version: '1.0.0', enabled: true, installed: true, optional: false, removable: true,
+      name: 'extra', version: '1.0.0', source: 'extra@1.0.0', enabled: true, installed: true, optional: false, removable: true,
       meta: { title: 'extra' },
       rows: [{ rowId: 'managed', moduleName: pathToFileURL(join(dir, 'node_modules', 'extra', 'plugin.mjs')).href, entryId: 'include:managed' }], overrides: [],
     },
@@ -323,7 +323,7 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
   const moduleName = pathToFileURL(join(dir, 'node_modules', 'described', 'plugin.mjs')).href
   expect((await manager.listBundles()).find(row => row.name === 'described')).toEqual({
-    name: 'described', version: '2.0.0', description: 'Describes itself.', enabled: false, installed: true, optional: false, removable: true,
+    name: 'described', version: '2.0.0', description: 'Describes itself.', source: 'described@2.0.0', enabled: false, installed: true, optional: false, removable: true,
     meta: { title: 'described', description: 'Describes itself.' },
     rows: [{ rowId: 'described-row', moduleName }], overrides: ['managed'],
   })
@@ -334,6 +334,24 @@ it('describes a bundle by its manifest and patch: one-liner, rows without a live
   // Off again, the rows lose their entries.
   await manager.setBundleEnabled('described', false)
   expect((await manager.listBundles()).find(row => row.name === 'described')?.rows).toEqual([{ rowId: 'described-row', moduleName }])
+})
+
+it('names where each installed bundle comes from as a spec pnpm installs', async () => {
+  const { manager, dir, bundle } = await fixture()
+  const recorded: Record<string, string> = {
+    extra: '^1.0.0', tagged: 'latest', aliased: 'npm:@acme/aliased@2', github: 'github:someone/dsh-plugin#v1',
+    ssh: 'git@github.com:someone/dsh-plugin.git', tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
+    relative: 'file:../plugins/relative', linked: 'link:/plugins/linked',
+  }
+  for (const name of Object.keys(recorded)) bundle(name, [])
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = recorded
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+  expect(Object.fromEntries((await manager.listBundles()).map(row => [row.name, row.source]))).toEqual({
+    core: undefined, extra: 'extra@^1.0.0', tagged: 'tagged@latest', aliased: 'aliased@npm:@acme/aliased@2',
+    github: 'github:someone/dsh-plugin#v1', ssh: 'git@github.com:someone/dsh-plugin.git', tarball: 'https://cdn.example.com/dsh-x-1.0.0.tgz',
+    relative: `file:${resolve(dir, '../plugins/relative')}`, linked: `link:${resolve('/plugins/linked')}`,
+  })
 })
 
 it.each(['native', 'runtime'] as const)('reads a disabled bundle and its independent exported plugins without running them with %s resolution', async (mode) => {
@@ -416,7 +434,7 @@ it.each([
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
 
   expect((await manager.listBundles()).find(row => row.name === 'unnamed')).toEqual({
-    name: 'unnamed', version: '1.0.0', enabled: false, installed: true, optional: false, removable: true,
+    name: 'unnamed', version: '1.0.0', source: 'unnamed@1.0.0', enabled: false, installed: true, optional: false, removable: true,
     rows: [], overrides: [], ...expected,
   })
 })

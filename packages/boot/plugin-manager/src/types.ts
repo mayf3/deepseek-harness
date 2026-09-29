@@ -55,6 +55,8 @@ export interface BundleInfo {
   enabled: boolean
   /** Whether the profile's own dependencies hold the package; false for a bundle the dsh installation supplies. */
   installed: boolean
+  /** Present when `installed`: the profile dependency as a spec `pnpm add` accepts, with local paths made absolute. */
+  source?: string
   /**
    * Whether the installation ships the bundle for the person to switch on: named by the launcher's `OPTIONAL_BUNDLES`,
    * held by the installation's dependencies, selected by no shipped template, and never removable.
