@@ -328,9 +328,10 @@ export function TaskDetail({
     const measure = (): void => {
       const width = linked.getBoundingClientRect().width
       if (!linkedCompact) linkedExpanded.current = { label: linkedText, width }
-      const expanded = linkedExpanded.current
-      // A label changed while compact has no measured expanded width yet.
-      if (expanded?.label !== linkedText) {
+      // The first measurement is always expanded, so a width is recorded; a
+      // label changed while compact has no expanded width for that label yet.
+      const expanded = linkedExpanded.current as { label: string; width: number }
+      if (expanded.label !== linkedText) {
         setLinkedCompact(false)
         return
       }
@@ -346,6 +347,8 @@ export function TaskDetail({
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(tabs)
+    // A tab label can widen, as when a web font loads, without resizing the list.
+    for (const tab of tabs.children) observer.observe(tab)
     return () => { observer.disconnect() }
   }, [linkedShown, linkedCompact, linkedText])
   const taskIdentity = `${task.sessionId}\u0000${task.id}`
@@ -728,36 +731,35 @@ export function TaskDetail({
               tabs and the task's own actions, so it stays visible while the
               detail scrolls. Rules-only: the records view has no linked row. A
               detail hosted inside the linked Session itself omits the entry. */}
-          {linkedShown && <span ref={linkedRef} className={css.detailContext}>
-            {linkedCompact
-              ? <Tooltip label={linkedText} side="bottom" portal>
-                <Button
-                  size="sm"
-                  className={css.detailIconButton}
-                  aria-label={linkedAction}
-                  aria-describedby={linkedDescribedBy}
-                  disabled={sessionLink !== 'available'}
-                  onClick={() => { onOpenSession(task.sessionId) }}
-                >
-                  <ReferenceIconRegular kind="session" />
-                  {linkedName}
-                </Button>
-              </Tooltip>
-              : <Button
-                className={css.linkedSession}
-                title={linkedSession.titled ? linkedSession.text : task.sessionId}
+          {/* One Button serves both layouts, so crossing the fit threshold keeps
+              its keyboard focus. The tooltip anchors on the wrapper, which still
+              receives hover while the Button is disabled. */}
+          {linkedShown && <Tooltip label={linkedText} side="bottom" portal disabled={!linkedCompact}>
+            <span ref={linkedRef} className={css.detailContext}>
+              <Button
+                size={linkedCompact ? 'sm' : 'md'}
+                className={linkedCompact ? css.detailIconButton : css.linkedSession}
+                title={linkedCompact ? undefined : linkedSession.titled ? linkedSession.text : task.sessionId}
                 aria-label={linkedAction}
                 aria-describedby={linkedDescribedBy}
                 disabled={sessionLink !== 'available'}
                 onClick={() => { onOpenSession(task.sessionId) }}
               >
-                <span className={css.linkedSessionLabel}>{linkedText}</span>
-                <span className={css.linkedSessionTarget}>
-                  {linkedName}
-                  <IconChevronRightOutlineRegular />
-                </span>
-              </Button>}
-          </span>}
+                {linkedCompact
+                  ? <>
+                    <ReferenceIconRegular kind="session" />
+                    {linkedName}
+                  </>
+                  : <>
+                    <span className={css.linkedSessionLabel}>{linkedText}</span>
+                    <span className={css.linkedSessionTarget}>
+                      {linkedName}
+                      <IconChevronRightOutlineRegular />
+                    </span>
+                  </>}
+              </Button>
+            </span>
+          </Tooltip>}
           {/* The menu closes Escape from its own document keydown listener; this
               wrapper covers a menu whose own listener stands down, where the page's
               Escape handler would otherwise close the whole detail with it. */}

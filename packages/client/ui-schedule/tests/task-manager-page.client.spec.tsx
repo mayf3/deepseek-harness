@@ -3430,18 +3430,35 @@ describe('Task detail rule header and run-time card', () => {
       return new DOMRect(0, 0, 0, 0)
     })
     try {
-      const h = mount({ records: [at] })
+      let state: WorkspaceSnapshot = workspaces
+      const h = mount({ records: [at] }, en, { useWorkspaces: select => select(state) })
       fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
       const detail = screen.getByRole('complementary', { name: en['detail.label'] })
       const link = (): HTMLElement => within(detailContext(detail)!).getByRole('button', { name: en['detail.openSession'] })
+      const tooltip = (): string | null | undefined => document.querySelector('[role="tooltip"]')?.textContent
       expect(compact()).toBe(true)
+      // Each tab is observed too, so a tab label that widens re-measures the strip.
+      for (const tab of within(detail).getAllByRole('tab')) expect(stripObserver().observe).toHaveBeenCalledWith(tab)
       expect(link().className).toBe(within(detail).getByRole('button', { name: en['detail.more'] }).className)
       expect(within(link()).queryByText(en['detail.session'])).toBeNull()
       expect(within(link()).getByText(at.sessionId)).toBeDefined()
-      fireEvent.mouseEnter(link())
-      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(en['detail.session'])
+      fireEvent.mouseEnter(detailContext(detail)!)
+      expect(tooltip()).toBe(en['detail.session'])
+      fireEvent.mouseLeave(detailContext(detail)!)
       fireEvent.click(link())
       expect(h.props.onOpenSession).toHaveBeenCalledExactlyOnceWith(at.sessionId)
+
+      // A disabled compact entry still names itself on hover through its wrapper.
+      state = { ...workspaces, archivedSessionIds: [at.sessionId] }
+      h.update({})
+      expect(link().hasAttribute('disabled')).toBe(true)
+      fireEvent.mouseEnter(detailContext(detail)!)
+      expect(tooltip()).toBe(en['detail.session'])
+      fireEvent.mouseLeave(detailContext(detail)!)
+      state = workspaces
+      h.update({})
+      const focused = link()
+      focused.focus()
 
       // The expanded entry needs 120px beside the tabs' 120px, plus 1px to expand again.
       strip = 240
@@ -3450,6 +3467,12 @@ describe('Task detail rule header and run-time card', () => {
       strip = 241
       act(() => { stripObserver().fire() })
       expect(compact()).toBe(false)
+      // The same button changes layout, so keyboard focus survives the switch.
+      expect(link()).toBe(focused)
+      expect(document.activeElement).toBe(focused)
+      fireEvent.mouseEnter(detailContext(detail)!)
+      expect(tooltip()).toBeUndefined()
+      fireEvent.mouseLeave(detailContext(detail)!)
       strip = 240
       act(() => { stripObserver().fire() })
       expect(compact()).toBe(false)
