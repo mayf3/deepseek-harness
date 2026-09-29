@@ -16,8 +16,8 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import { presetOptions, readRoster, requiresCodingTools } from './settings-store.ts'
-import type { AgentPresetOption, RosterPreset } from './settings-store.ts'
+import { presetOptions, readRoster } from './settings-store.ts'
+import type { AgentPresetOption } from './settings-store.ts'
 
 /** Hero-chip snapshot. */
 export interface AgentPresetSeatState {
@@ -63,13 +63,6 @@ export class AgentPresetSeatController {
   private loadGeneration = 0
   /** Completion of the active Host selection; Settings choices wait before staging. */
   private pendingSelection: Promise<undefined> | undefined
-  private presets: readonly RosterPreset[] | undefined
-  /** Ordered owner events remain authoritative until reconnect replaces their generation. */
-  private acceptedSelection: { sessionId: SessionSummary['id'] | undefined; current: string } = { sessionId: undefined, current: '' }
-  /** Local selections awaiting their ordered owner event, including replies ahead of that stream. */
-  private unconfirmedSelections: { sessionId: SessionSummary['id']; preset: string }[] = []
-  /** A failed automatic correction is retried only after a fresh explicit choice or enablement. */
-  private codingToolsFailure: { sessionId: SessionSummary['id'] | undefined; preset: string; error: string } | undefined
 
   constructor(
     private readonly ctx: ClientContext,
@@ -79,36 +72,7 @@ export class AgentPresetSeatController {
       'id' | 'blank' | 'projectionValues'
     > | undefined,
     private readonly staged: AgentPresetStage = { id: undefined, introduce: false },
-    /** True only after Coding Tools has an accepted off value. */
-    private readonly codingToolsDisabled: () => boolean = () => false,
   ) {}
-
-  private currentPreset(session: ReturnType<AgentPresetSeatController['currentSession']>): string | undefined {
-    return session !== undefined && this.acceptedSelection.sessionId === session.id
-      ? this.acceptedSelection.current
-      : presetOf(session)
-  }
-
-  /** Accept a preset selection reported by the Host owner, including another client's choice.
-   * @param sessionId Session whose composition changed.
-   * @param preset Preset the Host committed.
-   */
-  observeSelection(sessionId: SessionSummary['id'], preset: string): void {
-    const own = this.unconfirmedSelections.findIndex(selection => selection.sessionId === sessionId && selection.preset === preset)
-    if (own !== -1) {
-      this.unconfirmedSelections.splice(own, 1)
-      if (this.unconfirmedSelections.some(selection => selection.sessionId === sessionId)) return
-    }
-    this.acceptedSelection = { sessionId, current: preset }
-    this.codingToolsFailure = undefined
-    if (this.currentSession()?.id === sessionId) this.set({ current: this.staged.id ?? preset, error: null })
-  }
-
-  /** Forget selection receipts when reconnect establishes a new Host generation. */
-  resetSelection(): void {
-    this.acceptedSelection = { sessionId: undefined, current: '' }
-    this.unconfirmedSelections = []
-  }
 
   private set(patch: Partial<AgentPresetSeatState>): void {
     this.store.set({ ...this.store.getSnapshot(), ...patch })
@@ -132,7 +96,6 @@ export class AgentPresetSeatController {
       return
     }
     const { presets } = roster.value
-    this.presets = presets
     this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
     const session = this.currentSession()
     this.set({
@@ -143,7 +106,7 @@ export class AgentPresetSeatController {
       // an applied stage was consumed — the chip mounts (and loads) only
       // once the flow's session is current, so the reply can arrive after
       // apply() already composed it.
-      current: this.staged.id ?? (session === undefined ? this.fallback : this.currentPreset(session) ?? ''),
+      current: this.staged.id ?? (session === undefined ? this.fallback : presetOf(session) ?? ''),
       error: null,
       introduce: this.staged.introduce,
     })
@@ -180,7 +143,6 @@ export class AgentPresetSeatController {
    * chip should announce itself on the session it lands on.
    */
   stage(id: string, introduce = false): void {
-    this.codingToolsFailure = undefined
     this.staged.id = id
     this.staged.introduce = introduce
     this.set({ current: id, error: null, introduce })
@@ -213,27 +175,6 @@ export class AgentPresetSeatController {
     return await this.apply()
   }
 
-  /** Reconcile an accepted Coding Tools change after an in-flight selection settles.
-   * @returns Once the same current blank Session or unbound choice has been checked.
-   */
-  async reconcileCodingTools(): Promise<void> {
-    if (!this.codingToolsDisabled()) {
-      this.codingToolsFailure = undefined
-      return
-    }
-    const current = this.currentSession()
-    if (current !== undefined && !current.blank) return
-    const sessionId = current?.id
-    while (this.pendingSelection !== undefined) await this.pendingSelection
-    if (!this.codingToolsDisabled() || this.currentSession()?.id !== sessionId) return
-    try {
-      if (this.presets === undefined) await this.load()
-      else await this.apply()
-    } catch (error) {
-      this.set({ error: error instanceof Error ? error.message : String(error) })
-    }
-  }
-
   /** Acknowledge the introduction cue once the chip has played it. */
   introduced(): void {
     if (!this.store.getSnapshot().introduce) return
@@ -251,37 +192,10 @@ export class AgentPresetSeatController {
    */
   async apply(): Promise<string | undefined> {
     if (this.store.getSnapshot().busy) return
-    const session = this.currentSession()
-    const current = session === undefined ? this.fallback : this.currentPreset(session) ?? ''
-    let correction: string | undefined
-    if (!this.codingToolsDisabled()) this.codingToolsFailure = undefined
-    else if ((session === undefined || session.blank)
-      && !this.unconfirmedSelections.some(selection => selection.sessionId === session?.id)) {
-      const { options } = this.store.getSnapshot()
-      const candidate = this.staged.id ?? current
-      if (requiresCodingTools(this.presets?.find(preset => preset.id === candidate))) {
-        const failed = this.codingToolsFailure
-        if (failed?.sessionId === session?.id && failed?.preset === candidate) {
-          this.set({ error: failed.error })
-          return failed.error
-        }
-        if (!options.some(option => option.id === 'standard')) {
-          const error = this.ctx.locale.bind('settings.agentPreset')('standardUnavailable')
-          this.codingToolsFailure = { sessionId: session?.id, preset: candidate, error }
-          this.set({ error })
-          return error
-        }
-        correction = candidate
-        if (requiresCodingTools(this.presets?.find(preset => preset.id === this.fallback))) this.fallback = 'standard'
-        if (session === undefined && this.staged.id === undefined) {
-          this.set({ current: this.fallback, error: null })
-          return
-        }
-        this.stage('standard')
-      }
-    }
     const staged = this.staged.id
+    const session = this.currentSession()
     if (staged === undefined) {
+      const current = session === undefined ? this.fallback : presetOf(session) ?? ''
       const shown = this.store.getSnapshot()
       if (current !== shown.current) this.set({ current })
       return
@@ -289,24 +203,17 @@ export class AgentPresetSeatController {
     if (session === undefined) return
     // A started session's history was produced under its own composition; the
     // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || current === staged) {
+    if (!session.blank || presetOf(session) === staged) {
       this.clearStage()
       return
     }
     const completion = Promise.withResolvers<undefined>()
     this.pendingSelection = completion.promise
     this.clearStage()
-    const accepted = this.acceptedSelection
-    const awaitingOwner = { sessionId: session.id, preset: staged }
-    this.unconfirmedSelections.push(awaitingOwner)
-    const forgetRefused = () => {
-      this.unconfirmedSelections = this.unconfirmedSelections.filter(selection => selection !== awaitingOwner)
-    }
     try {
       this.set({ busy: true, error: null })
       const result = await this.ctx.remote.agentPresets.select(session.id, staged)
       if (!result.ok) {
-        forgetRefused()
         const { error } = result
         const refusal = 'reason' in error.details && typeof error.details.reason === 'string'
           ? error.details.reason
@@ -318,20 +225,11 @@ export class AgentPresetSeatController {
           // without it. Read by the detail rather than by the code, because
           // every refusal that has a cause to give names it the same way.
           error: refusal,
-          current: this.staged.id ?? this.currentPreset(session) ?? current,
+          current: this.staged.id ?? presetOf(session) ?? '',
         })
-        if (correction !== undefined) this.codingToolsFailure = { sessionId: session.id, preset: correction, error: refusal }
         return refusal
       }
-      if (this.acceptedSelection === accepted) this.acceptedSelection = { sessionId: session.id, current: result.value }
-      this.set({ current: this.staged.id ?? this.currentPreset(session) ?? '' })
-    } catch (error) {
-      forgetRefused()
-      if (correction === undefined) throw error
-      const refusal = error instanceof Error ? error.message : String(error)
-      this.codingToolsFailure = { sessionId: session.id, preset: correction, error: refusal }
-      this.set({ current: this.staged.id ?? this.currentPreset(session) ?? current, error: refusal })
-      return refusal
+      this.set({ current: this.staged.id ?? result.value })
     } finally {
       this.pendingSelection = undefined
       this.set({ busy: false })

@@ -13,8 +13,8 @@
  * — so General settings carries no duplicate control for the same field.
  *
  * Coding Tools (General settings) hide PTC and Minimal from the hero menu
- * and Settings roster when off. Hidden defaults and blank-session choices
- * fall back to Standard; running sessions keep their composition.
+ * and Settings roster when off. Hidden saved defaults fall back to Standard;
+ * staged choices and existing sessions keep their composition.
  */
 
 // Type-only: pulls the Session Controller service merge (ctx.sessions).
@@ -70,11 +70,10 @@ export const inject = [
 export function apply(ctx: ClientContext): void {
   const toolsSettings = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
   const presetSettings = ctx.configForms.get(AGENT_PRESET_SETTINGS_NS)
-  const developerTools = ctx.configForms.developerTools.enabled
   let active = true
   // Host preferences start at false before their first accepted document.
-  const codingToolsDisabled = (): boolean => active && !developerTools.getSnapshot()
-    && (toolsSettings.getSnapshot().mode === 'memory' || toolsSettings.getSnapshot().value !== undefined)
+  const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
+    && toolsSettings.getSnapshot().value?.enabled === false
   const controller = new AgentPresetSettingsController(ctx)
   const staged: AgentPresetStage = { id: undefined, introduce: false }
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
@@ -82,7 +81,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => async () => {
     await Promise.all([...boundSeatDisposers].map(dispose => dispose()))
   }, 'ui-agent-preset: bound selections')
-  const unboundSeat = new AgentPresetSeatController(ctx, () => undefined, staged, codingToolsDisabled)
+  const unboundSeat = new AgentPresetSeatController(ctx, () => undefined, staged)
   const seatFor = (binding: SessionBinding): AgentPresetSeatController => {
     const existing = seats.get(binding)
     if (existing !== undefined) return existing
@@ -93,7 +92,7 @@ export function apply(ctx: ClientContext): void {
         && (ctx.sessions.retainInfo(binding.sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0
         ? summary
         : undefined
-    }, staged, codingToolsDisabled)
+    }, staged)
     seats.set(binding, seat)
     const dispose = binding.ctx.effect(() => {
       const stop = ctx.sessions.list.subscribe(() => { void seat.apply() })
@@ -130,9 +129,7 @@ export function apply(ctx: ClientContext): void {
         for (;;) {
           const revision = requested
           await section.reconcileCodingTools(codingToolsDisabled)
-          if (!active) return
-          await (mainBlankSeat() ?? unboundSeat).reconcileCodingTools()
-          if (requested === revision) return
+          if (!active || requested === revision) return
         }
       }).finally(() => { pending = undefined })
     }
@@ -150,22 +147,11 @@ export function apply(ctx: ClientContext): void {
     const disposers = [
       toolsSettings.subscribe(reconcile),
       presetSettings.subscribe(reconcile),
-      developerTools.subscribe(reconcile),
       ctx.remote.$on('settings/document-updated', (ns) => {
         if (ns !== AGENT_PRESET_SETTINGS_NS) return
         refresh()
       }),
-      ctx.remote.$on('agent-preset/selected', (sessionId, preset) => {
-        const binding = ctx.sessions.binding(sessionId)
-        const seat = binding === undefined ? undefined : seats.get(binding)
-        seat?.observeSelection(sessionId, preset)
-        void seat?.reconcileCodingTools()
-      }),
-      ctx.on('connection/reset', () => {
-        unboundSeat.resetSelection()
-        for (const seat of seats.values) seat.resetSelection()
-        refresh()
-      }),
+      ctx.on('connection/reset', refresh),
     ]
     reconcile()
     return async () => {

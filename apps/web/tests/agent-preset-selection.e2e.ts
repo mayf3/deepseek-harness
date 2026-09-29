@@ -343,7 +343,7 @@ describe('web e2e: agent-preset selection', () => {
     await writeComposerDraft(page, composer, '')
   }, 90_000)
 
-  it('resets the hidden default and blank session to Standard without restoring them when Coding Tools return', async () => {
+  it('resets the hidden default to Standard while preserving the blank session until the user switches it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-disabled'))
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
@@ -359,8 +359,8 @@ describe('web e2e: agent-preset selection', () => {
     await expect.poll(() => developerTools.getAttribute('aria-checked')).toBe('false')
     await dialog.getByRole('button', { name: 'Close' }).last().click()
 
-    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
-    await page.getByRole('button', { name: 'Standard mode', exact: true }).click()
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
+    await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
     await page.getByRole('menu').waitFor()
     expect(await page.getByRole('menuitem', { name: /^PTC mode|^Minimal mode/ }).count()).toBe(0)
     expect(await page.getByRole('menuitem', { name: /^Standard mode|^Creator mode/ }).count()).toBe(2)
@@ -368,7 +368,9 @@ describe('web e2e: agent-preset selection', () => {
     await expect.poll(async () => (await scaffold.ctx.agentPresets.remoteExportList()).presets.find(preset => preset.isDefault)?.id).toBe('standard')
 
     await page.reload()
-    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Minimal mode', exact: true }).click()
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
+    await page.getByRole('menuitem', { name: /^Standard mode/ }).click()
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
     await openSettings(page, 'en')

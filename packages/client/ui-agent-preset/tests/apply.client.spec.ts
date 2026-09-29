@@ -163,12 +163,9 @@ async function bench(options: {
       ROSTER = ROSTER_AUTHORED
       return Promise.resolve({ ok: true as const, value: { saved: true } })
     },
-    select: (agentId: SessionId, agentPreset: string) => {
+    select: (_agentId: SessionId, agentPreset: string) => {
       calls.push(`select:${agentPreset}`)
-      return Promise.resolve(options.selectGate).then(() => {
-        remote.emit('agent-preset/selected', [agentId, agentPreset])
-        return { ok: true as const, value: agentPreset }
-      })
+      return Promise.resolve(options.selectGate).then(() => ({ ok: true as const, value: agentPreset }))
     },
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
@@ -599,38 +596,6 @@ describe('ui-agent-preset apply', () => {
     }
   })
 
-  it('uses Host selection events until reconnect refreshes the current binding', async () => {
-    const b = await bench()
-    declareRoot(b.slots)
-    declareConversation(b.slots)
-    b.ctx.provide('conversation', {} as never)
-    const state = {
-      current: 's1', byId: { s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'standard' } } },
-    }
-    const sessions = sessionsDouble(b.ctx, state)
-    b.ctx.provide('sessions', sessions as never)
-    b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    const feature = b.ctx.plugin({ inject: [...inject], apply })
-    await feature.await()
-    const injectSeat = b.slots.entries('conversation.hero.agentPreset')[0]!
-      .inject as (id: SessionId) => AgentPresetSeatInjected & Record<string, unknown>
-    const chip = injectSeat(SessionId('s1'))
-    await chip.load()
-    b.remote.emit('agent-preset/selected', [SessionId('unrelated'), 'minimal'])
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
-    b.remote.emit('agent-preset/selected', [SessionId('s1'), 'cordis'])
-    sessions.notify()
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
-    state.byId.s1.projectionValues.agentPreset = 'minimal'
-    b.ctx.emit('connection/reset')
-    await vi.waitFor(() => { expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal') })
-    expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
-    await feature.dispose()
-    b.remote.emit('agent-preset/selected', [SessionId('s1'), 'standard'])
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
-    await b.ctx.fiber.dispose()
-  })
-
   it('does not sync a blank Session that is not retained by the main view', async () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
@@ -795,8 +760,11 @@ describe('ui-agent-preset apply', () => {
     expect(calls.filter(call => call === 'select:minimal')).toHaveLength(spent)
   })
 
-  it.each(['standard', 'cordis', 'mine'])('preserves the allowed staged %s choice when Developer tools turn off', async (preset) => {
-    const { ctx, slots, calls, setDeveloperTools } = await bench()
+  it.each(['standard', 'cordis', 'mine', 'ptc', 'minimal'])('preserves the staged %s choice when Coding Tools reset the default', async (preset) => {
+    const { ctx, slots, calls, setDeveloperTools } = await bench({ presets: [
+      ...ROSTER_MOVED.value.presets, { id: 'ptc', isDefault: false },
+      { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+    ] })
     declareRoot(slots)
     declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -804,7 +772,7 @@ describe('ui-agent-preset apply', () => {
       current?: string
       byId: Record<string, { id: string; blank: boolean; projectionValues?: { agentPreset?: string | null } }>
     } = {
-      byId: { s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'ptc' } } },
+      byId: { s1: { id: 's1', blank: true, projectionValues: {} } },
     }
     const sessions = sessionsDouble(ctx, state)
     ctx.provide('sessions', sessions as never)
@@ -816,6 +784,7 @@ describe('ui-agent-preset apply', () => {
     await chip.load()
     await chip.select(preset)
     await setDeveloperTools(false)
+    await vi.waitFor(() => { expect(calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}']) })
     await chip.load()
     expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
     expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
@@ -825,6 +794,7 @@ describe('ui-agent-preset apply', () => {
     await vi.waitFor(() => {
       expect(calls.filter(call => call.startsWith('select:'))).toEqual([`select:${preset}`])
     })
+    await ctx.fiber.dispose()
   })
 
   it('does not reset a default during bootstrap or after accepting Coding Tools on', async () => {
@@ -888,29 +858,37 @@ describe('ui-agent-preset apply', () => {
     await b.ctx.fiber.dispose()
   })
 
-  it.each(['cordis', 'mine'])('resets only the hidden default while the current blank task already uses %s', async (preset) => {
-    const b = await bench({ presets: [
-      { id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true },
-      { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
-    ] })
-    declareRoot(b.slots)
-    declareConversation(b.slots)
-    b.ctx.provide('conversation', {} as never)
-    b.ctx.provide('sessions', sessionsDouble(b.ctx, {
-      current: 'blank', byId: { blank: { id: 'blank', blank: true, projectionValues: { agentPreset: preset } } },
-    }) as never)
-    b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const chip = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as (id: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(SessionId('blank'))
-    await chip.load()
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
-    await b.setDeveloperTools(false)
-    await vi.waitFor(() => { expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}']) })
-    await chip.load()
-    expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
-    expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
-    await b.ctx.fiber.dispose()
-  })
+  it.each([['cordis', true], ['mine', true], ['ptc', true], ['minimal', true], ['ptc', false], ['minimal', false]] as const)(
+    'resets only the default while the current task uses %s (blank: %s)', async (preset, blank) => {
+      const b = await bench({ presets: [
+        { id: 'standard', isDefault: false }, { id: 'minimal', isDefault: true }, { id: 'ptc', isDefault: false },
+        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+      ] })
+      declareRoot(b.slots)
+      declareConversation(b.slots)
+      b.ctx.provide('conversation', {} as never)
+      b.ctx.provide('sessions', sessionsDouble(b.ctx, {
+        current: 'blank', byId: { blank: { id: 'blank', blank, projectionValues: { agentPreset: preset } } },
+      }) as never)
+      b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+      await b.ctx.plugin({ inject: [...inject], apply }).await()
+      const chip = (b.slots.entries('conversation.hero.agentPreset')[0]!.inject as (id: SessionId) => AgentPresetSeatInjected & Record<string, unknown>)(SessionId('blank'))
+      await chip.load()
+      expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
+      await b.setDeveloperTools(false)
+      await vi.waitFor(() => { expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}']) })
+      await chip.load()
+      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
+      expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
+      if (blank) {
+        const section = (b.slots.entries('settings.section')[0]!.inject as () => AgentPresetSectionInjected & Record<string, unknown>)()
+        await section.makeDefault('cordis')
+        expect(b.calls.filter(call => call.startsWith('select:'))).toEqual(preset === 'cordis' ? [] : ['select:cordis'])
+        expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+      }
+      await b.ctx.fiber.dispose()
+    },
+  )
 
   it('does not correct a default when settings first arrive after the feature is disposed', async () => {
     const described = Promise.withResolvers<undefined>()
@@ -925,36 +903,6 @@ describe('ui-agent-preset apply', () => {
     expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual([])
     expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
     await b.ctx.fiber.dispose()
-  })
-
-  it('does not switch a blank task after disposal interrupts an automatic default correction', async () => {
-    const refreshed = Promise.withResolvers<undefined>()
-    const b = await bench({
-      developerToolsEnabled: false, presets: ROSTER_MOVED.value.presets, settingsRosterGate: refreshed.promise,
-    })
-    declareRoot(b.slots)
-    declareConversation(b.slots)
-    b.ctx.provide('conversation', {} as never)
-    const sessions = sessionsDouble(b.ctx, {
-      current: 'blank', byId: { blank: { id: 'blank', blank: true, projectionValues: { agentPreset: 'minimal' } } },
-    })
-    b.ctx.provide('sessions', sessions as never)
-    b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    const feature = b.ctx.plugin({ inject: [...inject], apply })
-    await feature.await()
-    try {
-      await b.settingsRosterStarted
-      expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}'])
-      const stopping = feature.dispose()
-      refreshed.resolve(undefined)
-      await stopping
-      expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
-      expect(b.calls.filter(call => call.startsWith('settings:'))).toHaveLength(1)
-      expect(sessions.listenerCount()).toBe(0)
-    } finally {
-      refreshed.resolve(undefined)
-      await b.ctx.fiber.dispose()
-    }
   })
 
   it('exposes a refused correction without repeatedly writing the same default', async () => {
@@ -1119,215 +1067,6 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
-  it('keeps a repeated-ID selection chain while its ordered owner events arrive after the RPC replies', async () => {
-    const select = vi.fn((_id: SessionId, id: string) => Promise.resolve({ ok: true as const, value: id }))
-    let disabled = false
-    let session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', isDefault: false },
-      ] } }),
-    } } } as never, () => session, undefined, () => disabled)
-    await controller.load()
-    for (const preset of ['minimal', 'standard', 'cordis']) await controller.select(preset)
-    disabled = true
-    await controller.reconcileCodingTools()
-    for (const preset of ['minimal', 'standard', 'cordis']) {
-      session = { ...session, projectionValues: { agentPreset: preset } }
-      controller.observeSelection(session.id, preset)
-      await controller.reconcileCodingTools()
-      expect(controller.store.getSnapshot().current).toBe('cordis')
-    }
-    expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'standard', 'cordis'])
-    controller.observeSelection(session.id, 'mine')
-    await controller.reconcileCodingTools()
-    expect(controller.store.getSnapshot().current).toBe('mine')
-    controller.resetSelection()
-    await controller.load()
-    expect(controller.store.getSnapshot().current).toBe('cordis')
-  })
-
-  it.each(['external', 'reset'] as const)('does not overwrite a newer %s observation with an older RPC reply', async (change) => {
-    const reply = Promise.withResolvers<{ ok: true; value: string }>()
-    const select = vi.fn(() => reply.promise)
-    const session = {
-      id: SessionId('blank'), blank: true,
-      ...change === 'reset' ? {} : { projectionValues: { agentPreset: 'standard' } },
-    }
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: { select } } } as never, () => session)
-    const pending = controller.select('minimal')
-    if (change === 'external') {
-      controller.observeSelection(session.id, 'minimal')
-      controller.observeSelection(session.id, 'mine')
-    } else controller.resetSelection()
-    reply.resolve({ ok: true, value: 'minimal' })
-    await pending
-    expect(controller.store.getSnapshot().current).toBe(change === 'external' ? 'mine' : '')
-  })
-
-  it.each(['before', 'after'] as const)('preserves a newer Creator choice when the Minimal projection arrives %s its response', async (timing) => {
-    const creatorReply = Promise.withResolvers<{ ok: true; value: string }>()
-    const select = vi.fn((_id: SessionId, id: string) => id === 'cordis'
-      ? creatorReply.promise
-      : Promise.resolve({ ok: true as const, value: id }))
-    let disabled = false
-    let session = { id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' } }
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false },
-        { id: 'cordis', isDefault: false }, { id: 'mine', isDefault: false },
-      ] } }),
-    } } } as never, () => session, undefined, () => disabled)
-    await controller.load()
-    await controller.select('minimal')
-    controller.observeSelection(session.id, 'minimal')
-    const creator = controller.select('cordis')
-    if (timing === 'before') session = { ...session, projectionValues: { agentPreset: 'minimal' } }
-    creatorReply.resolve({ ok: true, value: 'cordis' })
-    await creator
-    controller.observeSelection(session.id, 'cordis')
-    if (timing === 'after') session = { ...session, projectionValues: { agentPreset: 'minimal' } }
-    disabled = true
-    await controller.reconcileCodingTools()
-    expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'cordis'])
-    expect(controller.store.getSnapshot().current).toBe('cordis')
-
-    // Later Host owner events stand even while the projection catches up.
-    session = { ...session, projectionValues: { agentPreset: 'cordis' } }
-    await controller.apply()
-    session = { ...session, projectionValues: { agentPreset: 'minimal' } }
-    controller.observeSelection(session.id, 'minimal')
-    await controller.apply()
-    expect(select.mock.calls.map(call => call[1])).toEqual(['minimal', 'cordis', 'standard'])
-
-    // An unrelated external preset also supersedes an unconfirmed RPC receipt.
-    session = { ...session, projectionValues: { agentPreset: 'mine' } }
-    controller.observeSelection(session.id, 'mine')
-    await controller.apply()
-    expect(controller.store.getSnapshot().current).toBe('mine')
-  })
-
-  it.each(['minimal', 'ptc', 'cordis'])('rechecks an in-flight %s selection after Coding Tools turn off', async (preset) => {
-    const firstReply = Promise.withResolvers<{ ok: true; value: string }>()
-    let calls = 0
-    const select = vi.fn((_id: SessionId, id: string) => ++calls === 1
-      ? firstReply.promise
-      : Promise.resolve({ ok: true as const, value: id }))
-    let disabled = false
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: preset, isDefault: false },
-      ] } }),
-    } } } as never, () => ({
-      id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' },
-    }), undefined, () => disabled)
-    await controller.load()
-    const first = controller.select(preset)
-    disabled = true
-    const reconcile = controller.reconcileCodingTools()
-    controller.observeSelection(SessionId('blank'), preset)
-    firstReply.resolve({ ok: true, value: preset })
-    await Promise.all([first, reconcile])
-    await controller.apply()
-    expect(select.mock.calls.map(call => call[1])).toEqual(preset === 'cordis' ? [preset] : [preset, 'standard'])
-    expect(controller.store.getSnapshot().current).toBe(preset === 'cordis' ? preset : 'standard')
-  })
-
-  it.each(['enabled', 'replaced', 'left', 'started', 'creator'] as const)(
-    'rechecks %s while a Coding Tools correction waits for an earlier selection', async (change) => {
-      const firstReply = Promise.withResolvers<{ ok: true; value: string }>()
-      let calls = 0
-      const select = vi.fn((_id: SessionId, id: string) => ++calls === 1
-        ? firstReply.promise
-        : Promise.resolve({ ok: true as const, value: id }))
-      let disabled = false
-      let session: { id: SessionId; blank: boolean; projectionValues: { agentPreset: string } } | undefined = {
-        id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' },
-      }
-      const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-        select,
-        list: () => Promise.resolve({ ok: true, value: { presets: [
-          { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false }, { id: 'cordis', isDefault: false },
-        ] } }),
-      } } } as never, () => session, undefined, () => disabled)
-      await controller.load()
-      const first = controller.select('minimal')
-      disabled = true
-      const reconcile = controller.reconcileCodingTools()
-      if (change === 'enabled') disabled = false
-      else if (change === 'left') session = undefined
-      else if (change === 'replaced') session = { ...session, id: SessionId('replacement') }
-      else if (change === 'started') session.blank = false
-      else controller.stage('cordis', true)
-      controller.observeSelection(SessionId('blank'), 'minimal')
-      firstReply.resolve({ ok: true, value: 'minimal' })
-      await Promise.all([first, reconcile])
-      expect(select.mock.calls.map(call => call[1])).toEqual(change === 'creator' ? ['minimal', 'cordis'] : ['minimal'])
-      if (change === 'creator') expect(controller.store.getSnapshot().current).toBe('cordis')
-    },
-  )
-
-  it.each([new Error('Disconnected'), 'Disconnected'])('reports a transport failure once when an automatic Standard selection cannot finish: %s', async (failure) => {
-    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Non-Error transport rejection is the scenario under test.
-    const select = vi.fn(() => Promise.reject(failure))
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false },
-      ] } }),
-    } } } as never, () => ({
-      id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'minimal' },
-    }), undefined, () => true)
-    await controller.load()
-    await controller.apply()
-    await controller.load()
-    expect(select).toHaveBeenCalledOnce()
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'minimal', error: 'Disconnected', busy: false })
-  })
-
-  it('keeps an uncomposed blank Session honest after its staged fallback disconnects', async () => {
-    const select = vi.fn(() => Promise.reject(new Error('Disconnected')))
-    let disabled = false
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false },
-      ] } }),
-    } } } as never, () => ({ id: SessionId('blank'), blank: true }), undefined, () => disabled)
-    await controller.load()
-    controller.stage('minimal')
-    disabled = true
-    await controller.reconcileCodingTools()
-    expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('blank'), 'standard')
-    expect(controller.store.getSnapshot()).toMatchObject({ current: '', error: 'Disconnected', busy: false })
-  })
-
-  it('propagates an explicit selection transport failure and releases it before an automatic fallback', async () => {
-    const failure = new Error('Disconnected')
-    const select = vi.fn((_id: SessionId, id: string) => Promise.resolve({ ok: true as const, value: id }))
-      .mockRejectedValueOnce(failure)
-    let disabled = false
-    const controller = new AgentPresetSeatController({ remote: { agentPresets: {
-      select,
-      list: () => Promise.resolve({ ok: true, value: { presets: [
-        { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false }, { id: 'cordis', isDefault: false },
-      ] } }),
-    } } } as never, () => ({
-      id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'minimal' },
-    }), undefined, () => disabled)
-    await controller.load()
-    await expect(controller.select('cordis')).rejects.toBe(failure)
-    expect(controller.store.getSnapshot().busy).toBe(false)
-    disabled = true
-    await controller.reconcileCodingTools()
-    expect(select.mock.calls.map(call => call[1])).toEqual(['cordis', 'standard'])
-    expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', error: null, busy: false })
-  })
-
   it.each([
     { refuseFirst: false, refuseLatest: false },
     { refuseFirst: false, refuseLatest: true },
@@ -1360,7 +1099,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     requests[1]!.outcome.resolve(refuseLatest ? refusal : { ok: true, value: 'cordis' })
     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
     expect(controller.store.getSnapshot()).toMatchObject({
-      current: refuseLatest ? (refuseFirst ? 'standard' : 'minimal') : 'cordis', busy: false,
+      current: refuseLatest ? 'standard' : 'cordis', busy: false,
       error: refuseLatest ? 'selection refused' : null,
     })
   })
