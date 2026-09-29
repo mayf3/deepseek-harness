@@ -82,7 +82,10 @@ it('refuses to update a stored reminder bound to a Session that subagent routing
   // `timing.subagentSession` instead of a generic Remote failure.
   await expect(test.service.update({
     sessionId: childId, id: record.id, expected: record, change: { kind: 'every', every_seconds: 600 },
-  })).resolves.toMatchObject({ code: 'subagent_session', message: expect.any(String) })
+  })).resolves.toEqual({
+    code: 'subagent_session',
+    message: 'This Session belongs to subagent routing, which never receives reminder delivery.',
+  })
 
   expect(put).not.toHaveBeenCalled()
   expect(changed).not.toHaveBeenCalled()
