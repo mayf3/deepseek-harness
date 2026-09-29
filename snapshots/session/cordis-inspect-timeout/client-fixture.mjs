@@ -55,6 +55,8 @@ export async function apply(ctx) {
   let requests = 0
   ctx.on('llm/stream', (options, next) => {
     assert.equal(ctx.typertGateway.hasLiveClient(), true)
+    // Log comparison does not verify tool messages at llm/stream.
+    // The checked fields stay pinned to the input recording during refresh.
     assert.deepEqual(
       options.messages.filter(message => message.role === 'tool').map(resultFields),
       expected.slice(0, requests++).map(resultFields),

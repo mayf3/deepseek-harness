@@ -113,7 +113,8 @@ export class CordisInspectRegistryService extends Service {
    * @param input - optional lossless JSON input.
    * @param agent - requesting Agent and scope.
    * @param signal - tool-call cancellation.
-   * @returns provider JSON data; Client queries fail fast when Gateway has no live Client and retain failure diagnostics on timeout.
+   * @returns provider JSON data; Client queries fail fast when Gateway has no live Client
+   * and retain only the first observed failure diagnostic for timeout reporting.
    */
   async query(
     platform: CordisInspectPlatform,
@@ -141,7 +142,7 @@ export class CordisInspectRegistryService extends Service {
    * @param agent - Agent whose Session owns the query.
    * @param requestId - Pending Client query identity.
    * @param resolution - Client provider result or failure.
-   * @returns acknowledgement with accepted true only for a success that settles the query; failures remain diagnostics.
+   * @returns acknowledgement with accepted true only for a success that settles the query; only the first failure diagnostic is retained.
    */
   resolveClientQuery(
     agent: Agent,

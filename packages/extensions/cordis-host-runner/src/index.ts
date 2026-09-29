@@ -509,11 +509,12 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
   }
 
   /**
-   * Claim one pending Client inspect query with its live result.
+   * Submit a Client inspect result or failure for a pending query.
    * @param agent - Session that owns the query.
    * @param requestId - exact pending query identity.
    * @param resolution - provider result or structured refusal.
-   * @returns whether this answer won the query.
+   * @returns acknowledgement with accepted true only for a valid success that settles the query;
+   * pending-query failures return { accepted: false } and retain only the first diagnostic.
    */
   @Remote('resolveInspectQuery')
   resolveInspectQuery(
