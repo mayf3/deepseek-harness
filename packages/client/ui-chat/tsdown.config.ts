@@ -3,20 +3,20 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const bundle = clientBundle('@deepseek-ai/dsh-client-ui-chat', ['lib/types/index.js'])
-const whaleImage = fileURLToPath(new URL('./src/client/chat/running-whale@2x.png', import.meta.url)).replaceAll('\\', '/')
+const stylesheet = fileURLToPath(new URL('./src/client/chat/ChatView.module.css', import.meta.url)).replaceAll('\\', '/')
+const whaleImage = fileURLToPath(new URL('./src/client/chat/running-whale@2x.png', import.meta.url))
 
 export default ((options) => bundle(options).map(config => ({
   ...config,
   plugins: [...(config.plugins ?? []), {
     name: 'chat-whale-image',
-    resolveId(source: string) {
-      return source === './running-whale@2x.png' ? whaleImage : null
-    },
-    async load(id: string) {
-      if (id !== whaleImage) return null
-      this.addWatchFile(id)
-      const image = await readFile(id)
-      return `export default ${JSON.stringify(`data:image/png;base64,${image.toString('base64')}`)}`
+    async transform(code: string, id: string) {
+      if (id.replaceAll('\\', '/') !== `\0dsh-css:${stylesheet}.mjs`) return null
+      const imageUrl = './running-whale@2x.png'
+      if (!code.includes(imageUrl)) return null
+      this.addWatchFile(whaleImage)
+      const image = await readFile(whaleImage)
+      return { code: code.replaceAll(imageUrl, `data:image/png;base64,${image.toString('base64')}`), map: null }
     },
   }],
 }))) satisfies typeof bundle

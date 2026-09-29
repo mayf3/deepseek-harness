@@ -168,7 +168,7 @@
   position: absolute;
   inset: 0;
   background: currentColor;
-  mask: var(--dsh-whale-image) center / 100% 100% no-repeat;
+  mask: url('./running-whale@2x.png') center / 100% 100% no-repeat;
   mask-mode: alpha;
   will-change: transform;
 }
