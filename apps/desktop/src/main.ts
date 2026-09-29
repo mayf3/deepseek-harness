@@ -35,7 +35,6 @@ import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLoc
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { DesktopCommandManager } from './command-management.ts'
-import { DesktopCliBusyError, DesktopCliUpdateGuard } from './cli-update-guard.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
@@ -572,6 +571,7 @@ async function main(): Promise<void> {
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
+      await commandManager.idle()
       await workspaceRecovery
       await startup?.catch(() => undefined)
       const host = backend.host
@@ -621,17 +621,7 @@ async function main(): Promise<void> {
     },
     undefined, undefined, undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
-    development ? undefined : async (version) => {
-      await commandManager.idle()
-      try {
-        return await DesktopCliUpdateGuard.acquire(join(process.resourcesPath, 'runtime', 'cli', process.platform === 'win32' ? 'cli-control.exe' : 'cli-control'), version)
-      } catch (error) {
-        if (!(error instanceof DesktopCliBusyError)) throw error
-        await ordinaryMessageBox({ type: 'info', title: locale.messages.cliCommandBusyTitle,
-          message: locale.messages.cliCommandBusyDetail, buttons: [locale.messages.cliCommandClose], cancelId: 0 })
-        return undefined
-      }
-    },
+
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
@@ -916,7 +906,7 @@ async function main(): Promise<void> {
   app.on('will-quit', () => {
     updateSchedule.dispose()
     powerMonitor.off('resume', automaticCheck)
-    void updates.dispose().catch((error: unknown) => { console.error(error) })
+    updates.dispose()
   })
 
   const applicationIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
@@ -1248,7 +1238,7 @@ async function main(): Promise<void> {
     updateSchedule.dispose()
     updateDialog.dispose()
     mandatoryUI?.dispose()
-    void Promise.all([updates.dispose(), Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
       .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })

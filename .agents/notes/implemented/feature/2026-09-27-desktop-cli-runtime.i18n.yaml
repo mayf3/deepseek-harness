@@ -6,20 +6,17 @@
   en: 0527f32e8a3c13eb
   zh: 77dde6e91fc1a636
 /agent-note-desktop-installed-cli-runtime/problem:
-  en: da786d2d56728cd2
-  zh: 87fd27d841e71597
+  en: fb07307392d14fd9
+  zh: a334f905b26eef98
 /agent-note-desktop-installed-cli-runtime/decision:
-  en: 3d9511c0ce499876
-  zh: d4860844df87e30c
-/agent-note-desktop-installed-cli-runtime/runtime-use-and-installation:
-  en: d31d438cb9b861b8
-  zh: 6ec8d9c629dbde8c
+  en: 163c098af7ce6b7b
+  zh: 0c142db0f173f761
+/agent-note-desktop-installed-cli-runtime/consequences:
+  en: 1dfe287934c9f4bc
+  zh: 138f226ec7409a1f
 /agent-note-desktop-installed-cli-runtime/command-registration:
   en: 69cf21c9c8d48c25
   zh: 1f544931ccd113cb
 /agent-note-desktop-installed-cli-runtime/alternatives-considered:
-  en: 1381c35258316069
-  zh: 6e560c1113947756
-/agent-note-desktop-installed-cli-runtime/consequences:
-  en: c32e20af6324f4ff
-  zh: 0ec41be0c20e68d5
+  en: 91974c10416cf0fd
+  zh: fe26c0b4f5f37e98
