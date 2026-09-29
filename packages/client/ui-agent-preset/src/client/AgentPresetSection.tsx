@@ -15,9 +15,9 @@ import css from './AgentPresetSection.module.css'
 /** Settings actions and their shared controller state. */
 export interface AgentPresetSectionInjected {
   hooks: {
+    agentPresetSection: SnapshotStore<AgentPresetSectionState>
     /** Shared Coding Tools preference; off hides the built-in PTC and Minimal cards. */
     developerTools: ObservableSnapshot<boolean>
-    agentPresetSection: SnapshotStore<AgentPresetSectionState>
   }
   /** Stage the `cordis` preset and start a Creator-mode task; absent without a conversation flow. */
   startCreatorDraft?: () => void
@@ -62,11 +62,11 @@ function CardDescription({ text }: { text: string }): ReactNode {
  * @returns The preset settings section.
  */
 export function AgentPresetSection({
-  useAgentPresetSection, useDeveloperTools, load, view, closeView, makeDefault, startCreatorDraft,
-  close: closeSettings, t,
+  useAgentPresetSection, load, view, closeView, makeDefault, startCreatorDraft,
+  close: closeSettings, useDeveloperTools, t,
 }: AgentPresetSectionProps) {
   const state = useAgentPresetSection(value => value)
-  const developerTools = useDeveloperTools(value => value)
+  const developerTools = useDeveloperTools(enabled => enabled)
   const [guide, setGuide] = useState<{
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
