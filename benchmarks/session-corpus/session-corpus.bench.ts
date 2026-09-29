@@ -45,9 +45,9 @@ const RECORDED_CI_MS = {
   listFirst: 3_228.7,
   listRepeat: 2_636.4,
   searchFirst: 144_359,
-  searchRepeat: 3_417,
-  forkStratumMedian: 94,
-  forkP99: 1_522.7,
+  searchRepeat: 3_426.3,
+  forkStratumMedian: 95.5,
+  forkP99: 1_066.2,
   forkLongest: 20_326.7,
 } as const
 /** Hosted CI expectations, rounded above {@link RECORDED_CI_MS} before variance headroom. */
@@ -58,11 +58,11 @@ const EXPECTED_CI_MS = {
   searchFirst: 145_000,
   searchRepeat: 3_500,
   forkStratumMedian: 100,
-  forkP99: 1_600,
+  forkP99: 1_100,
   forkLongest: 20_400,
 } as const satisfies Record<keyof typeof RECORDED_CI_MS, number>
 /** Higher recorded peak RSS of the two runner models; memory takes headroom but no time scale. */
-const RECORDED_CI_PEAK_RSS_MB = { list: 742.2, search: 1_197.8, fork: 737.8 } as const
+const RECORDED_CI_PEAK_RSS_MB = { list: 742.7, search: 1_197.8, fork: 745.1 } as const
 const EXPECTED_CI_PEAK_RSS_MB = {
   list: 750,
   search: 1_200,

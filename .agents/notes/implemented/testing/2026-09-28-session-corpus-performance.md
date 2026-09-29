@@ -55,10 +55,11 @@ Budgets use standard two-CPU hosted CI expectations (Linux x64, Node 24.21, PR #
 | List 3,000: first | 3,228.7 / 2,633.6 ms | 3,300 ms | 4,125 ms |
 | List 3,000: repeat | 2,636.4 / 2,235.1 ms | 2,700 ms | 3,375 ms |
 | Search 1,000: first (one sample) | 144,359 / 135,065 ms | 145,000 ms | 181,250 ms |
-| Search 1,000: repeat (one sample) | 3,417 / 2,704 ms | 3,500 ms | 4,375 ms |
-| Fork: strata median | 94.0 / 73.5 ms | 100 ms | 125 ms |
-| Fork: p99 | 1,522.7 / 1,485.5 ms | 1,600 ms | 2,000 ms |
-| Fork: longest (one sample) | 18,871.9 / 20,326.7 ms | 20,400 ms | 25,500 ms |
+| Search 1,000: repeat (one sample) | 3,426.3 / 2,704 ms | 3,500 ms | 4,375 ms |
+| Fork: strata median | 95.5 / 73.5 ms | 100 ms | 125 ms |
+| Fork: p99, rank 988 (7763 only) | 1,066.2 ms | 1,100 ms | 1,375 ms |
+| Fork: longest (one sample) | 19,162.1 / 20,326.7 ms | 20,400 ms | 25,500 ms |
+| Peak RSS: list / search / fork | 742.7 / 1,197.8 / 745.1 MB (higher model) | 750 / 1,200 / 750 MB | 938 / 1,500 / 938 MB |
 
 With seeding in one process, the complete file took 294.5 s on the EPYC 7763 runner (85 s seeding, 26 s listing, 149 s searching, 34 s forking) and 266.6 s on the 9V74. With parallel preparation it took 276.8 s on the 7763: the two preparation processes took 59 s and 65 s, because they share two CPUs with Zstandard and garbage-collection threads, and writing the corpora took 4.6 s. The other cases varied by less than 3% between runs on one runner model. Each additional 1,000 listed Sessions costs about 9 s, so a larger list corpus would leave less than a tenth of the limit for runner variation.
 
