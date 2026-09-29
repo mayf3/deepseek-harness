@@ -268,8 +268,8 @@ export function apply(ctx: Context): void {
           && (attempt.phase === 'queued' || attempt.phase === 'claimed' || attempt.cancelled)
           && goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
           && attempt.goalId === goal.id && attempt.revision === goal.revision
-        // A reservation still queued at idle was parked by cancellation. Withdraw
-        // it: pre-step would reject the stale round and strand human input queued behind it.
+        // A reservation still queued when the agent reaches idle cannot run:
+        // withdraw it so human input queued behind it is not stranded.
         if (pause || attempt?.phase === 'queued') {
           state.attempt = undefined
           try {

@@ -325,6 +325,10 @@ describe('same-session goal driving', () => {
     test.agent.cancel({ kind: 'user' }, { keepInbox: true })
     await test.agent.whenIdle()
     expect(test.agent.inbox.nextTurn).toEqual([])
+    // The cancelled turn belonged to human work, so continuation disarms without pausing.
+    expect(test.ctx.goals.get(test.agent)).toMatchObject({ phase: 'active', activation: 'disarmed' })
+    expect(test.agent.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced').at(-1)?.data)
+      .toEqual({ target: 'next-turn', start: 0, removedCount: 1, inserted: [], outcome: 'canceled' })
     test.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'human 1' }], source: { kind: 'user' } }))
     await waitForRequests(test.adapter, 3)
 
