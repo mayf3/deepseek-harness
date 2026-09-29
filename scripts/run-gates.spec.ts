@@ -15,8 +15,15 @@ import {
   type GateResult,
 } from './run-gates.ts'
 
-// Graph fixtures select their own browser pool instead of inheriting the CI host's pool.
-beforeEach(() => vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined))
+// Graph fixtures select their own browser pool instead of inheriting the CI
+// host's pool, and coverage gates take their shape from the values each case
+// sets, not from the lane that runs this file (a partitioned lane exports
+// DSH_COVERAGE_PARTITIONS to every child).
+beforeEach(() => {
+  vi.stubEnv('DSH_WEB_SNAPSHOT_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_MAX_WORKERS', undefined)
+  vi.stubEnv('DSH_COVERAGE_PARTITIONS', undefined)
+})
 afterEach(() => vi.unstubAllEnvs())
 
 /**
@@ -183,6 +190,13 @@ describe('CI worker allocation', () => {
       .not.toHaveProperty('DSH_COVERAGE_PARTITIONS')
   })
 
+  it('leaves the plain unit inventory with the environment pnpm run test finds', () => {
+    // A 3-CPU host would otherwise receive DSH_COVERAGE_PARTITIONS=2, which
+    // the inventory's own coverage-gate tests read as a partitioned lane.
+    expect(ciWorkerEnvironment('ci-unit', {}, 3)).toEqual({})
+    expect(ciWorkerEnvironment('ci-unit', {}, 16)).toEqual({})
+  })
+
   it.each(['0', '-1', 'NaN', '2.5'])('rejects invalid worker budget %s', (raw) => {
     expect(() => ciWorkerEnvironment('ci-coverage', { DSH_COVERAGE_MAX_WORKERS: raw }, 16))
       .toThrow('DSH_COVERAGE_MAX_WORKERS must be a positive integer')
@@ -200,6 +214,7 @@ describe('gate graph validation', () => {
     'ci-static',
     'ci-lint-contracts-ready',
     'ci-coverage',
+    'ci-unit',
     'ci-bench',
     'ci-snapshot',
     'ci-artifacts',
@@ -518,34 +533,49 @@ describe('gate graph validation', () => {
     expect(results.some(result => result.status === 'skipped')).toBe(false)
   })
 
-  it('applies one configured test, polling, and hook timeout to both coverage gates', () => {
-    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
-
-    for (const id of ['coverage', 'coverage-exempt-heavy']) {
-      expect(gates.find(subject => subject.id === id)?.args).toEqual(expect.arrayContaining([
-        '--testTimeout=15000',
-        '--expect.poll.timeout=15000',
-        '--hookTimeout=15000',
-      ]))
+  it('leaves the lane test budget to the inherited environment on both coverage gates', () => {
+    // vitest.config.ts reads DSH_COVERAGE_TEST_TIMEOUT_MS per inline project
+    // (coverageTestTimeoutOptions); a gate argument would add a second owner.
+    for (const budget of ['15000', undefined]) {
+      const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', budget, () =>
+        withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
+      for (const id of ['coverage', 'coverage-exempt-heavy']) {
+        const gate = gates.find(subject => subject.id === id)
+        if (gate === undefined) throw new Error(`ci-windows-complete must define the ${id} gate`)
+        expect(gate.args).not.toEqual(expect.arrayContaining([
+          expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
+        ]))
+        expect(gate.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
+      }
     }
   })
 
-  it('keeps Vitest timeout defaults when the coverage override is absent', () => {
-    const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', undefined, () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
-
-    for (const id of ['coverage', 'coverage-exempt-heavy']) {
-      expect(gates.find(subject => subject.id === id)?.args).not.toEqual(expect.arrayContaining([
-        expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
-      ]))
+  it('runs the plain unit inventory after the native build and leaves its budget to the inherited environment', () => {
+    const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      scripts: Record<string, string>
     }
-  })
+    expect(scripts['check:ci:unit']).toBe('tsx scripts/run-gates.ts ci-unit')
 
-  it('rejects an invalid coverage timeout before starting a gate', () => {
-    expect(() => withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '0', () =>
-      withPnpmEntrypoint(() => gatesForMode('ci-windows-complete'))))
-      .toThrow('DSH_COVERAGE_TEST_TIMEOUT_MS must be a positive integer')
+    // The aggregate is the `test` package script's two segments, in order,
+    // so a step added to one cannot silently leave the other. The lane sets
+    // DSH_COVERAGE_TEST_TIMEOUT_MS; vitest.config.ts reads it per inline
+    // project (coverageTestTimeoutOptions), so the gate passes no budget flag.
+    const [nativeBuild, unitRun, ...rest] = (scripts.test ?? '').split(' && ')
+    expect(rest).toEqual([])
+    for (const budget of ['15000', undefined]) {
+      const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', budget, () =>
+        withPnpmEntrypoint(() => gatesForMode('ci-unit')))
+      expect(gates.map(gate => gate.id)).toEqual(['native-system', 'unit'])
+      expect(gates[0]).toMatchObject({ displayCommand: nativeBuild })
+      expect(gates[1]?.displayCommand).toBe(`pnpm exec ${unitRun}`)
+      expect(gates[1]).toMatchObject({
+        label: 'test',
+        needs: ['native-system'],
+        streamOutput: true,
+        args: ['/private/pnpm.cjs', 'exec', 'vitest', 'run'],
+      })
+      expect(gates[1]?.env ?? {}).not.toHaveProperty('DSH_COVERAGE_TEST_TIMEOUT_MS')
+    }
   })
 
   it('selects partitioned coverage only when explicitly configured', () => {

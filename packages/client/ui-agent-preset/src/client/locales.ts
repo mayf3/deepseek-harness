@@ -66,6 +66,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   close: 'Close',
 
   creatorDraft: 'Let the agent help me create a preset',
+
 }
 
 /** Simplified Chinese copy. */
@@ -101,6 +102,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   close: '关闭',
 
   creatorDraft: '让 Agent 帮我创建预设模式',
+
 }
 
 // The resolution itself is the shared fold in `dsh-agent-preset-registry/display`,

@@ -35,14 +35,6 @@ function rowFor(id: string): HTMLElement {
   if (row === null) throw new Error(`no card for ${id}`)
   return row
 }
-it('offers default selection without a separate selection switch', () => {
-  const actions = view()
-  expect(screen.queryByRole('switch')).toBeNull()
-  const button = screen.getByRole<HTMLButtonElement>('button', { name: `${en.setDefault}: Mine` })
-  expect(button.disabled).toBe(false)
-  fireEvent.click(button)
-  expect(actions.makeDefault).toHaveBeenCalledWith('mine')
-})
 it.each([false, true])('offers Standard, Creator and custom defaults with Coding Tools %s', (enabled) => {
   const actions = view({ rows: [
     { id: 'standard', isDefault: false }, { id: 'ptc', isDefault: false },
@@ -83,6 +75,7 @@ it.each(['ptc', 'minimal'])('keeps a named custom %s override selectable with Co
 })
 it('reads the roster once and sets a default from the card body', async () => {
   const actions = view()
+  expect(screen.queryByRole('switch')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
   await waitFor(() =>{  expect(actions.load).toHaveBeenCalledOnce() })

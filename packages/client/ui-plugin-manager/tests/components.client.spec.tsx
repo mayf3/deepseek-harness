@@ -15,7 +15,7 @@ import { PluginRefreshToast } from '../src/client/PluginRefreshToast.tsx'
 import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
-import { en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
+import { INSTALL_GIT_EXAMPLE, INSTALL_PATH_EXAMPLE, en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
 import type { PluginActivationOwnerProps, PluginDetailProps, PluginsSubject } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
@@ -887,6 +887,7 @@ describe('PluginManagerPage', () => {
     const { actions, setLanguage } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
     setLanguage(locale)
     expect(screen.getByPlaceholderText(placeholder)).toBeTruthy()
+    expect(screen.getByText(locale.installUpgradeNotice)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: locale.installGuideToggle }))
     expect(screen.getByText('dsh-plugin-whale-pet')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: locale.installGuideFillAria.replace('{example}', 'dsh-plugin-whale-pet') }))
@@ -894,8 +895,8 @@ describe('PluginManagerPage', () => {
   })
 
   it.each([
-    { example: en.installGuideGitExample, key: 'installGitTemplateHint' as const },
-    { example: en.installGuidePathExample, key: 'installPathTemplateHint' as const },
+    { example: INSTALL_GIT_EXAMPLE, key: 'installGitTemplateHint' as const },
+    { example: INSTALL_PATH_EXAMPLE, key: 'installPathTemplateHint' as const },
   ])('asks for a real value when the field holds $example, including after a language change', ({ example, key }) => {
     const install = { ...IDLE_INSTALL, open: true, spec: example }
     const { set, setLanguage } = renderTab({ install })
@@ -904,7 +905,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('textbox', { name: en.installSpecLabel }).getAttribute('aria-describedby')).toBe(hint.id)
     setLanguage(zh)
     expect(screen.getByRole('status').textContent).toBe(zh[key])
-    expect(screen.getByRole('note').textContent).toBe(zh.installGuideSafety)
+    expect(screen.getByRole('note').textContent).toContain(zh.installGuideSafety)
     set({ install: { ...install, spec: '@actual/plugin' } })
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.getByRole('textbox', { name: zh.installSpecLabel }).getAttribute('aria-describedby')).toBeNull()
@@ -918,7 +919,7 @@ describe('PluginManagerPage', () => {
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
-    expect(screen.getByText(en.installGuideGitExample)).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideFillAria.replace('{example}', en.installGuideIdExample) }))
     expect(actions.editInstallSpec).toHaveBeenCalledExactlyOnceWith(en.installGuideIdExample)
     fireEvent.click(screen.getByRole('button', { name: en.installGuideHide }))
@@ -1432,10 +1433,10 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('button', { name: en.installTryAnotherWay }))
     expect(actions.useGithubMirror).toHaveBeenCalledOnce()
     expect(actions.runInstall).not.toHaveBeenCalled()
-    // The form it returns to opens the guide to the other kinds of spec.
+    // The form it returns to opens the guide to the package-name example.
     set({ install: { ...IDLE_INSTALL, open: true, mirrorRecovery: true, registries: REGISTRIES, registry: failed.registry } })
     expect(screen.getByRole('button', { name: en.installGuideHide }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(en.installGuidePathExample)).toBeTruthy()
+    expect(screen.getByText(en.installGuideIdHint)).toBeTruthy()
     // A typed address other than the mirror can still switch to it.
     set({ install: { ...failed, registry: { kind: 'custom', url: 'npm.corp' } } })
     expect(screen.getByRole('button', { name: en.installUseGithubMirror })).toBeTruthy()

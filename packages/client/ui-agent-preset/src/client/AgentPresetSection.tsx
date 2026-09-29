@@ -114,8 +114,7 @@ export function AgentPresetSection({
             const display = presetDisplayText(row, t)
             const help = presetGuide(row.id, builtIn ? 'system' : 'user')
             const selectionAction = row.broken !== undefined ? t('brokenBadge')
-              : row.isDefault ? t('inUse')
-                : t('setDefault')
+              : t(row.isDefault ? 'inUse' : 'setDefault')
             return <li key={row.id} data-agent-preset-id={row.id} className={[
               css.card, row.broken === undefined ? undefined : css.cardBroken,
               row.isDefault ? css.cardActive : undefined,

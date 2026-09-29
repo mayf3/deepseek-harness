@@ -760,22 +760,13 @@ describe('ui-agent-preset apply', () => {
     expect(calls.filter(call => call === 'select:minimal')).toHaveLength(spent)
   })
 
-  it.each([
-    { preset: 'standard', name: undefined, cleared: false },
-    { preset: 'cordis', name: undefined, cleared: false },
-    { preset: 'mine', name: 'Mine', cleared: false },
-    { preset: 'ptc', name: undefined, cleared: true },
-    { preset: 'minimal', name: undefined, cleared: true },
-    { preset: 'ptc', name: 'Custom PTC', cleared: false },
-    { preset: 'minimal', name: 'Custom Minimal', cleared: false },
-  ].flatMap(choice => ['unbound', 'inactive bound'].map(source => ({ ...choice, source }))))(
-    'clears only a built-in staged choice on Coding Tools off: $preset ($name, $source)', async ({ preset, name, cleared, source }) => {
-      const defaultId = preset === 'minimal' && name !== undefined ? 'ptc' : 'minimal'
-      const { ctx, slots, calls, setDeveloperTools } = await bench({ presets:
-        ['standard', 'ptc', 'minimal', 'cordis', 'mine'].map(id => ({
-          id, isDefault: id === defaultId, ...(id === preset && name !== undefined ? { name } : {}),
-        })),
-      })
+  it.each(['standard', 'cordis', 'mine', 'ptc', 'minimal']
+    .flatMap(preset => ['unbound', 'inactive bound'].map(source => ({ preset, source }))))(
+    'clears the staged $preset choice on Coding Tools off without changing the Session ($source)', async ({ preset, source }) => {
+      const { ctx, slots, calls, setDeveloperTools } = await bench({ presets: [
+        ...ROSTER_MOVED.value.presets, { id: 'ptc', isDefault: false },
+        { id: 'cordis', isDefault: false }, { id: 'mine', name: 'Mine', isDefault: false },
+      ] })
       declareRoot(slots)
       declareConversation(slots)
       ctx.provide('conversation', {} as never)
@@ -783,7 +774,7 @@ describe('ui-agent-preset apply', () => {
         current?: string
         byId: Record<string, { id: string; blank: boolean; projectionValues?: { agentPreset?: string | null } }>
       } = {
-        byId: { s1: { id: 's1', blank: true, projectionValues: {} } },
+        byId: { s1: { id: 's1', blank: true, projectionValues: { agentPreset: 'minimal' } } },
       }
       const sessions = sessionsDouble(ctx, state)
       ctx.provide('sessions', sessions as never)
@@ -797,14 +788,20 @@ describe('ui-agent-preset apply', () => {
       await setDeveloperTools(false)
       await vi.waitFor(() => { expect(calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}']) })
       await chip.load()
-      expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe(cleared ? 'standard' : preset)
+      expect(chip.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
       expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
 
       state.current = 's1'
       const bound = injectSeat(SessionId('s1'))
       sessions.notify()
       await bound.load()
-      expect(calls.filter(call => call.startsWith('select:'))).toEqual(cleared ? [] : [`select:${preset}`])
+      expect(calls.filter(call => call.startsWith('select:'))).toEqual([])
+      expect(bound.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
+      if (['standard', 'cordis', 'mine'].includes(preset)) {
+        await bound.select(preset)
+        expect(calls.filter(call => call.startsWith('select:'))).toEqual([`select:${preset}`])
+        expect(bound.hooks.agentPresetSeat.getSnapshot().current).toBe(preset)
+      }
       await ctx.fiber.dispose()
     },
   )
@@ -837,39 +834,6 @@ describe('ui-agent-preset apply', () => {
       selection.resolve(undefined)
       await b.ctx.fiber.dispose()
     }
-  })
-
-  it('keeps a named custom stage despite another seat having an older built-in roster', async () => {
-    const presets: AgentPresetRow[] = [
-      { id: 'standard', isDefault: true }, { id: 'minimal', isDefault: false },
-    ]
-    const b = await bench({ presets })
-    declareRoot(b.slots)
-    declareConversation(b.slots)
-    b.ctx.provide('conversation', {} as never)
-    const state: { current?: string; byId: Record<string, { id: string; blank: boolean }> } = {
-      byId: { s1: { id: 's1', blank: true }, s2: { id: 's2', blank: true } },
-    }
-    const sessions = sessionsDouble(b.ctx, state)
-    b.ctx.provide('sessions', sessions as never)
-    b.ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const injectSeat = b.slots.entries('conversation.hero.agentPreset')[0]!
-      .inject as (sessionId: SessionId) => AgentPresetSeatInjected & Record<string, unknown>
-    const older = injectSeat(SessionId('s1'))
-    await older.load()
-    presets[1] = { id: 'minimal', name: 'Custom Minimal', isDefault: false }
-    const newer = injectSeat(SessionId('s2'))
-    await newer.load()
-    await newer.select('minimal')
-    await b.setDeveloperTools(false)
-    expect(older.hooks.agentPresetSeat.getSnapshot().options.find(option => option.id === 'minimal')?.name).toBeUndefined()
-    expect(newer.hooks.agentPresetSeat.getSnapshot().current).toBe('minimal')
-    expect(b.calls.filter(call => call.startsWith('select:'))).toEqual([])
-    state.current = 's2'
-    sessions.notify()
-    await vi.waitFor(() => { expect(b.calls.filter(call => call.startsWith('select:'))).toEqual(['select:minimal']) })
-    await b.ctx.fiber.dispose()
   })
 
   it('does not reset a default during bootstrap or after accepting Coding Tools on', async () => {

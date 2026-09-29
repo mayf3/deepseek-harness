@@ -13,8 +13,8 @@
  * — so General settings carries no duplicate control for the same field.
  *
  * Coding Tools (General settings) hide PTC and Minimal from the hero menu
- * and Settings roster when off. Hidden saved defaults fall back to Standard
- * and unapplied hidden choices are cleared; existing sessions keep their composition.
+ * and Settings roster when off. Hidden saved defaults fall back to Standard;
+ * the existing gate clears staged choices while existing sessions keep their composition.
  */
 
 // Type-only: pulls the Session Controller service merge (ctx.sessions).
@@ -70,12 +70,10 @@ export const inject = [
 export function apply(ctx: ClientContext): void {
   const toolsSettings = ctx.configForms.get<{ enabled: boolean }>('ui-settings')
   const presetSettings = ctx.configForms.get(AGENT_PRESET_SETTINGS_NS)
-  const developerTools = ctx.configForms.developerTools.enabled
   let active = true
   // Host preferences start at false before their first accepted document.
-  const codingToolsDisabled = (): boolean => active && (toolsSettings.getSnapshot().mode === 'memory'
-    ? !developerTools.getSnapshot()
-    : toolsSettings.getSnapshot().value?.enabled === false)
+  const codingToolsDisabled = (): boolean => active && toolsSettings.getSnapshot().mode === 'host'
+    && toolsSettings.getSnapshot().value?.enabled === false
   const controller = new AgentPresetSettingsController(ctx)
   const staged: AgentPresetStage = { id: undefined, introduce: false }
   const seats = new WeakMapWithValues<SessionBinding, AgentPresetSeatController>()
@@ -108,6 +106,15 @@ export function apply(ctx: ClientContext): void {
     return seat
   }
   const section = new AgentPresetSectionController(ctx)
+  // Turning Developer tools off clears the shared stage before any apply can compose it.
+  const developerTools = ctx.configForms.developerTools.enabled
+  ctx.effect(() => developerTools.subscribe(() => {
+    if (developerTools.getSnapshot()) return
+    staged.id = undefined
+    staged.introduce = false
+    void unboundSeat.apply()
+    for (const seat of seats.values) void seat.apply()
+  }), 'ui-agent-preset: Developer tools gate')
   const mainBlankSeat = (): AgentPresetSeatController | undefined => {
     const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find((session) => {
@@ -126,11 +133,6 @@ export function apply(ctx: ClientContext): void {
     // Settings invalidations may land while a correction is waiting on a
     // person's selection. Recheck once that work settles using the latest values.
     const reconcile = (): void => {
-      if (codingToolsDisabled() && staged.requiresCodingTools) {
-        unboundSeat.clearStage()
-        void unboundSeat.apply()
-        for (const seat of seats.values) void seat.apply()
-      }
       requested++
       pending ??= Promise.resolve().then(async () => {
         for (;;) {
@@ -152,7 +154,7 @@ export function apply(ctx: ClientContext): void {
       reconcile()
     }
     const disposers = [
-      (toolsSettings.getSnapshot().mode === 'memory' ? developerTools : toolsSettings).subscribe(reconcile),
+      toolsSettings.subscribe(reconcile),
       presetSettings.subscribe(reconcile),
       ctx.remote.$on('settings/document-updated', (ns) => {
         if (ns !== AGENT_PRESET_SETTINGS_NS) return
