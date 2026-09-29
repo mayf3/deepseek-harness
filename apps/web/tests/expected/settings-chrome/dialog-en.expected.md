@@ -20,8 +20,8 @@
   - button "Decrease font size"
   - text: px Work details Choose how much detail to show for tool calls
   - button "Detailed"
-  - text: Coding Tools Shows trajectory, code diffs, and Agent preset switching in new chats
-  - switch "Coding Tools"
+  - text: Show coding view Shows trajectory, code diffs, and all Agent presets
+  - switch "Show coding view"
   - text: Keyboard shortcuts
   - paragraph: View and edit available shortcuts and input actions
   - button "Edit shortcuts"
