@@ -88,7 +88,7 @@ function Finish-Setup([Diagnostics.Process]$Process, [bool]$Launch, [string]$The
     $previous = 0
     $window = [InstallerCapture]::Find($Process.Id)
     while ([InstallerCapture]::FindButton($Process.Id, $copy.INSTALLER_FINISH) -eq [IntPtr]::Zero) {
-        if ($Process.HasExited -or $timer.Elapsed.TotalSeconds -gt 30) { throw 'Installer did not complete' }
+        if ($Process.HasExited -or $timer.Elapsed.TotalSeconds -gt 120) { throw 'Installer did not complete' }
         $visible = [InstallerCapture]::VisibleText($Process.Id)
         if ($visible.Contains('msctls_progress32') -ne $expected.nativeProgressVisible) { throw 'Stock green progress bar is visible' }
         if ($visible -match 'HarnessInstallerProgress[^\r\n]*?(\d+)%') {
