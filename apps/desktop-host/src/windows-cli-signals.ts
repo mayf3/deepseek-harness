@@ -1,13 +1,13 @@
 /** Deliver console interrupts to CLI listeners in Electron's Windows Node mode. */
 
-import koffi from 'koffi'
-
 /**
  * Register the CLI process's Windows console handler.
  * Koffi queues callbacks from the console thread onto the JavaScript thread.
  * The registration lasts until process exit; unknown events retain native handling.
+ * @returns Completion once the console handler is registered.
  */
-export function installWindowsCliSignals(): void {
+export async function installWindowsCliSignals(): Promise<void> {
+  const { default: koffi } = await import('koffi')
   const kernel = koffi.load('kernel32.dll')
   const type = koffi.proto('int __stdcall DshCliConsoleHandler(uint32_t event)')
   const handler = koffi.register((event: number) => {

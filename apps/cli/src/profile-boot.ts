@@ -232,8 +232,6 @@ export interface RunProfileOptions {
   args: readonly string[]
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
-  /** Installation setup after launcher services are provided, before configured plugins mount. */
-  prepare?: (ctx: Context) => void | Promise<void>
 }
 
 /**
@@ -311,7 +309,6 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         exit: code => void shutdown.shutdown(code),
         ready: appReady.service,
       })
-      await options.prepare?.(hostCtx)
     })
     app.current = ctx
     if (!signalShutdown.signal.aborted

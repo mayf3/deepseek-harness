@@ -48,7 +48,7 @@ describe.skipIf(process.platform !== 'win32')('Windows Electron console signals'
       "import { writeFileSync } from 'node:fs'",
       "import { writeFile } from 'node:fs/promises'",
       "import { installWindowsCliSignals } from './signals.mjs'",
-      'installWindowsCliSignals()',
+      'await installWindowsCliSignals()',
       'const [marker, ready] = process.argv.slice(2)',
       "for (const [signal, code] of [['SIGINT',130],['SIGBREAK',131]]) process.on(signal, async () => {",
       '  await writeFile(marker, signal); process.exit(code)',

@@ -4,7 +4,7 @@ export default defineConfig(['index', 'cli'].map(name => ({
   entry: ['lib/types/' + name + '.js'],
   outDir: 'lib',
   format: ['esm'] as const,
-  codeSplitting: false,
+  outputOptions: { codeSplitting: false },
   platform: 'node',
   target: 'es2024',
   fixedExtension: false,
