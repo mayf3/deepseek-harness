@@ -79,7 +79,7 @@ skill 是可编辑文字，不转为文件胶囊。词典尚未返回时不锁�
 
 [导航用例](../../../../packages/client/ui-workspace/tests/workspaces-service.client.spec.ts)验证初始化作用于准确的保留对象、参数在异步创建前复制、导航取消不写稿、拒绝时保持原选择。[组合用例](../../../../packages/client/ui-conversation/tests/apply-inject.client.spec.tsx)验证现有工作区携带路径不把引用变成纯文本。相关回归共 44 个文件、708 项通过；共享草稿模块归位后，受影响的三个模型与组合文件再验证 66 项通过。
 
-[浏览器 e2e](../../../../apps/web/tests/draft-initialization.e2e.ts)使用真实 Web 组合及测试插件调用公开 `startSession`，三个用例通过。用例验证文字与结构化初始化、创建与复用、两个 Session 多轮切换和编辑、浏览器重载、清空后不复活及旧字符串兼容；同时检查胶囊数量、来源、文字、文件预览和持久化快照。未点击发送前，Host 日志没有 `user/message` 或 `turn/start`。延迟 skill 匹配由模型用例控制词典到达时机，验证其只处理最新内容。
+[浏览器 e2e](../../../../apps/web/tests/draft-initialization.e2e.ts)通过已有模块加载观测方式取得实际 Workspace API，调用公开 `startSession`，不新增测试插件。完整八个用例通过，覆盖缺省、空字符串、普通文字和结构化提示词参数，明确传入及沿用当前工作区，保留与清空、创建与复用、真实界面的 Session 多轮切换和编辑、刷新、旧字符串及工作区选择器携带。延迟创建响应的两种返回顺序都保持较新的目标选择，并且不改动另一份草稿。延迟返回的真实 skill 目录只重匹配当前文字，不替换胶囊、选区或 Undo 历史。断言检查胶囊字段、文件预览和持久化快照。未点击发送前，Host 日志没有 `user/message` 或 `turn/start`。
 
 ## 后果与边界
 

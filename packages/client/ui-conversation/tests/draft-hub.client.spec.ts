@@ -179,6 +179,11 @@ it('reconnects a replacement lexicon source on an explicit subscription refresh'
   await provider.await()
   await vi.waitFor(() => { expect(first.subscribers).toBe(1) })
   const draft = b.shell.draftSnapshot
+  const subscriptions = first.subscriptions
+  b.shell.refreshLexiconSubscription()
+  b.shell.refreshLexiconSubscription()
+  expect(first.subscriptions).toBe(subscriptions)
+  expect(first.releases).toBe(0)
   current = second.source
   b.shell.refreshLexiconSubscription()
   await vi.waitFor(() => {
@@ -204,7 +209,10 @@ it('unsubscribes the lexicon and refuses the old binding after Session disposal'
   expect(source.subscribers).toBe(0)
   expect(source.releases).toBe(source.subscriptions)
   const draft = b.shell.draftSnapshot
+  b.shell.refreshLexiconSubscription()
   source.set([])
+  expect(source.subscribers).toBe(0)
+  expect(source.releases).toBe(source.subscriptions)
   expect(b.shell.draftSnapshot).toBe(draft)
   expect(b.shell.requestDraftInitialization({ prompt: 'late edit', clearPreviousDraft: true })).toBe('blocked')
   expect(() => b.hub.requestDraftInitialization(b.binding, { prompt: 'late edit' })).toThrow('retained Session binding')

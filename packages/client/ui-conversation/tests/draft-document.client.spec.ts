@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Structured draft import, persistence, and reference restoration through the real input shell. */
+import { setImmediate } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { $getRoot, $nodesOfType, REDO_COMMAND, UNDO_COMMAND } from 'lexical'
@@ -7,6 +8,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { DraftReference, DraftSnapshot, Occurrence } from '../src/client/contract/draft-editor.ts'
 import type { DraftAttachmentId, InputTriggerController, PickOutcome, SubmitOutcome } from '../src/client/contract/input.ts'
 import { parseStoredDraft, resolveDraftInput, snapshotDraft } from '../src/client/draft.ts'
+import { scanTextRefs } from '../src/client/input/decorations.ts'
 import { ReferenceChipNode } from '../src/client/input/editor/chip-node.tsx'
 import { TextRefNode } from '../src/client/input/editor/text-ref.ts'
 import { SessionInputShell, type SessionInputDeps } from '../src/client/input/facade.ts'
@@ -62,7 +64,8 @@ function chips(shell: SessionInputShell) {
 }
 
 function textReferences(shell: SessionInputShell): string[] {
-  return shell.editor.getEditorState().read(() => $nodesOfType(TextRefNode).map(node => node.getTextContent()))
+  return shell.editor.getEditorState().read(() => $getRoot().getAllTextNodes()
+    .filter(node => node instanceof TextRefNode).map(node => node.getTextContent()))
 }
 
 function triggerProvider(lexicon: InputTriggerController['lexicon']): InputTriggerController {
@@ -139,6 +142,20 @@ describe('draft document values', () => {
     shell.setDraft(draft)
     expect(shell.draftSnapshot).toEqual(draft)
     expect(chips(shell)).toHaveLength(3)
+  })
+
+  it('decodes explicit false metadata and discards persisted editor-local fields', () => {
+    const draft = documentOf({ ...file, invalid: false })
+    const stored = {
+      ...draft,
+      revision: 17,
+      references: draft.references.map(reference => ({ ...reference, occurrenceId: 42, nodeKey: 'old-node' })),
+    }
+    const parsed = parseStoredDraft(JSON.parse(JSON.stringify(stored)))
+    expect(parsed).toEqual(draft)
+    expect(parsed?.references[0]).toHaveProperty('invalid', false)
+    expect(parsed?.references[0]).not.toHaveProperty('occurrenceId')
+    expect(parsed?.references[0]).not.toHaveProperty('nodeKey')
   })
 
   const valid = documentOf(file)
@@ -269,6 +286,26 @@ describe('draft documents in the input shell', () => {
     expect(nextWrite).not.toHaveBeenCalled()
     shell.actions.persistDraft()
     expect(nextWrite).toHaveBeenLastCalledWith({ text: 'edited without a view', references: [] })
+  })
+
+  it('keeps the replacement persistence writer when an earlier binding is disposed', () => {
+    const shell = makeShell()
+    const first = vi.fn<(draft: DraftSnapshot) => void>()
+    const second = vi.fn<(draft: DraftSnapshot) => void>()
+    shell.actions.persistDraft()
+    const unbindFirst = shell.bindDraftPersistence(first)
+    const unbindSecond = shell.bindDraftPersistence(second)
+    unbindFirst()
+
+    const draft = documentOf('retained ', file)
+    shell.setDraft(draft)
+    shell.actions.persistDraft()
+    expect(first).not.toHaveBeenCalled()
+    expect(second.mock.calls).toEqual([[draft], [draft]])
+
+    unbindSecond()
+    shell.actions.persistDraft()
+    expect(second).toHaveBeenCalledTimes(2)
   })
 
   it('applies initial structured prompts without waiting for a view', () => {
@@ -455,5 +492,127 @@ describe('draft documents in the input shell', () => {
     expect(shell.draftSnapshot).toEqual(documentOf('/edited ', file))
     expect(shell.snapshot.phase).toBe('plain')
     expect(chips(shell)).toMatchObject([{ ref: file.ref, appearance: 'file' }])
+  })
+
+  it('restores and persists failed structured sends in submission order after reversed settlement', async () => {
+    const first = Promise.withResolvers<SubmitOutcome>()
+    const second = Promise.withResolvers<SubmitOutcome>()
+    const provider = triggerProvider(createSnapshotStore<ReadonlyMap<'/' | '@', readonly string[]>>(new Map()))
+    const sink = vi.fn<SessionInputDeps['defaultSink']>()
+      .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    const shell = makeShell({ inputTriggers: () => provider, defaultSink: sink })
+    const write = vi.fn<(draft: DraftSnapshot) => void>()
+    shell.bindDraftPersistence(write)
+    const firstDraft = documentOf('first 🙂 ', file)
+    const secondDraft = documentOf('second ', session)
+    try {
+      shell.setDraft(firstDraft)
+      shell.submit()
+      shell.setDraft(secondDraft)
+      shell.submit()
+      await vi.waitFor(() => { expect(sink).toHaveBeenCalledTimes(2) })
+      expect(shell.draftSnapshot).toEqual({ text: '', references: [] })
+      second.resolve({ kind: 'error', text: 'second rejected' })
+      await vi.waitFor(() => { expect(shell.draftSnapshot).toEqual(secondDraft) })
+      expect(write).toHaveBeenLastCalledWith(secondDraft)
+      first.resolve({ kind: 'error', text: 'first rejected' })
+      const expected = documentOf('first 🙂 ', file, '\n\nsecond ', session)
+      await vi.waitFor(() => { expect(shell.draftSnapshot).toEqual(expected) })
+      expect(write).toHaveBeenLastCalledWith(expected)
+      expect(parseStoredDraft(JSON.parse(JSON.stringify(write.mock.calls.at(-1)?.[0])))).toEqual(expected)
+      expect(chips(shell)).toMatchObject([{ ref: file.ref }, { ref: session.ref }])
+      expect(shell.requestDraftInitialization({ prompt: 'next', clearPreviousDraft: true })).toBe('applied')
+    } finally {
+      shell.dispose()
+      first.resolve({ kind: 'error' })
+      second.resolve({ kind: 'error' })
+      await Promise.all([first.promise, second.promise])
+      await setImmediate()
+    }
+  })
+
+  it.each(['reject', 'dispose then resolve', 'dispose then reject'] as const)(
+    'contains pending reference serialization when it must %s', async (settlement) => {
+      const serialization = Promise.withResolvers<string>()
+      const started = Promise.withResolvers<AbortSignal>()
+      const provider: InputTriggerController = {
+        ...triggerProvider(createSnapshotStore<ReadonlyMap<'/' | '@', readonly string[]>>(new Map())),
+        serializeReference: (_source, _ref, signal) => {
+          started.resolve(signal)
+          return serialization.promise
+        },
+      }
+      const sink = vi.fn<SessionInputDeps['defaultSink']>(() => Promise.resolve({ kind: 'success' }))
+      const shell = makeShell({ inputTriggers: () => provider, defaultSink: sink })
+      const write = vi.fn<(draft: DraftSnapshot) => void>()
+      shell.bindDraftPersistence(write)
+      const draft = documentOf('pending ', file)
+      const attachment = 'pending-serialization-image' as DraftAttachmentId
+      try {
+        shell.setDraft(draft)
+        shell.addAttachments([attachment])
+        shell.submit()
+        const signal = await started.promise
+        expect(signal.aborted).toBe(false)
+        expect(shell.snapshot.phase).toBe('plain')
+        expectInitializationBlocked(shell)
+        shell.bindDraftPersistence(write)
+
+        if (settlement === 'reject') {
+          serialization.reject('reference unavailable')
+          await vi.waitFor(() => { expect(shell.notices.getSnapshot()?.text).toBe('reference unavailable') })
+          expect(shell.draftSnapshot).toEqual(draft)
+          expect(shell.snapshot.attachmentIds).toEqual([attachment])
+          expect(write).toHaveBeenLastCalledWith(draft)
+        } else {
+          expect(shell.dispose()).toEqual([attachment])
+          expect(signal.aborted).toBe(true)
+          const disposedDraft = shell.draftSnapshot
+          const writes = write.mock.calls.length
+          if (settlement === 'dispose then resolve') serialization.resolve('resolved reference')
+          else serialization.reject('late reference failure')
+          await serialization.promise.catch(() => undefined)
+          // The shell exposes no settlement promise; this checkpoint drains its queued continuations.
+          await setImmediate()
+          expect(shell.draftSnapshot).toBe(disposedDraft)
+          expect(shell.notices.getSnapshot()).toBeNull()
+          expect(write).toHaveBeenCalledTimes(writes)
+        }
+        expect(sink).not.toHaveBeenCalled()
+      } finally {
+        shell.dispose()
+        serialization.resolve('settled during teardown')
+        await serialization.promise.catch(() => undefined)
+        await setImmediate()
+      }
+    },
+  )
+})
+
+describe('plain-text reference catalogs', () => {
+  it('recognizes slash syntax only while its catalog is unavailable', () => {
+    const unavailable = new Map<'/' | '@', readonly string[]>()
+    expect(scanTextRefs('', unavailable)).toEqual([])
+    expect(scanTextRefs('/plan /plan.md /plan/path /plan。 x/plan @person', unavailable)).toEqual([
+      { start: 0, end: 5, trigger: '/' },
+    ])
+    expect(scanTextRefs('/plan @person', new Map([['/', []]]))).toEqual([])
+    expect(scanTextRefs('/plan @person', new Map([['@', ['person']]]))).toEqual([
+      { start: 0, end: 5, trigger: '/' },
+      { start: 6, end: 13, trigger: '@' },
+    ])
+  })
+
+  it('orders folder and catalog references without overlapping ranges', () => {
+    const text = '@src/ /plan @other/ @src/'
+    expect(scanTextRefs(text, new Map([['@', ['src']]]))).toEqual([
+      { start: 0, end: 4, trigger: '@' },
+      { start: 6, end: 11, trigger: '/' },
+      { start: 12, end: 19, trigger: '@' },
+      { start: 20, end: 24, trigger: '@' },
+    ])
+    expect(scanTextRefs('@"some folder/ trailing', new Map())).toEqual([
+      { start: 0, end: 14, trigger: '@' },
+    ])
   })
 })
