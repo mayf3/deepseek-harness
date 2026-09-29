@@ -52,8 +52,7 @@ export function singleResultText(block: ToolResultNode): string | undefined {
 }
 
 /**
- * Validate the optional escalation pair shared by first-party shell and file
- * mutation tools.
+ * Validate the optional escalation pair of first-party file mutation tools.
  * @param args - parsed open-root Tool arguments.
  * @returns whether the declared escalation fields form a valid pair.
  */
