@@ -37,6 +37,15 @@ The **Refresh** button shows its tooltip after 500 ms of hovering or keyboard fo
 
 ### Installing a bundle
 
+The **Add plugin** control has a main button and a separate arrow for choosing how to add a plugin.
+
+| Button or menu item | Result |
+| --- | --- |
+| **Add plugin** | Opens the installation dialog with focus in its package field. |
+| Arrow: **Choose how to add a plugin** | Opens the menu of installation and plugin-contributed actions. |
+| **Install a third-party plugin** | Closes the menu and opens the same dialog for a package name, Git repository, or local directory. |
+| **Let the agent create a plugin** | When [ui-agent-preset](../ui-agent-preset/README.md#use-this-package) contributes this item, closes the menu and opens Creator to author a DSH plugin. |
+
 On first use, when pnpm uses the unconfigured official npm registry and npmmirror is offered, the Host probes both registries in parallel. The first successful HTTPS ping response selects the initial source. The dialog preserves remembered choices, manual selections, explicit manager configuration, and custom or unknown pnpm registries. An install clicked during initial probing waits for that bounded operation; a late result cannot overwrite a manual choice or reopen a closed dialog.
 
 The Host sends GET requests to `https://registry.npmjs.org/-/ping` and `https://registry.npmmirror.com/-/ping` through its normal fetch proxy. A 2xx response wins; redirects and failures do not. The remaining request is cancelled, both response bodies are discarded, and cleanup completes before the result returns. The default deadline is 1500 ms and results, including unavailable results, are cached for five minutes. Configure `registryProbeTimeoutMs` and `registryProbeCacheTtlMs` on `ui-plugin-manager`; `registryProbeEnabled: false` disables probing. If both requests fail or time out, the existing default remains selected. No IP-location service or Session content is involved.
@@ -98,6 +107,8 @@ Package management uses the profile's dependency records: installed bundles can 
 The Host entry exposes `pluginRegistryProbe.fastest()` through the generated Remote interface. It shares pending comparisons, expires cached results, and aborts and awaits outstanding probes on unload. Calls after unload return a rejected Promise.
 
 The browser plugin registers the `plugins` sidebar entry and its `main` panel through `ctx.slots.inject()`, so both follow late slot declaration, locale changes and teardown. The page is global and belongs to no Session. Display text comes from package metadata and the page's dictionary.
+
+The add control reuses `Button`, `Menu`, and `MenuItemButton`. Both installation actions call the same `openInstall` callback and use `InstallDialog` and `PluginManagerController`. The root-scoped list slot `plugins.add.actions` accepts contributed `MenuItemButton` rows after the install action; each contribution receives an `onDismiss()` callback to close the menu before starting its action.
 
 ### The store
 

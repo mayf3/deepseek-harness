@@ -31,8 +31,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Workspace UI navigation service merge (ctx.uiWorkspace).
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { AgentPresetLabel } from './AgentPresetLabel.tsx'
+import { CreatePluginMenuItem } from './CreatePluginMenuItem.tsx'
 import type { AgentPresetLabelInjected } from './AgentPresetLabel.tsx'
 import { AgentPresetSeat } from './AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from './AgentPresetSeat.tsx'
@@ -186,6 +188,7 @@ export function apply(ctx: ClientContext): void {
         hooks: { agentPresetSeat: seat.store, developerTools: ctx.configForms.developerTools.enabled },
         load: () => seat.load(),
         select: (id: string) => seat.select(id),
+        dismissRefusal: (error) => { seat.dismissRefusal(error) },
         introduced: () => { seat.introduced() },
       }
     }
@@ -195,13 +198,15 @@ export function apply(ctx: ClientContext): void {
       load: () => controller.load(),
     })
 
+    const startCreatorDraft = () => {
+      const seat = mainBlankSeat() ?? unboundSeat
+      seat.stage('cordis', true)
+      scope.uiWorkspace.startSession()
+      void seat.apply()
+    }
+
     scope.effect(() => {
-      creatorDraft = () => {
-        const seat = mainBlankSeat() ?? unboundSeat
-        seat.stage('cordis', true)
-        scope.uiWorkspace.startSession()
-        void seat.apply()
-      }
+      creatorDraft = startCreatorDraft
       const chip = scope.slots.register({
         name: 'conversation.hero.agentPreset',
         locale: 'settings.agentPreset',
@@ -221,6 +226,17 @@ export function apply(ctx: ClientContext): void {
         label()
       }
     }, 'ui-agent-preset: new-session chip and header label')
+
+    scope.slots.inject('plugins.add.actions', () => scope.slots.register({
+      name: 'plugins.add.actions',
+      id: 'create-plugin',
+      locale: 'settings.agentPreset',
+      inject: () => ({
+        hooks: { agentPresets: controller.store },
+        load: () => controller.load(),
+        startCreatorDraft,
+      }),
+    }, CreatePluginMenuItem))
   })
 
   /** Capture the exact blank Session one Settings action may update. */

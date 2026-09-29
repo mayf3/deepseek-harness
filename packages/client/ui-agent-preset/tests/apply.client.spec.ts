@@ -22,6 +22,7 @@ import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSectio
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
+import { CreatePluginMenuItem, type CreatePluginMenuItemInjected } from '../src/client/CreatePluginMenuItem.tsx'
 import { AgentPresetSectionController } from '../src/client/section-store.ts'
 import { apply as hostApply } from '../src/index.ts'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -371,6 +372,46 @@ describe('ui-agent-preset apply', () => {
     declareRoot(slots)
 
     await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
+  })
+
+  it('binds the Add plugin menu item to the roster and Creator flow and removes it with the feature', async () => {
+    const { ctx, slots, setDeveloperTools } = await bench()
+    try {
+      slots.register({
+        name: 'root',
+        children: {
+          'settings.section': { kind: 'list', scope: 'root' },
+          conversation: { kind: 'single', scope: 'root' },
+          'plugins.add.actions': { kind: 'list', scope: 'root' },
+        },
+      } as never, () => null)
+      declareConversation(slots)
+      ctx.provide('conversation', {} as never)
+      ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+      const uiWorkspace = uiWorkspaceDouble()
+      ctx.provide('uiWorkspace', uiWorkspace as never)
+      const feature = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
+      await feature.await()
+
+      const entry = slots.entries('plugins.add.actions')[0]!
+      expect(entry.component).toBe(CreatePluginMenuItem)
+      const action: Partial<CreatePluginMenuItemInjected> | undefined = entry.inject?.()
+      if (action?.load === undefined || action.hooks === undefined || action.startCreatorDraft === undefined) {
+        throw new Error('expected the injected Create plugin actions')
+      }
+      await action.load()
+      expect(action.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard' }])
+
+      await setDeveloperTools(false)
+      action.startCreatorDraft()
+      expect(uiWorkspace.starts).toHaveLength(1)
+      expect(ctx.configForms.developerTools.enabled.getSnapshot()).toBe(false)
+
+      await feature.dispose()
+      expect(slots.entries('plugins.add.actions')).toHaveLength(0)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('hands the section its own store, live Coding Tools preference, and default write', async () => {
@@ -1099,8 +1140,9 @@ describe('ui-agent-preset apply', () => {
     conversation()
   })
 
-  it('keeps the applied composition when the roster load lands late', async () => {
-    const { ctx, slots, calls } = await bench()
+  it.each([false, true])('keeps the bound Creator outcome when the roster load lands late (refused: %s)', async (refused) => {
+    const selection = Promise.withResolvers<undefined>()
+    const { ctx, slots, calls } = await bench({ selectGate: selection.promise })
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
@@ -1119,6 +1161,7 @@ describe('ui-agent-preset apply', () => {
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
+    const unboundSeat = injectSeat()
 
     await section.load()
     section.startCreatorDraft?.()
@@ -1126,18 +1169,28 @@ describe('ui-agent-preset apply', () => {
     state.byId['s1'] = { id: 's1', blank: true }
     sessions.notify()
     const boundSeat = injectSeat(SessionId('s1'))
-    await boundSeat.load()
+    const loading = boundSeat.load()
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
+    if (refused) selection.reject(new Error('Creator failed to mount'))
+    else selection.resolve(undefined)
+    await loading
+    await vi.waitFor(() => { expect(boundSeat.hooks.agentPresetSeat.getSnapshot().busy).toBe(false) })
 
     // The chip mounts with the flow's session, so its roster load can land
     // AFTER the stage was consumed; the session's own composition is what
     // the display must keep — not the deployment default.
     state.byId['s1'] = {
-      id: 's1', blank: true, projectionValues: { agentPreset: 'cordis' },
+      id: 's1', blank: true, projectionValues: { agentPreset: refused ? null : 'cordis' },
     }
     await boundSeat.load()
 
-    expect(boundSeat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    expect(boundSeat.hooks.agentPresetSeat.getSnapshot()).toMatchObject({
+      current: refused ? '' : 'cordis',
+      error: refused ? { preset: { id: 'cordis' }, reason: 'Creator failed to mount' } : null,
+    })
+    expect(unboundSeat.hooks.agentPresetSeat.getSnapshot().error).toBeNull()
+    boundSeat.dismissRefusal(boundSeat.hooks.agentPresetSeat.getSnapshot().error)
+    expect(boundSeat.hooks.agentPresetSeat.getSnapshot().error).toBe(refused ? 'Creator failed to mount' : null)
     conversation()
   })
 
@@ -1189,7 +1242,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     await expect(settings).resolves.toBe(refuseLatest ? 'selection refused' : undefined)
     expect(controller.store.getSnapshot()).toMatchObject({
       current: refuseLatest ? 'standard' : 'cordis', busy: false,
-      error: refuseLatest ? 'selection refused' : null,
+      error: refuseLatest ? { preset: { id: 'cordis' }, reason: 'selection refused' } : null,
     })
   })
 
@@ -1302,20 +1355,27 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.store.getSnapshot().current).toBe('')
   })
 
-  it('restores an empty current value after a refused switch for an uncomposed Session', async () => {
-    const select = () => Promise.resolve({
-      ok: false as const, error: new RemoteError('gateway/internal', 'selection rejected', {}),
-    })
+  it.each(['returned', 'thrown'] as const)('restores an uncomposed Session after a %s selection failure', async (failure) => {
+    const select = () => failure === 'thrown'
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise a transport rejection with a non-Error reason.
+      ? Promise.reject('selection rejected')
+      : Promise.resolve({ ok: false as const, error: new RemoteError('gateway/internal', 'selection rejected', {}) })
     const controller = new AgentPresetSeatController({
       ...developerTools(),
-      remote: { agentPresets: { select } },
+      remote: { agentPresets: {
+        select,
+        list: () => Promise.resolve({ ok: true, value: { presets: [{ id: 'standard', isDefault: true }] } }),
+      } },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 
     await controller.select('minimal')
 
     expect(controller.store.getSnapshot()).toMatchObject({
-      busy: false, current: '', error: 'selection rejected',
+      busy: false, current: '', error: { preset: { id: 'minimal' }, reason: 'selection rejected' },
     })
+    controller.dismissRefusal(controller.store.getSnapshot().error)
+    await controller.load()
+    expect(controller.store.getSnapshot()).toMatchObject({ current: '', error: null })
   })
 
   it('keeps the bare cause of a mount failure, not the frame that names the preset again', async () => {
@@ -1324,6 +1384,7 @@ describe('AgentPresetSeatController reconciliation', () => {
       ...developerTools(),
       remote: {
         agentPresets: {
+          list: () => Promise.resolve({ ok: false as const, error: new RemoteError('gateway/internal', 'roster unavailable', {}) }),
           select: () => Promise.resolve({
             ok: false as const,
             error: new RemoteError(
@@ -1339,6 +1400,17 @@ describe('AgentPresetSeatController reconciliation', () => {
     // The surface reporting this names the preset itself, so carrying the
     // roster's own "preset X failed to mount" frame would say it twice.
     expect(await controller.select('broken')).toBe(reason)
+    const first = controller.store.getSnapshot().error
+    expect(first).toEqual({ preset: { id: 'broken' }, reason })
+    await controller.select('broken')
+    const second = controller.store.getSnapshot().error
+    expect(second).toEqual(first)
+    expect(second).not.toBe(first)
+    await controller.load()
+    expect(controller.store.getSnapshot().error).toBe(second)
+    controller.dismissRefusal(first)
+    expect(controller.store.getSnapshot().error).toBe(second)
+    controller.dismissRefusal(second)
     expect(controller.store.getSnapshot().error).toBe(reason)
   })
 })

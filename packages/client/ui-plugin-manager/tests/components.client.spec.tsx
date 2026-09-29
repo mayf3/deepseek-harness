@@ -8,6 +8,7 @@ import type { PluginEntryId, PluginInstallRequestId } from '@deepseek-ai/dsh-api
 import { bindSnapshotSelector, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ConfigForm, ConfigFormSnapshot, SettingsMirrorSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StrictMode, type ReactNode } from 'react'
 import { createNavigationStore } from '../src/client/navigation-store.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
@@ -16,7 +17,7 @@ import type { PluginManagerPageProps } from '../src/client/index.ts'
 import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { rowKey, type InstallState, type PackageRow, type PackageView, type PluginManagerState } from '../src/client/manager-store.ts'
 import { INSTALL_GIT_EXAMPLE, INSTALL_PATH_EXAMPLE, en, zh, type PluginManagerLocaleKey } from '../src/client/locales.ts'
-import type { PluginActivationOwnerProps, PluginDetailProps, PluginsSubject } from '../src/client/slot-contract.ts'
+import type { PluginActivationOwnerProps, PluginAddActionsProps, PluginDetailProps, PluginsSubject } from '../src/client/slot-contract.ts'
 
 afterEach(cleanup)
 
@@ -81,7 +82,7 @@ const READY: PluginManagerState = {
  * (a list slot's cell is empty), the view asked for — `detail` for a detail
  * contribution — and the owner props.
  */
-type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail', owner: unknown, form?: ConfigPageForm) => ReactNode>
+type SlotBodies = Record<string, (view: 'summary' | 'page' | 'activation' | 'detail' | 'add', owner: unknown, form?: ConfigPageForm) => ReactNode>
 
 /** The subject a detail contribution was rendered with. */
 function subjectOf(owner: unknown): PluginsSubject | undefined {
@@ -158,6 +159,7 @@ function renderTab(
       const body = bodies[`${name}:${opts?.only ?? opts?.entryKey ?? ''}`]
       if (body === undefined) return null
       if (name === 'plugins.bundle.activation') return body('activation', owner)
+      if (name === 'plugins.add.actions') return body('add', owner)
       if (name.startsWith('plugins.detail.')) return body('detail', owner)
       if (!('view' in owner) || (owner.view !== 'summary' && owner.view !== 'page')) {
         throw new Error('Plugin configuration fixture requires a summary or page view')
@@ -191,6 +193,88 @@ function renderTab(
 }
 
 describe('PluginManagerPage', () => {
+  it('opens the add-plugin menu with ArrowDown and returns focus to its trigger on Escape', () => {
+    const { actions } = renderTab({}, {}, {
+      'plugins.add.actions:': (_view, owner) => <MenuItemButton
+        onSelect={() => { (owner as PluginAddActionsProps).onDismiss() }}>Create a plugin</MenuItemButton>,
+    })
+    const add = screen.getByRole('button', { name: en.chooseAddMethod })
+    add.focus()
+    expect(fireEvent.keyDown(add, { key: 'Tab' })).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.keyDown(add, { key: 'ArrowDown' })
+    const install = screen.getByRole('menuitem', { name: new RegExp(en.installExisting) })
+    const create = screen.getByRole('menuitem', { name: 'Create a plugin' })
+    expect(screen.getAllByRole('menuitem')).toEqual([install, create])
+    expect(document.activeElement).toBe(install)
+    fireEvent.keyDown(install, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(create)
+    fireEvent.keyDown(create, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(add)
+    expect(actions.openInstall).not.toHaveBeenCalled()
+  })
+
+  it('opens the existing install dialog from the menu and keeps focus on its input', async () => {
+    const b = renderTab()
+    b.actions.openInstall.mockImplementation(() => {
+      b.set({ install: { ...IDLE_INSTALL, open: true } })
+    })
+    const add = screen.getByRole('button', { name: en.chooseAddMethod })
+    add.focus()
+    fireEvent.click(add)
+    expect(b.actions.openInstall).not.toHaveBeenCalled()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(en.installExisting) }))
+    })
+    expect(b.actions.openInstall).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: en.installSpecLabel }))
+  })
+
+  it('keeps primary installation and mouse-selected creation on separate buttons', () => {
+    const createPlugin = vi.fn()
+    const { actions } = renderTab({}, {}, {
+      'plugins.add.actions:': (_view, owner) => <MenuItemButton onSelect={() => {
+        (owner as PluginAddActionsProps).onDismiss()
+        createPlugin()
+      }}><span>Create a plugin</span><span>Describe it to the agent</span></MenuItemButton>,
+    })
+    const add = screen.getByRole('button', { name: en.addPlugin })
+    const more = screen.getByRole('button', { name: en.chooseAddMethod })
+    expect(add.getAttribute('aria-haspopup')).toBeNull()
+    expect(more.getAttribute('aria-haspopup')).toBe('menu')
+    fireEvent.pointerDown(add, { pointerType: 'mouse', button: 0 })
+    fireEvent.pointerUp(add, { pointerType: 'mouse', button: 0 })
+    fireEvent.click(add)
+    expect(actions.openInstall).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
+    actions.openInstall.mockClear()
+    for (const label of ['Create a plugin', 'Describe it to the agent']) {
+      fireEvent.pointerDown(more, { pointerType: 'mouse', button: 0 })
+      fireEvent.pointerUp(more, { pointerType: 'mouse', button: 0 })
+      fireEvent.click(more)
+      expect(more.getAttribute('aria-expanded')).toBe('true')
+      expect(actions.openInstall).not.toHaveBeenCalled()
+      const target = screen.getByText(label)
+      fireEvent.pointerDown(target, { pointerType: 'mouse', button: 0 })
+      fireEvent.pointerUp(target, { pointerType: 'mouse', button: 0 })
+      fireEvent.click(target)
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(more.getAttribute('aria-expanded')).toBe('false')
+      expect(actions.openInstall).not.toHaveBeenCalled()
+    }
+    expect(createPlugin).toHaveBeenCalledTimes(2)
+    fireEvent.click(more)
+    const install = screen.getByText(en.installExisting)
+    fireEvent.pointerDown(install, { pointerType: 'mouse', button: 0 })
+    fireEvent.pointerUp(install, { pointerType: 'mouse', button: 0 })
+    fireEvent.click(install)
+    expect(actions.openInstall).toHaveBeenCalledOnce()
+    expect(createPlugin).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
   it('opens the requested bundle after its inventory arrives and falls back when it is absent', () => {
     const b = renderTab({ status: 'loading' })
     act(() => { b.navigation.actions.setView({ kind: 'package', name: 'dsh-better-sidebar' }) })
@@ -221,6 +305,7 @@ describe('PluginManagerPage', () => {
     expect(loading.querySelector('button, input, [data-state="ongoing"]')).toBeNull()
     expect(document.querySelector('[data-plugin-panel]')?.getAttribute('aria-busy')).toBe('true')
     expect(screen.getByRole('button', { name: en.addPlugin })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.chooseAddMethod })).toHaveProperty('disabled', true)
     set({ status: 'unavailable' })
     expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
     expect(screen.getByRole('status').querySelector('[data-state="idle"]')).not.toBeNull()
@@ -1786,6 +1871,8 @@ describe('PluginManagerPage', () => {
       ...IDLE_INSTALL, open: true, phase: 'unconfirmed', requestId: 'pending-install' as PluginInstallRequestId,
       failure: { reason: 'offline', uncertainty: 'cancellation' },
     } })
+    expect(screen.queryByRole('button', { name: en.chooseAddMethod })).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.installViewTask }))
     expect(actions.openInstall).toHaveBeenCalledOnce()
     expect(screen.getByRole('status').textContent).toBe(en.installUnconfirmedTitle)
