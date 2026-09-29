@@ -6,13 +6,13 @@
       "parameters": {
         "type": "object",
         "properties": {
+          "description": {
+            "type": "string",
+            "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Provide `description` before `code` in the arguments. Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
+          },
           "code": {
             "type": "string",
             "description": "The program: the body of an async TypeScript function."
-          },
-          "description": {
-            "type": "string",
-            "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
           },
           "timeoutMs": {
             "type": "number",
@@ -32,8 +32,8 @@
           }
         },
         "required": [
-          "code",
-          "description"
+          "description",
+          "code"
         ]
       }
     }
