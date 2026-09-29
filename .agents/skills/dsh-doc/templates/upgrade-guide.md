@@ -18,7 +18,7 @@ description: "The externally perceptible surface that breaks and what replaces i
 
 ## Change
 
-State the old and new behavior of the surface, who observes it, and the pull request that introduced it.
+State the old and new behavior of the surface and who observes it.
 
 ## Migration
 
