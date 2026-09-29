@@ -47,20 +47,20 @@ it('awaits other signers before rejecting and permitting output cleanup', async 
   expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'b.node'), identity)
 })
 
-it.each(['arm64', 'x64'] as const)('limits %s executable-memory permissions to the standalone Node interpreter', async (arch) => {
+it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpers JIT-only', async (arch) => {
   const path = root()
   mkdirSync(join(path, 'dependencies/node/bin'), { recursive: true })
   const node = join(path, 'dependencies/node/bin/node')
   const addon = join(path, 'addon.node')
-  const helpers = ['arm64', 'x64'].map(arch => join(path, 'node_modules/@deepseek-ai', `libreoffice-kit-darwin-${arch}`, 'bin/libreoffice-kit'))
+  const helpers = ['arm64', 'x64'].map(helperArch => join(path, 'node_modules/@deepseek-ai', `libreoffice-kit-darwin-${helperArch}`, 'bin/libreoffice-kit'))
   for (const helper of helpers) mkdirSync(join(helper, '..'), { recursive: true })
   for (const file of [node, addon, ...helpers]) writeFileSync(file, Buffer.from('cffaedfe00000000', 'hex'))
   await signMacOSRuntime(path, 'com.example.app', identity, arch)
   const nodePlist = join(import.meta.dirname, '../scripts', arch === 'x64' ? 'node-x64-entitlements.plist' : 'jit-entitlements.plist')
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(node, expect.any(String), identity, nodePlist)
   const xml = readFileSync(nodePlist, 'utf8')
-  expect(xml).toContain('<key>com.apple.security.cs.allow-jit</key><true/>')
-  expect(xml.includes('<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>')).toBe(arch === 'x64')
+  expect(xml).toMatch(/<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\s*\/>/u)
+  expect(/<key>com\.apple\.security\.cs\.allow-unsigned-executable-memory<\/key>\s*<true\s*\/>/u.test(xml)).toBe(arch === 'x64')
   for (const file of helpers) {
     expect(signMacOSRuntimeCode).toHaveBeenCalledWith(file, expect.any(String), identity,
       join(import.meta.dirname, '../scripts/jit-entitlements.plist'))

@@ -25,7 +25,7 @@ function magic(path: string): string {
  * @param appId - Release application identifier.
  * @param expected - Required signing identity.
  * @param arch - Target runtime architecture, independent of the signing host.
- * @param cacheDirectory Optional content-addressed cache; requires the keychain-owned signing probe.
+ * @param cacheDirectory - Optional content-addressed cache; requires the keychain-owned signing probe.
  * @returns Number of signed native files.
  */
 export async function signMacOSRuntime(
@@ -41,11 +41,12 @@ export async function signMacOSRuntime(
       const path = files[next++]
       if (path === undefined) return
       const identifier = `${appId}.runtime.${createHash('sha256').update(path).digest('hex')}`
-      const needsJit = path === 'dependencies/node/bin/node'
+      const isNode = path === 'dependencies/node/bin/node'
+      const needsJit = isNode
         || /^node_modules\/@deepseek-ai\/libreoffice-kit-darwin-(?:arm64|x64)\/bin\/libreoffice-kit$/u.test(path)
-      const jitPlist = path === 'dependencies/node/bin/node' && arch === 'x64'
+      const entitlementsFile = isNode && arch === 'x64'
         ? 'node-x64-entitlements.plist' : 'jit-entitlements.plist'
-      const entitlements = needsJit ? join(import.meta.dirname, jitPlist) : undefined
+      const entitlements = needsJit ? join(import.meta.dirname, entitlementsFile) : undefined
       const file = join(root, path)
       const thin = ['cefaedfe', 'cffaedfe', 'feedface', 'feedfacf'].includes(magic(file))
       if (cacheDirectory !== undefined && policy !== undefined && thin) {
