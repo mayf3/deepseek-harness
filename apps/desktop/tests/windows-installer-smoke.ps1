@@ -158,11 +158,11 @@ try {
     Dismiss $process $copy.INSTALLER_CHOOSE_PATH
     [void][InstallerCapture]::SendMessage($window, 0x28, $edit, [IntPtr]1)
     foreach ($invalidPath in @('C:\Windows\Harness Installer Test', [IO.Path]::GetPathRoot($installPath), ([IO.Path]::GetPathRoot($installPath) + '\'))) {
-        [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $invalidPath)
+        if (-not [InstallerCapture]::SetWindowText($edit, $invalidPath)) { throw 'Cannot set invalid installer path' }
         [void][InstallerCapture]::PostMessage($edit, 0x100, [IntPtr]13, [IntPtr]::Zero)
         Dismiss $process $copy.INSTALLER_PATH_INVALID
     }
-    [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, $installPath)
+    if (-not [InstallerCapture]::SetWindowText($edit, $installPath)) { throw 'Cannot set installer path' }
     [InstallerCapture]::MoveBy($window, 73, -41)
     $bounds = [InstallerCapture]::Bounds($window)
     Click-Control $process $copy.INSTALLER_INSTALL
@@ -180,7 +180,7 @@ try {
     Set-CommandCheckbox $process $true
     Click-Control $process $copy.INSTALLER_CHOOSE_PATH
     $edit = Wait-Control $process $installPath
-    [void][InstallerCapture]::SendMessage($edit, 0xC, [IntPtr]::Zero, ($installPath + '\\'))
+    if (-not [InstallerCapture]::SetWindowText($edit, ($installPath + '\\'))) { throw 'Cannot set installer path with trailing separators' }
     [void][InstallerCapture]::Save([InstallerCapture]::Find($process.Id), (Join-Path $OutputDirectory 'dark-welcome.png'))
     $bounds = [InstallerCapture]::Bounds([InstallerCapture]::Find($process.Id))
     Click-Control $process $copy.INSTALLER_INSTALL
