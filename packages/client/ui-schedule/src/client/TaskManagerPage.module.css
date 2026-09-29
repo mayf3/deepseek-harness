@@ -565,6 +565,12 @@
   padding-bottom: 1px;
   margin-bottom: -1px;
   overflow-x: auto;
+  /* A narrow strip still scrolls its tabs, without a visible bar (both engines). */
+  scrollbar-width: none;
+}
+
+.detailTabs::-webkit-scrollbar {
+  display: none;
 }
 
 .detailActions {
