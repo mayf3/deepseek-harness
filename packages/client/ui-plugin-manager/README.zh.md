@@ -37,9 +37,14 @@ kind: "package-reference"
 
 ### 安装一个组合包
 
-**添加插件**主按钮和箭头菜单中的**安装第三方插件**均打开安装对话框并聚焦包名输入框。菜单还提供插件贡献的动作。
+**添加插件**控件包含主按钮和独立箭头，箭头用于选择添加方式。
 
-`plugins.add.actions` 接受 root 作用域的 `MenuItemButton` 贡献，放在安装项之后。贡献者在开始动作前调用传入的 `onDismiss()` 关闭菜单。
+| 按钮或菜单项 | 结果 |
+| --- | --- |
+| **添加插件** | 打开安装对话框并聚焦包名输入框。 |
+| 箭头：**选择添加插件方式** | 打开包含安装及插件贡献动作的菜单。 |
+| **安装第三方插件** | 关闭菜单，打开同一对话框，从包名、Git 仓库或本地目录安装。 |
+| **让 Agent 创建插件** | 由 [ui-agent-preset](../ui-agent-preset/README.zh.md#use-this-package) 提供此项时，关闭菜单并进入创造模式，制作 DSH 插件。 |
 
 首次使用时，如果未显式配置安装源、pnpm 使用官方 npm 源，且列表提供 npmmirror，Host 会并发探测这两个源，选择最先成功响应 HTTPS ping 的源。已记住的选择、用户手选、管理器显式配置，以及自定义或未知的 pnpm 源均保留。在初次探测期间点击安装会等待这次有时限的操作；迟到结果不会覆盖手选或重新打开已关闭的对话框。
 
@@ -102,6 +107,8 @@ ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
 Host 入口通过生成的 Remote 接口暴露 `pluginRegistryProbe.fastest()`，共享进行中的比较、让缓存按时过期，并在卸载时中止和等待未完成探测。卸载后调用会返回拒绝的 Promise。
 
 浏览器插件通过 `ctx.slots.inject()` 注册 `plugins` 侧栏入口与它的 `main` 面板，使两者跟随 slot 延迟声明、本地化变化与销毁。页面为全局页面，不属于任何 Session。显示文本来自包元信息与页面字典。
+
+添加控件复用 `Button`、`Menu` 和 `MenuItemButton`。两个安装入口调用同一个 `openInstall` 回调，使用 `InstallDialog` 与 `PluginManagerController`。root 作用域的 list slot `plugins.add.actions` 接受贡献的 `MenuItemButton` 行，放在安装项之后；每个贡献者接收 `onDismiss()` 回调，在开始动作前关闭菜单。
 
 ### store
 
