@@ -135,12 +135,14 @@ export function apply(ctx: ClientContext): void {
     const reconcile = (): void => {
       requested++
       pending ??= Promise.resolve().then(async () => {
-        for (;;) {
-          const revision = requested
-          await section.reconcileCodingTools(codingToolsDisabled)
-          if (!active || requested === revision) return
-        }
-      }).finally(() => { pending = undefined })
+        try {
+          for (;;) {
+            const revision = requested
+            await section.reconcileCodingTools(codingToolsDisabled)
+            if (!active || requested === revision) return
+          }
+        } finally { pending = undefined }
+      })
     }
     // The roster reflects live declarations and the default is a settings field, so
     // both an external settings edit and a reconnect can move this row.

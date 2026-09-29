@@ -22,6 +22,7 @@ import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSectio
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
+import { AgentPresetSectionController } from '../src/client/section-store.ts'
 import { apply as hostApply } from '../src/index.ts'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 
@@ -895,6 +896,38 @@ describe('ui-agent-preset apply', () => {
     expect(b.ctx.configForms.get('agent-preset-registry').getSnapshot()).toMatchObject({ status: 'ready', mode: 'host', writable: true, revision: 0 })
     await vi.waitFor(() => { expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}']) })
     await b.ctx.fiber.dispose()
+  })
+
+  it('corrects a hidden default when accepted settings arrive as the previous reconciliation settles', async () => {
+    const b = await bench({ presets: ROSTER_MOVED.value.presets })
+    b.ctx.provide('sessions', sessionsDouble(b.ctx, { byId: {} }) as never)
+    declareRoot(b.slots)
+    const answer = await b.ctx.remote.settings.describe()
+    if (!answer.ok) throw new Error(answer.error.message)
+    const describe = vi.spyOn(b.ctx.remote.settings, 'describe').mockResolvedValue({
+      ...answer,
+      value: { ...answer.value, namespaces: answer.value.namespaces.map(row => row.ns === 'ui-settings'
+        ? { ...row, value: { enabled: false } } : row) },
+    })
+    const disabled = Promise.withResolvers<undefined>()
+    const reconcile = vi.spyOn(AgentPresetSectionController.prototype, 'reconcileCodingTools')
+      .mockImplementationOnce(function (this: AgentPresetSectionController, shouldReset) {
+        reconcile.mockRestore()
+        const result = this.reconcileCodingTools(shouldReset)
+        // The real settings mirror publishes its already-answered read while
+        // the prior reconciliation's promise is settling.
+        void result.then(() => { void b.setDeveloperTools(false).then(() => { disabled.resolve(undefined) }, disabled.reject) })
+        return result
+      })
+    try {
+      await b.ctx.plugin({ inject: [...inject], apply }).await()
+      await disabled.promise
+      expect(b.calls.filter(call => call.startsWith('settings:'))).toEqual(['settings:{"selectedDefault":"standard"}'])
+    } finally {
+      await b.ctx.fiber.dispose()
+      reconcile.mockRestore()
+      describe.mockRestore()
+    }
   })
 
   it.each([['cordis', true], ['mine', true], ['ptc', true], ['minimal', true], ['ptc', false], ['minimal', false]] as const)(

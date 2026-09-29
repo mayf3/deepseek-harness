@@ -69,7 +69,7 @@ function renderSeat(
     t: translate,
   } as AgentPresetSeatProps
   render(<AgentPresetSeat {...props} />)
-  return { ...actions, developerTools }
+  return { ...actions, developerTools, store }
 }
 
 function renderLabel(
@@ -112,6 +112,33 @@ describe('the new-session chip', () => {
     renderSeat({ options: [{ id: 'ptc', name: 'My workflow' }] }, undefined, undefined, false)
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByRole('menuitem', { name: /^My workflow/ })).toBeTruthy()
+  })
+
+  it('keeps the current mode visible without opening a picker when all options are hidden', () => {
+    const actions = renderSeat({ current: 'minimal', options: [{ id: 'ptc' }, { id: 'minimal' }] }, undefined, undefined, false)
+    const trigger = screen.getByRole<HTMLButtonElement>('button', { name: en.presetMinimalName })
+    expect(trigger.disabled).toBe(true)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
+  })
+
+  it('closes a picker when its last visible option disappears and keeps it closed when options return', () => {
+    const options = [{ id: 'minimal' }, { id: 'mine' }]
+    const actions = renderSeat({ current: 'minimal', options }, undefined, undefined, false)
+    const trigger = screen.getByRole<HTMLButtonElement>('button', { name: en.presetMinimalName })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menuitem', { name: /^mine/ })).toBeTruthy()
+    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options: [{ id: 'ptc' }, { id: 'minimal' }] }) })
+    expect(trigger.disabled).toBe(true)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    act(() => { actions.store.set({ ...actions.store.getSnapshot(), options }) })
+    expect(trigger.disabled).toBe(false)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(actions.select).not.toHaveBeenCalled()
   })
 
   it('renders only for a Session retained by the main view', () => {
