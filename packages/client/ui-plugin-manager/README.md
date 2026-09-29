@@ -149,7 +149,7 @@ These limits define the reach of the management view; they are current package c
 - **Only bundles are managed** — a dependency without a bundle patch is refused before it installs; one the profile already holds is left off the page unless the profile selects it, and loading plain plugin modules stays a file operation.
 - **Rows show a phase, not a reason** — a failed row reads as failed without the Host's error text; the Host log has it.
 - **One install at a time** — the dialog runs one pnpm command; a second spec waits for the first to finish.
-- **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades.
+- **No version picker** — the spec is typed as pnpm accepts it; the page neither lists registry versions nor offers upgrades. Its refusals and the incompatibility reason on an installed plugin tell the person to upgrade a profile-installed plugin by uninstalling and installing it again, and that a plugin shipped with DSH upgrades with DSH.
 - **The registry choice is this browser's** — it lives in `localStorage`, so another browser applies its own initial recommendation; the `dsh plugin` command and the agent tool use the Host's configured registry.
 - **Every registry read runs pnpm** — opening the dialog, the check, and the install each ask pnpm what its own configuration names; a machine without pnpm reads it as unknown and is offered no fallback.
 
