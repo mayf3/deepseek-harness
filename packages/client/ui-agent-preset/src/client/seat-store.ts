@@ -85,7 +85,7 @@ export class AgentPresetSeatController {
     this.staged.introduce = false
   }
 
-  /** Developer tools are the single gate over preset selection. */
+  /** Developer tools gate chip selection; Settings defaults bypass it. */
   private selectionAvailable(): boolean {
     return this.ctx.configForms.developerTools.enabled.getSnapshot()
   }
@@ -181,7 +181,8 @@ export class AgentPresetSeatController {
     const session = this.currentSession()
     if (session === undefined || !session.blank || session.id !== expectedSessionId) return undefined
     this.stage(id)
-    return await this.apply()
+    // A Settings default reaches the blank Session whether or not Developer tools expose the chip.
+    return await this.applyStage(true)
   }
 
   /** Acknowledge the introduction cue once the chip has played it. */
@@ -200,8 +201,11 @@ export class AgentPresetSeatController {
    * @returns this attempt's Host refusal, or undefined when successful or no switch starts.
    */
   async apply(): Promise<string | undefined> {
+    return await this.applyStage(this.selectionAvailable())
+  }
+
+  private async applyStage(available: boolean): Promise<string | undefined> {
     if (this.store.getSnapshot().busy) return
-    const available = this.selectionAvailable()
     // A stage made while Developer tools were on must not outlive them.
     if (!available) this.clearStage()
     const staged = this.staged.id

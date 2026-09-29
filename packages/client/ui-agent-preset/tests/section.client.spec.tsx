@@ -35,11 +35,12 @@ function rowFor(id: string): HTMLElement {
   if (row === null) throw new Error(`no card for ${id}`)
   return row
 }
-it('offers no selection switch and disables the card actions while Developer tools are off', () => {
-  view({}, undefined, false)
+it('offers no selection switch and keeps the card actions while Developer tools are off', () => {
+  const actions = view({}, undefined, false)
 
   expect(screen.queryByRole('switch')).toBeNull()
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: `${en.enableDevToolsToSetDefault}: Mine` }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
+  expect(actions.makeDefault).toHaveBeenCalledWith('mine')
 })
 it('reads the roster once and sets a default from the card body', async () => {
   const actions = view()
