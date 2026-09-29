@@ -502,12 +502,15 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       for (const definition of this.eventDefinitions.entries()) {
         const result = definition.match(event)
         if (result === null) continue
+        // Inline target tracking avoids an additional closure allocation for each event.
+        /* jscpd:ignore-start */
         if (definition.target !== undefined && definition.target !== firstTarget && definition.target !== secondTarget) {
           if (firstTarget === undefined) firstTarget = definition.target
           else if (secondTarget === undefined) secondTarget = definition.target
           else (otherTargets ??= new Set()).add(definition.target)
         }
         publication = maximumPublication(publication, accept.call(this, definition, result.id, matchFor(result.role)))
+        /* jscpd:ignore-end */
       }
     } else {
       for (const { definition, match } of routes) {
