@@ -446,13 +446,11 @@ it.each([en, zh])('renders positive bonus wallets separately from recharge balan
 })
 
 it.each([[], [{ currency: 'CNY' as const, balance: '0.00' }, { currency: 'USD' as const, balance: '-1.00' }]].map(bonusWallets => ({ bonusWallets })))(
-  'keeps the bonus row without inventing credit for zero or negative wallets', ({ bonusWallets }) => {
+  'omits the bonus row for zero or negative wallets', ({ bonusWallets }) => {
     mount({ status: 'credential-stored', attempt: null }, en, {
       balance: { status: 'ready', value: [{ currency: 'CNY', balance: '0' }], bonusWallets },
     })
-    // The row itself stays and states the absence.
-    expect(screen.getByText(en.bonusBalance)).toBeTruthy()
-    expect(screen.getByText(en.bonusEmpty)).toBeTruthy()
+    expect(screen.queryByText(en.bonusBalance)).toBeNull()
     expect(screen.getByText('¥0.00')).toBeTruthy()
     expect(screen.queryByText('¥-1.00')).toBeNull()
   },

@@ -76,7 +76,7 @@ export const onboardingEnglishCopy: Record<keyof typeof onboardingCopy, string> 
   onboardingSkipDescription: 'You can change how progress, performance, and usage are displayed, or enable Coding Tools, anytime in Profile → General Settings.',
   onboardingKeepSetting: 'Continue setup',
   onboardingNoCreditTitle: 'Skip adding credits?',
-  onboardingNoCreditDescription: 'DeepSeek Harness can’t start new tasks without credits. You can add them later in Profile → Accounts.',
+  onboardingNoCreditDescription: 'DeepSeek Harness can’t start new tasks without credits. You can add them later in Settings → Accounts.',
   onboardingUnderstood: 'Got it',
   onboardingGoTopUp: 'Add credits',
   onboardingSaveFailed: 'Could not save settings. Try again.',
