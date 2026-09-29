@@ -1,8 +1,8 @@
 /** Plugin management interface copy. */
 
-/** Git template shared by the displayed example and replacement reminder. */
+/** Git template a field still holding it reports as needing the actual address; no guide entry shows it. */
 export const INSTALL_GIT_EXAMPLE = 'https://github.com/author/dsh-plugin'
-/** Local-path template shared by the displayed example and replacement reminder. */
+/** Local-path template a field still holding it reports as needing the actual path; no guide entry shows it. */
 export const INSTALL_PATH_EXAMPLE = '/Users/name/my-plugin'
 
 /** Simplified Chinese dictionary and key source of truth. */
@@ -59,21 +59,16 @@ export const zh = {
   installSpecPlaceholder: '例如 dsh-plugin-whale-pet',
   installGuideToggle: '插件安装引导和示例',
   installGuideHide: '收起引导',
-  installGuideIdTitle: '包名',
+  installGuideIdTitle: '填入插件 npm 包名',
   installGuideIdExample: 'dsh-plugin-whale-pet',
   installGuideIdHint: '插件包名即 npm 包名（如 dsh-xxx 或 @作者/插件名），社区插件的 README 安装命令中 dsh plugin add 或 pnpm add 之后的部分。',
-  installGuideGitTitle: 'GitHub 仓库地址',
-  installGuideGitExample: INSTALL_GIT_EXAMPLE,
-  installGuideGitHint: '插件在 GitHub 上的开源仓库地址，也支持其他 Git 仓库。',
-  installGuidePathTitle: '本地插件目录',
-  installGuidePathExample: INSTALL_PATH_EXAMPLE,
-  installGuidePathHint: '本机上插件目录的绝对路径，适用于自行开发或已下载的插件。',
   installGuideExampleLabel: '示例：',
   installGitTemplateHint: '请替换为实际的 Git 仓库地址',
   installPathTemplateHint: '请替换为本机插件目录的实际路径',
   installGuideFill: '填入示例',
   installGuideFillAria: '填入示例 {example}',
   installGuideSafety: '请确认插件来源可信。插件在本机以你的权限运行，来源不明的插件可能损坏 DeepSeek Harness，或读取和泄露你的数据。',
+  installUpgradeNotice: '插件安装后，暂不支持自动更新。若需升级，请先卸载再安装新版，后续版本会持续改善升级体验。',
   registryToggle: '安装源',
   registryLegend: '从哪个 npm 源下载插件',
   registryDefault: '默认安装源',
@@ -256,21 +251,16 @@ export const en = {
   installSpecPlaceholder: 'for example dsh-plugin-whale-pet',
   installGuideToggle: 'Install guide and examples',
   installGuideHide: 'Hide the guide',
-  installGuideIdTitle: 'Package name',
+  installGuideIdTitle: 'Enter the plugin\'s npm package name',
   installGuideIdExample: 'dsh-plugin-whale-pet',
   installGuideIdHint: 'The plugin package name is the npm package name (like dsh-xxx or @author/plugin): the part after dsh plugin add or pnpm add in a community plugin\'s README install command.',
-  installGuideGitTitle: 'GitHub repository address',
-  installGuideGitExample: INSTALL_GIT_EXAMPLE,
-  installGuideGitHint: 'The address of the plugin\'s open-source repository on GitHub; other Git hosts work too.',
-  installGuidePathTitle: 'Local plugin directory',
-  installGuidePathExample: INSTALL_PATH_EXAMPLE,
-  installGuidePathHint: 'The absolute path of a plugin directory on this machine, developed here or downloaded.',
   installGuideExampleLabel: 'Example: ',
   installGitTemplateHint: 'Replace this with the actual Git repository address.',
   installPathTemplateHint: 'Replace this with the actual path to your local plugin directory.',
   installGuideFill: 'Use example',
   installGuideFillAria: 'Use the example {example}',
   installGuideSafety: 'Install only plugins you trust: they run with your permissions and can damage DeepSeek Harness or leak your data.',
+  installUpgradeNotice: 'Installed plugins do not update automatically yet. To upgrade a plugin, uninstall it and install the new version. Later releases will keep improving the upgrade experience.',
   registryToggle: 'Registry',
   registryLegend: 'The npm registry the plugin is downloaded from',
   registryDefault: 'Default registry',
