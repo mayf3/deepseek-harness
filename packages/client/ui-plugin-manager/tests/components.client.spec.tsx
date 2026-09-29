@@ -964,9 +964,9 @@ describe('PluginManagerPage', () => {
     expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonOperationError}`)).toBeTruthy()
     // An incompatibility reads from its structured packages in the dictionary's words, one sentence per package.
     set({ packages: [pkg({ error: { code: 'incompatible-version', incompatible: [INCOMPATIBLE, { ...INCOMPATIBLE, name: 'other' }] } })] })
-    expect(within(detail).getByText(`${en.reasonLabel}: ${incompatibleText()} ${incompatibleText('other')} ${en.reasonReinstallToUpgrade}`)).toBeTruthy()
+    expect(within(detail).getByText(`${en.reasonLabel}: ${incompatibleText()} ${incompatibleText('other')} ${en.reasonIncompatibleInstalled}`)).toBeTruthy()
     set({ packages: [pkg({ error: { code: 'incompatible-version' } })] })
-    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonIncompatibleVersionUnnamed} ${en.reasonReinstallToUpgrade}`)).toBeTruthy()
+    expect(within(detail).getByText(`${en.reasonLabel}: ${en.reasonIncompatibleVersionUnnamed} ${en.reasonIncompatibleInstalled}`)).toBeTruthy()
     fireEvent.click(within(detail).getByRole('button', { name: en.backToList }))
     expect(document.querySelector('[data-plugin-detail]')).toBeNull()
     // A bundle that leaves the list drops back to the cards.
@@ -1356,9 +1356,9 @@ describe('PluginManagerPage', () => {
     // A compatibility refusal outranks the kind pnpm's exit was classified as.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed',
       failure: { reason: '', code: 'incompatible-version', incompatible: [INCOMPATIBLE], kind: 'unknown' } } })
-    expect(screen.getByText(`${incompatibleText()} ${en.reasonReinstallToUpgrade}`)).toBeTruthy()
+    expect(screen.getByText(`${incompatibleText()} ${en.reasonIncompatibleInstall}`)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '', code: 'incompatible-version' } } })
-    expect(screen.getByText(`${en.reasonIncompatibleVersionUnnamed} ${en.reasonReinstallToUpgrade}`)).toBeTruthy()
+    expect(screen.getByText(`${en.reasonIncompatibleVersionUnnamed} ${en.reasonIncompatibleInstall}`)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: 'the transport said so' } } })
     expect(screen.getByText('the transport said so')).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'x', phase: 'failed', failure: { reason: '' } } })
@@ -1733,7 +1733,7 @@ describe('PluginManagerPage', () => {
       set({ notice: { kind: 'failed', action: 'uninstall', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedUninstall.replace('{reason}', en.reasonBundleInUse))
       set({ notice: { kind: 'failed', action: 'enable', code: 'incompatible-version', incompatible: [INCOMPATIBLE], reason: '', packageName: 'pkg-1', seq: 5 } })
-      expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', `${incompatibleText()} ${en.reasonReinstallToUpgrade}`))
+      expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', `${incompatibleText()} ${en.reasonIncompatibleInstalled}`))
       set({ notice: { kind: 'failed', action: 'rowDisable', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowDisable.replace('{reason}', 'EACCES'))
       set({ notice: { kind: 'failed', action: 'disable', reason: '', packageName: 'pkg-1', seq: 7 } })
