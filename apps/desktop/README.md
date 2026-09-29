@@ -160,6 +160,8 @@ The Web counterparts are `pnpm run dev:web` and `pnpm run start:web`, documented
 
 The [native/renderer keyboard tests](tests/keyboard.spec.ts) compile as part of the repository Client typecheck. Their Desktop imports are limited to Cordis-free input, persistence, IPC, browser-guest, and overlay modules.
 
+Before running the [Windows console-signal tests](tests/windows-cli-signals.spec.ts) directly, prepare the locked Electron binary with `pnpm --filter @deepseek-ai/dsh-desktop exec install-electron` from the repository root. For downloads through a proxy, enable `ELECTRON_GET_USE_PROXY=1` for that installer process. Windows coverage aggregates require successful provisioning before the instrumented unit inventory starts.
+
 ### Startup onboarding
 
 The API-key input starts empty and uses `autocomplete="new-password"` to ask Chromium not to autofill saved login passwords.
