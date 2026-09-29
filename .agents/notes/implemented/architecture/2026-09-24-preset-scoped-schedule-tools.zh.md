@@ -26,9 +26,9 @@ Status: implemented
 - 挂载该行的每个 preset 承担四个 schema 的固定 token 成本，工具可用性取自组合，而不是由宿主服务是否存在推断。
 - 部署可以只为存储与投递挂载 `dsh-schedule`，而不授予其 Agent 由模型驱动的提醒管理能力。
 - `dsh-schedule` 不注入 `ctx.tools`，也不注册任何面向模型的工具。
-- preset 挂载也会到达该 preset 下的子 Agent：in-process（进程内）子 Agent 通过 `composeFrom` 加入其父级 preset 的常驻挂载，因此 `standard`、`cordis`、`ptc` 下的子 Agent 同样能看到这四个工具。
-- 活跃 Agent 由 subagent 路由拥有的 Session 永远收不到投递的提醒，因此 `ScheduleService.create` 与 `ScheduleService.update` 会以 `subagent_session` 拒绝它；这条规则在服务层，因此其它消费方（包括自动化任务页面）也会命中。
+- 被委派的子 agent 看不到这四个工具：`standard`、`cordis` 与 `ptc` 中的 `tool-subagent` 与 `tool-subagent-fork` 两行通过 `toolFilter` 拒绝全部四个名称，provider 会在子作用域内通过 `ctx.tools.restrict()` 应用该过滤，因此这些工具会从子 agent 的 prompt 中消失、其调用也会失败。
+- 被委派子 agent 拥有的 Session 永远收不到投递的提醒，因此 `ScheduleService.create` 与 `ScheduleService.update` 会以 `subagent_session` 拒绝它。该拒绝读取委派深度——委派封顶本身执行的记账，由持久化 session header 承载并跨冷恢复保留——或对没有深度记录的 Session 读取 subagent 路由所有权。这条规则在服务层，因此其它消费方（包括自动化任务页面）也会命中。
 
 ## Testing
 
-`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` 固定这四个定义及其错误映射。`apps/cli/tests/web-agent-presets.e2e.ts` 断言 `minimal` preset 的工具列表，`snapshots/web/minimal-preset/tool-schemas.expected.json` 记录其只含 `bash` 的工具表。
+`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` 固定这四个定义及其错误映射。`apps/cli/tests/web-agent-presets.e2e.ts` 断言 `minimal` preset 的工具列表，`snapshots/web/minimal-preset/tool-schemas.expected.json` 记录其只含 `bash` 的工具表。`packages/schedule/schedule/tests/subagent-ownership.spec.ts` 固定委派深度拒绝，`scripts/optional-bundles.spec.ts` 断言三个 preset 的两行委派行都拒绝全部四个工具名。

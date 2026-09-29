@@ -5,6 +5,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { hasApiSessionSubagentOwner } from '@deepseek-ai/dsh-api-session-controller'
+import { delegationDepthOf } from '@deepseek-ai/dsh-subagent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionActivity } from '@deepseek-ai/dsh-workspace'
 import { ScheduleRuntime } from './runtime.ts'
@@ -215,8 +216,9 @@ export class ScheduleService extends TypertRemoteService {
    *
    * The request must supply a title; a missing, blank-after-trim, or over-long
    * title rejects with `invalid_prompt` instead of deriving one from the prompt.
-   * A Session that subagent routing owns rejects with `subagent_session`, because
-   * delivery can never reach it.
+   * A Session a delegated child owns rejects with `subagent_session`, because delivery
+   * can never reach it: the child is one whose delegation depth is above zero, or one
+   * whose Session subagent routing owns.
    * The record is built from the clock reading taken before the request joins the
    * serialized queue, so a create that waits behind a longer operation keeps its
    * request-time anchor and may already be due when the queue reaches it.
@@ -343,8 +345,8 @@ export class ScheduleService extends TypertRemoteService {
    * binding without activating the Session or changing saved deliveries.
    *
    * Each supplied field replaces its stored value; an omitted field keeps it. A name or
-   * instruction change alone does not reset the committed target. A Session that subagent
-   * routing owns returns the non-mutating `subagent_session` result, so an edit cannot
+   * instruction change alone does not reset the committed target. A Session a delegated
+   * child owns returns the non-mutating `subagent_session` result, so an edit cannot
    * re-arm a task bound to a Session delivery can never reach, and the Web editor can
    * explain the refusal through the ordinary result it already renders.
    * @param request - Task binding, complete observed record, and any combination of timing, name, and instruction.
@@ -396,21 +398,27 @@ export class ScheduleService extends TypertRemoteService {
   }
 
   /**
-   * Refuse a Session whose live Agent subagent routing owns, which no delivery can reach.
+   * Refuse a Session no delivery can reach because a delegated child owns it.
    *
    * Delivery resolves the bound Session through `ctx.sessionController.resolveAgent`,
-   * whose first decision is the same live-Agent test that
-   * {@link hasApiSessionSubagentOwner} makes here; that decision rejects the Session
-   * with `session/agent-busy`. A stored task for such a Session would stay permanently
-   * overdue and retry on every drive, so both operations that can arm a delivery apply
-   * the shared predicate rather than a second ownership rule that could diverge from
-   * the delivery-time rejection.
+   * which rejects the live Agent of a delegated child; a stored task for such a Session
+   * would stay permanently overdue and retry on every drive. Both operations that can
+   * arm a delivery read that same fact here instead of restating it: a delegated child
+   * is one whose {@link delegationDepthOf} is above zero — the accounting the delegation
+   * cap itself enforces, surviving a cold resume through the persisted header — or one
+   * whose Session {@link hasApiSessionSubagentOwner} reports subagent routing owns, which
+   * also covers a child that records no depth.
    * @param sessionId - Session the task would be bound to.
-   * @returns The stable refusal for a Session subagent routing owns, or undefined when the Session is eligible.
+   * @returns The stable refusal for a delegated child's Session, or undefined when the Session is eligible.
    */
   private reminderTargetRefusal(sessionId: SessionId): SubagentSessionError | undefined {
     const agent = this.ctx.agents.get(sessionId)
-    if (agent === undefined || !hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) return undefined
+    if (agent === undefined) return undefined
+    // Two authorities report the same fact, so either one refuses. `delegationDepthOf`
+    // is the accounting the delegation cap itself reads, and it survives a cold resume
+    // through the persisted header; the Session-ownership test covers a Session
+    // subagent routing owns without a depth record.
+    if (delegationDepthOf(agent) === 0 && !hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) return undefined
     return {
       code: 'subagent_session',
       message: 'This Session belongs to subagent routing, which never receives reminder delivery.',

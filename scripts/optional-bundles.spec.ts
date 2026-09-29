@@ -80,10 +80,20 @@ describe('optional bundles', () => {
 
   it('keeps the clock and the reminder tools on the presets that declare them', () => {
     const composed = composeEntries(shipped)
-    const presetPlugins = (id: string): Array<{ id?: string; name?: string; disabled?: boolean }> => {
+    type PresetRow = { id?: string; name?: string; disabled?: boolean; config?: unknown }
+    const presetPlugins = (id: string): PresetRow[] => {
       const row = composed.find(entry => entry.id === id)
       if (row === undefined) throw new Error(`missing delivered preset row ${id}`)
-      return (row.config as { plugins: Array<{ id?: string; name?: string; disabled?: boolean }> }).plugins
+      const flat: PresetRow[] = []
+      // A `cordis:group` row nests its children in its own `config` array.
+      const walk = (rows: PresetRow[]): void => {
+        for (const entry of rows) {
+          flat.push(entry)
+          if (Array.isArray(entry.config)) walk(entry.config as PresetRow[])
+        }
+      }
+      walk((row.config as { plugins: PresetRow[] }).plugins)
+      return flat
     }
     for (const id of ['preset-standard', 'preset-cordis', 'preset-ptc']) {
       const plugins = presetPlugins(id)
@@ -94,6 +104,15 @@ describe('optional bundles', () => {
         const matches = plugins.filter(row => row.id === plugin.id && row.name === plugin.name)
         expect(matches).toHaveLength(1)
         expect(matches[0]?.disabled).not.toBe(true)
+      }
+    }
+    // A delegated child cannot arm reminders: both delegation rows deny the four
+    // tools, so a child's prompt never lists them.
+    for (const id of ['preset-standard', 'preset-cordis', 'preset-ptc']) {
+      for (const rowId of ['tool-subagent', 'tool-subagent-fork']) {
+        expect(presetPlugins(id).find(plugin => plugin.id === rowId)?.config).toMatchObject({
+          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
+        })
       }
     }
     // `minimal` declares neither, so it composes no clock reading and no reminder tool.

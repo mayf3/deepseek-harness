@@ -93,6 +93,19 @@ it('refuses to update a stored reminder bound to a Session that subagent routing
   expect(test.resolve).not.toHaveBeenCalled()
 })
 
+it('refuses a delegated child recorded only by its delegation depth', async () => {
+  const test = await setup()
+  // No `origin`/ownership link: the persisted header's delegation depth is the only
+  // record, which is the accounting the delegation cap itself reads.
+  const child = agentFor(test.ctx, childId, { delegationDepth: 1 })
+  await test.ctx.agents.register(child)
+
+  await expect(test.service.create(child.session.id, { prompt: 'Check', title: 'Check', after_seconds: 60 }))
+    .rejects.toMatchObject({ code: 'subagent_session' })
+
+  expect([...table(test).entries()]).toEqual([])
+})
+
 it('still creates a reminder for a live Agent that subagent routing does not own', async () => {
   const test = await setup()
   const owner = agentFor(test.ctx, parentId)

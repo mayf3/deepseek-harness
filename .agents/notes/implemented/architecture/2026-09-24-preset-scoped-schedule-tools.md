@@ -26,9 +26,9 @@ English | [中文](2026-09-24-preset-scoped-schedule-tools.zh.md)
 - Each preset that mounts the row pays the four schemas' fixed token cost, and tool availability is read from the composition instead of inferred from the Host service's presence.
 - A deployment can mount `dsh-schedule` for storage and delivery without granting its agents model-driven reminder management.
 - `dsh-schedule` injects no `ctx.tools` and registers no model-facing tool.
-- A preset mount reaches that preset's subagents: an in-process child joins its parent's preset standing mount through `composeFrom`, so `standard`, `cordis`, and `ptc` children see the four tools as well.
-- A Session whose live Agent subagent routing owns can never receive a delivered reminder, so `ScheduleService.create` and `ScheduleService.update` reject it with `subagent_session`; the rule sits in the service, so other consumers reach it too — the Automation surface included.
+- A delegated child does not see the four tools: the `tool-subagent` and `tool-subagent-fork` rows in `standard`, `cordis`, and `ptc` deny all four names through `toolFilter`, and the provider applies that filter in the child scope through `ctx.tools.restrict()`, so the tools leave the child's prompt and its calls fail.
+- A Session a delegated child owns can never receive a delivered reminder, so `ScheduleService.create` and `ScheduleService.update` refuse it with `subagent_session`. The refusal reads the delegation depth — the accounting the delegation cap itself enforces, carried by the persisted session header across a cold resume — or subagent routing ownership for a Session that records no depth. The rule sits in the service, so other consumers reach it too — the Automation surface included.
 
 ## Testing
 
-`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` pins the four definitions and their error mapping. `apps/cli/tests/web-agent-presets.e2e.ts` asserts the `minimal` preset's tool list, and `snapshots/web/minimal-preset/tool-schemas.expected.json` records its bash-only tool table.
+`packages/schedule/tool-schedule/tests/tool-schedule.spec.ts` pins the four definitions and their error mapping. `apps/cli/tests/web-agent-presets.e2e.ts` asserts the `minimal` preset's tool list, and `snapshots/web/minimal-preset/tool-schemas.expected.json` records its bash-only tool table. `packages/schedule/schedule/tests/subagent-ownership.spec.ts` pins the delegation-depth refusal, and `scripts/optional-bundles.spec.ts` asserts that both delegation rows in the three presets deny all four tool names.

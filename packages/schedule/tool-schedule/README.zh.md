@@ -117,8 +117,8 @@ kind: "package-reference"
 - **每次调用都需要调用方 Agent** —— 未携带 Agent 的派发返回 `internal_error`，而不会猜测某个 Session。
 - **删除不会撤回已排队的消息** —— 宿主已经投递的提醒在 `schedule_delete` 之后仍留在 Session 收件箱中。
 - **提醒时间由宿主负责** —— 这些工具不提供目标时间校正、时钟来源或投递重试；这些限制属于该服务。
-- **preset 挂载也会到达该 preset 下的子 Agent** —— in-process（进程内）子 Agent 通过 `composeFrom` 加入其父级 preset 的常驻挂载，因此 `standard`、`cordis`、`ptc` 下的子 Agent 同样能看到这四个工具；该行的作用域是整个 preset 子树，而不只是顶层 Agent。
-- **subagent Session 不能拥有提醒** —— 对活跃 Agent 由 subagent 路由拥有的 Session，`ScheduleService.create` 与 `ScheduleService.update` 会以 `subagent_session` 拒绝，因为宿主投递会经由 `ctx.sessionController.resolveAgent` 解析该 Session，而后者拒绝所有此类 Session。这条规则在服务层而非这些工具里，因此其它进程内消费方（包括自动化任务页面）也会命中。`schedule_list` 与 `schedule_delete` 仍可服务该 Session，所以在这条规则之前存储的提醒仍可删除。
+- **preset 的委派行让子 agent 看不到这四个工具** —— `standard`、`cordis` 与 `ptc` preset 在 `tool-subagent` 与 `tool-subagent-fork` 两行上都声明 `toolFilter.deny`，拒绝 `schedule_create`、`schedule_delete`、`schedule_list` 和 `schedule_update`。provider 会在子作用域内通过 `ctx.tools.restrict()` 应用该过滤，因此这四个工具会从被委派子 agent 的 prompt 中消失、其调用也会失败；在子链上继续委派会沿链求交同一限制。
+- **被委派子 agent 拥有的 Session 不能设置提醒** —— 当 Session 的 Agent 委派深度大于零，或在没有深度记录时由 subagent 路由拥有该 Session，`ScheduleService.create` 会抛出 `ScheduleInputError`（code 为 `subagent_session`），`ScheduleService.update` 则返回非变更的 `subagent_session` 结果。委派深度正是委派封顶本身读取的同一份记账，持久化 session header 让它在冷恢复后仍然成立。这条规则在服务层而非这些工具里，因此其它进程内消费方（包括自动化任务页面）也会命中。`schedule_list` 与 `schedule_delete` 仍可服务该 Session，所以在这条规则之前存储的提醒仍可删除。
 
 <a id="dev-note"></a>
 ### 开发备注
