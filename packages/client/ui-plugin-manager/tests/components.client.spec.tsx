@@ -1417,21 +1417,27 @@ describe('PluginManagerPage', () => {
     expect(screen.getByText(en.installDoneApproved.replace('{names}', 'native'))).toBeTruthy()
   })
 
-  it('names the exact spec when pnpm installed an older version than the one inspected', () => {
+  it('names the exact spec when pnpm installed another version than the one inspected', () => {
     const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', bundle: true, registry: null } as const
-    const older = en.installDoneOlderVersion
+    const other = en.installDoneOtherVersion
       .replace('{installed}', '1.4.1').replaceAll('{version}', '1.4.2').replace('{exact}', 'dsh-x@1.4.2')
     const done = { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', installed: 'dsh-x' } as const
     const { set } = renderTab({ install: { ...done, subject, installedVersion: '1.4.1' } })
-    expect(screen.getByText(older)).toBeTruthy()
-    // Without a name the exact spec falls back to the typed one.
+    expect(screen.getByText(other)).toBeTruthy()
+    // The subject card shows the version pnpm installed.
+    expect(screen.getByText(en.installVersion.replace('{version}', '1.4.1'))).toBeTruthy()
+    // A run that fell back to another registry may have received another release, so nothing is claimed.
+    set({ install: { ...done, subject, installedVersion: '1.4.1', attempts: { registries: [null, 'https://mirror.example/'], total: 2 } } })
+    expect(screen.queryByText(other)).toBeNull()
+    set({ install: { ...done, subject, installedVersion: '1.4.1', attempts: { registries: [null], total: 2 } } })
+    expect(screen.getByText(other)).toBeTruthy()
     const { name: _name, ...unnamed } = subject
     set({ install: { ...done, subject: unnamed, installedVersion: '1.4.1' } })
-    expect(screen.getByText(older)).toBeTruthy()
+    expect(screen.queryByText(other)).toBeNull()
     set({ install: { ...done, subject, installedVersion: '1.4.2' } })
-    expect(screen.queryByText(older)).toBeNull()
+    expect(screen.queryByText(other)).toBeNull()
     set({ install: { ...done, subject: { ...subject, kind: 'path' }, installedVersion: '1.4.1' } })
-    expect(screen.queryByText(older)).toBeNull()
+    expect(screen.queryByText(other)).toBeNull()
   })
 
   it('words a failed install by its kind, else in the Host\'s words, and retries it', () => {
