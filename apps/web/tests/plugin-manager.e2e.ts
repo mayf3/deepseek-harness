@@ -124,7 +124,7 @@ describe('web e2e: plugin manager', () => {
         expect(await skeleton.getAttribute('aria-label')).toBe('正在读取插件…')
         expect(await panel.getAttribute('aria-busy')).toBe('true')
         const actions = panel.locator(':scope > header > div:last-child button')
-        expect(await actions.count()).toBe(2)
+        expect(await actions.count()).toBe(3)
         for (const action of await actions.all()) expect(await action.isDisabled()).toBe(true)
         expect(await panel.getByRole('button', { name: '插件说明' }).isEnabled()).toBe(true)
         const loadingAria = await captureStableAria(probe, '[data-plugin-panel]', scaffold.workspaceCwd)
@@ -553,14 +553,18 @@ describe('web e2e: plugin manager', () => {
     expect(await review.getByText('审查工作区中的改动。', { exact: true }).count()).toBe(1)
     await panel.getByText('Registry description for the fixture bundle.', { exact: true }).first().waitFor()
     expect([...scaffold.ctx.loader.entries()].some(entry => entry.options.name.startsWith('@fixture/bundle'))).toBe(false)
-    await compareOrRefreshGolden(EXPORTS_EXPECTED, await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd), MODE)
+    await compareOrRefreshGolden(EXPORTS_EXPECTED, await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
+      replacements: [[FIXTURE_PLUGINS, '{{fixtures}}']],
+    }), MODE)
     try {
       await setLanguage('en')
       await search.getByText('File Search', { exact: true }).waitFor()
       expect(await review.getByText('@fixture/bundle/review', { exact: true }).count()).toBeGreaterThan(0)
       expect(await search.getByText('Search package introduction.', { exact: true }).count()).toBe(0)
       expect(await review.getByText('审查工作区中的改动。', { exact: true }).count()).toBe(0)
-      await compareOrRefreshGolden(EXPORTS_EN_EXPECTED, await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd), MODE)
+      await compareOrRefreshGolden(EXPORTS_EN_EXPECTED, await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
+        replacements: [[FIXTURE_PLUGINS, '{{fixtures}}']],
+      }), MODE)
       expect(await panel.locator('[data-plugin-name]').textContent()).toBe('@fixture/bundle')
     } finally {
       await setLanguage('zh')
@@ -837,16 +841,31 @@ describe('web e2e: plugin manager', () => {
     const dialog = page.getByRole('dialog', { name: '添加插件' })
     await dialog.waitFor({ timeout: 10_000 })
     const field = dialog.getByRole('textbox', { name: '包名或地址' })
+    expect(await page.getByRole('menu').count()).toBe(0)
+    await expect.poll(() => field.evaluate(element => document.activeElement === element)).toBe(true)
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+    await panel.getByRole('button', { name: '选择添加插件方式', exact: true }).click()
+    const menu = page.getByRole('menu')
+    await menu.getByRole('menuitem', { name: /^安装第三方插件/ }).click()
+    await menu.waitFor({ state: 'hidden' })
+    await dialog.waitFor({ state: 'visible' })
+    await expect.poll(() => field.evaluate(element => document.activeElement === element)).toBe(true)
     const install = dialog.getByRole('button', { name: '安装', exact: true })
     expect(await install.isDisabled()).toBe(true)
     expect(await dialog.getByRole('note').textContent()).toContain('请确认插件来源可信')
+    expect(await dialog.getByRole('note').textContent()).toContain('暂不支持自动更新')
     await dialog.getByRole('button', { name: '插件安装引导和示例' }).click()
+    // The guide carries the package-name example only; the former template strings keep their replacement reminder.
+    await expect.poll(() => dialog.getByRole('listitem').count()).toBe(1)
+    await dialog.getByRole('button', { name: '填入示例 dsh-plugin-whale-pet' }).click()
+    expect(await field.inputValue()).toBe('dsh-plugin-whale-pet')
+    expect(await dialog.getByRole('status').count()).toBe(0)
     for (const [example, hint] of [
       ['https://github.com/author/dsh-plugin', '请替换为实际的 Git 仓库地址'],
       ['/Users/name/my-plugin', '请替换为本机插件目录的实际路径'],
-    ]) {
-      await dialog.getByRole('button', { name: `填入示例 ${example}` }).click()
-      expect(await field.inputValue()).toBe(example)
+    ] as const) {
+      await field.fill(example)
       expect(await dialog.getByRole('status').textContent()).toBe(hint)
     }
     await field.fill('/actual/plugin-directory')
@@ -857,7 +876,7 @@ describe('web e2e: plugin manager', () => {
     await field.fill('@fixture/bundle')
     await install.click()
     await dialog.getByRole('alert').waitFor({ timeout: 5_000 })
-    expect(await dialog.getByRole('alert').textContent()).toBe('该插件已安装')
+    expect(await dialog.getByRole('alert').textContent()).toBe('该插件已安装。如需升级，请卸载后重新安装')
     // A path the Host cannot read as a package is refused with its reason, and the spec stays editable.
     await field.fill(join(scaffold.harnessHome, 'no-such-plugin'))
     await install.click()

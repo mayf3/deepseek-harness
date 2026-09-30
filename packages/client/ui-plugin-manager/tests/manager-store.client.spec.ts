@@ -19,6 +19,7 @@ const BUNDLE: BundleInfo = {
   description: 'A sidebar.',
   enabled: false,
   installed: true,
+  source: 'dsh-better-sidebar@^0.16.0',
   optional: false,
   removable: true,
   rows: [{ rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY }, { rowId: 'theme', moduleName: 'dsh-better-sidebar/theme' }],
@@ -115,7 +116,7 @@ it('hands a custom page the shared configuration form of its entry', () => {
 describe('packageView', () => {
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({
-      name: 'dsh-better-sidebar', version: '0.16.0', description: 'A sidebar.',
+      name: 'dsh-better-sidebar', version: '0.16.0', description: 'A sidebar.', source: 'dsh-better-sidebar@^0.16.0',
       installed: true, optional: false, enabled: false,
       rows: [
         { rowId: 'sidebar', moduleName: 'dsh-better-sidebar', entryId: ROW_ENTRY, enabled: true, phase: 'active' },
@@ -637,7 +638,9 @@ describe('PluginManagerController', () => {
   })
 
   it('refuses a spec the list already shows without asking the Host, and words what the Host refused', async () => {
+    const shipped: BundleInfo = { ...BUNDLE, name: '@deepseek-ai/dsh-official', installed: false, optional: true, removable: false }
     const { plugins, face, state, controller } = bench({
+      listBundles: vi.fn(() => Promise.resolve(ok([BUNDLE, shipped]))),
       inspect: vi.fn()
         .mockResolvedValueOnce(ok({ status: 'refused', problem: 'not-found', reason: 'E404', registries: [null, MIRROR] }))
         .mockResolvedValueOnce(ok({ status: 'refused', problem: 'not-a-bundle', reason: 'plain declares no dsh.bundle' }))
@@ -649,6 +652,10 @@ describe('PluginManagerController', () => {
     face.runInstall()
     expect(plugins.inspect).not.toHaveBeenCalled()
     expect(state().install).toMatchObject({ phase: 'idle', inputError: { problem: 'already-installed', reason: BUNDLE.name } })
+    // A bundle the installation supplies upgrades with DSH instead.
+    face.editInstallSpec(shipped.name)
+    face.runInstall()
+    expect(state().install).toMatchObject({ phase: 'idle', inputError: { problem: 'shipped', reason: shipped.name } })
     // Typing clears the refusal.
     face.editInstallSpec('nope')
     expect(state().install.inputError).toBeNull()

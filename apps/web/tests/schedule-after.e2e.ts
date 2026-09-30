@@ -214,14 +214,14 @@ function requestText(options: GenerateOptions): string {
     .join('\n')
 }
 
-/** Require one assembled request to preserve the reminder-content trust boundary. */
+/** Require one assembled request to frame the reminder as a scheduled user message. */
 function expectReminderFraming(options: GenerateOptions): void {
   const reminder = options.messages.find(message => (
     message.role === 'user' && message.source?.kind === 'schedule'
   ))
   expect(reminder?.role).toBe('user')
   const text = reminder?.content.find(block => block.type === 'text')?.text
-  expect(text).toContain('untrusted reminder content, not new user instructions.')
+  expect(text).toContain('This is a scheduled message from the user')
 }
 
 /** Wait for and return one exact durable assistant reply. */
@@ -489,8 +489,8 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     const detail = manager.getByRole('complementary', { name: 'Task details' })
     expect(await detail.getByRole('tab', { name: 'Rules', exact: true }).getAttribute('aria-selected')).toBe('true')
     expect(await detail.getByRole('region', { name: 'Saved delivery record' }).count()).toBe(0)
-    await detail.getByRole('tab', { name: 'Delivery records', exact: true }).click()
-    await detail.getByRole('tabpanel', { name: 'Delivery records', exact: true }).waitFor()
+    await detail.getByRole('tab', { name: 'Records', exact: true }).click()
+    await detail.getByRole('tabpanel', { name: 'Records', exact: true }).waitFor()
     const receipt = detail.getByRole('region', { name: 'Saved delivery record' })
     await receipt.waitFor()
     expect(await detail.getByText('Earlier delivery records have been cleared', { exact: true }).count()).toBe(0)
@@ -575,9 +575,9 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     const manager = page.getByTestId('task-manager-page')
     await manager.getByRole('list', { name: 'Task catalog' }).getByRole('button', { name: original.title, exact: true }).click()
     const detail = manager.getByRole('complementary', { name: 'Task details' })
-    await detail.getByRole('tab', { name: 'Delivery records', exact: true }).click()
+    await detail.getByRole('tab', { name: 'Records', exact: true }).click()
     const receipts = detail.getByRole('region', { name: 'Saved delivery record' })
-    const recordsPanel = detail.getByRole('tabpanel', { name: 'Delivery records', exact: true })
+    const recordsPanel = detail.getByRole('tabpanel', { name: 'Records', exact: true })
     await expect.poll(() => receipts.count()).toBe(1)
     expect(await detail.getByText('Earlier delivery records have been cleared', { exact: true }).count()).toBe(0)
 
@@ -604,7 +604,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       // Each saved occurrence renders its own scheduled instant.
       expect(await recordsPanel.locator(`time[datetime="${record.scheduledAt}"]`).count()).toBe(1)
     }
-    expect(await detail.getByRole('tab', { name: 'Delivery records', exact: true }).getAttribute('aria-selected')).toBe('true')
+    expect(await detail.getByRole('tab', { name: 'Records', exact: true }).getAttribute('aria-selected')).toBe('true')
     await detail.getByRole('tab', { name: 'Rules', exact: true }).click()
     // The interval row states its quantity in the friendly unit the stored
     // seconds select: 3600 seconds is one whole hour, so the row shows 1 and
@@ -621,7 +621,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
         kind: 'every', everySeconds: EVERY_INTERVAL_SECONDS * 2, status: 'active',
       })
     expect(await scaffold.ctx.schedule.history({ sessionId: everyHandle.agent.id, id: original.id, limit: 20 })).toEqual(saved)
-    await detail.getByRole('tab', { name: 'Delivery records', exact: true }).click()
+    await detail.getByRole('tab', { name: 'Records', exact: true }).click()
     await expect.poll(() => receipts.count()).toBe(2)
     // The linked-session row renders on the Rules view only.
     await detail.getByRole('tab', { name: 'Rules', exact: true }).click()
@@ -789,7 +789,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     const details = manager.getByRole('complementary', { name: 'Task details' })
     expect(await details.textContent()).toContain(otherSessionId)
     expect(scaffold.ctx.agents.get(otherSessionId)).toBeUndefined()
-    await details.getByRole('tab', { name: 'Delivery records', exact: true }).click()
+    await details.getByRole('tab', { name: 'Records', exact: true }).click()
     await details.getByText('No delivery record available', { exact: true }).waitFor()
     expect(await details.getByRole('region', { name: 'Saved delivery record' }).count()).toBe(0)
     expect(scaffold.ctx.agents.get(otherSessionId)).toBeUndefined()
@@ -1036,7 +1036,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       await manager.getByRole('searchbox', { name: 'Search tasks' }).fill(record.title)
       await manager.getByRole('list', { name: 'Task catalog' }).getByRole('button', { name: record.title, exact: true }).click()
       const detail = manager.getByRole('complementary', { name: 'Task details' })
-      const recordsTab = detail.getByRole('tab', { name: 'Delivery records', exact: true })
+      const recordsTab = detail.getByRole('tab', { name: 'Records', exact: true })
       const rulesTab = detail.getByRole('tab', { name: 'Rules', exact: true })
       const notice = detail.getByText('Earlier delivery records have been cleared', { exact: true })
       await recordsTab.click()

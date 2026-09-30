@@ -128,7 +128,7 @@ export function apply(ctx: Context) {
 | MCP | 每个服务器一个插件：发现工具 → `ctx.tools.register()` |
 | skill（技能） | section + 工具注册；调用时通过 `inject()` 注入 skill 内容 |
 | 记忆 | section 提供方 + 工具 |
-| 定时任务（cron） | 插件注册面向模型的调度工具；定时器触发 → 空闲时 `followup(…, {source: {kind: 'plugin', plugin: 'schedule'}})`／忙碌时 `inject()` 通知 |
+| 定时任务（cron） | 插件注册面向模型的调度工具；定时器到期后通过 `followup(…, {source: {kind: 'schedule'}})` 投递 |
 | UI（GUI；CLI（命令行界面）输出 JSONL） | 监听 `agent/assistant-stream` 的实时 chunk，并监听 `session/event` 的持久 settlement、边界与工具活动；输入 → `followup()` |
 | Web Client Chat 业务节点 | 注册 `ConversationNodeDefinition` 与 `conversation.chat.node` keyed renderer |
 | 遥测 / 可回放 trace | `session/event` → JSONL；回放 = `sessions.create(id, { seed })` |

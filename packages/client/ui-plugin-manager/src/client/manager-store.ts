@@ -85,6 +85,8 @@ export interface PackageView {
   readonly meta?: PluginLocalizedMeta
   /** Whether the profile's own dependencies hold the package; false for a bundle the installation supplies. */
   readonly installed: boolean
+  /** Present for a profile dependency the installation does not also supply: the spec `pnpm add` accepts. */
+  readonly source?: string
   /** Whether the installation ships the bundle for the person to switch on: official, off until selected, never removable. */
   readonly optional: boolean
   /** Whether the bundle is in the profile's layer list. */
@@ -148,7 +150,8 @@ export function offeredRegistries(registries: PluginRegistries | null): Registry
 
 /** Why the typed spec was refused before anything installed. */
 export interface InstallInputError {
-  readonly problem: PluginInspectProblem
+  /** The Host's refusal, or `shipped` for a listed bundle the installation supplies. */
+  readonly problem: PluginInspectProblem | 'shipped'
   readonly reason: string
   /** The registries the check asked, in order, when the refusal came from asking them. */
   readonly registries?: readonly Registry[]
@@ -424,6 +427,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     enabled: bundle.enabled,
     rows,
     ...bundle.version === undefined ? {} : { version: bundle.version },
+    ...bundle.source === undefined ? {} : { source: bundle.source },
     ...bundle.description === undefined ? {} : { description: bundle.description },
     ...bundle.meta === undefined ? {} : { meta: bundle.meta },
     ...bundle.readOnlyReason === undefined ? {} : { readOnlyReason: bundle.readOnlyReason },
@@ -838,9 +842,10 @@ export class PluginManagerController {
       this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: sanitizeInstallInput(spec) })
     }
     // A name the list already shows is refused at once, before the Host is asked.
-    if (state.packages.some(pkg => pkg.name === spec)) {
+    const listed = state.packages.find(pkg => pkg.name === spec)
+    if (listed !== undefined) {
       this.finishAnalytics('failed', 'already-installed')
-      this.patchInstall({ phase: 'idle', inputError: { problem: 'already-installed', reason: spec } })
+      this.patchInstall({ phase: 'idle', inputError: { problem: listed.installed ? 'already-installed' : 'shipped', reason: spec } })
       return
     }
     const choice = install.registry

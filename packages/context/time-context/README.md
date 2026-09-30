@@ -64,7 +64,7 @@ This section explains the design of the plugin; the observable behavior is cover
 
 ### Design concept
 
-The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`, and the invariant companion validates that shape, re-derives the current-turn browser policy from the original `user-rpc` messages, and checks the timestamp zone and elapsed baseline.
+The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`, and the invariant companion validates that shape, re-derives the current-turn browser policy from the original `user-rpc` messages, and checks the timestamp zone and elapsed baseline.
 
 ### Source map
 
