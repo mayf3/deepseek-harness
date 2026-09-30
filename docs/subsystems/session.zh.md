@@ -803,7 +803,7 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 /**
  * Read all visible Session rows without resuming an Agent.
  * @param _request - reserved empty list request.
- * @param signal - cancellation for persistence reads.
+ * @param signal - cancellation for persistence reads and summary generation.
  * @returns visible Session summaries ordered by activity.
  */
 @Remote('list') async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>

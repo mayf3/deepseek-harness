@@ -1,5 +1,6 @@
 /** Cold-safe Session list and search projection. */
 
+import { scheduler } from 'node:timers/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
@@ -120,7 +121,7 @@ export class ApiSessionList {
 
   /**
    * Read every visible attached and persisted Session without activating an Agent.
-   * @param signal - optional cancellation for persistence reads.
+   * @param signal - optional cancellation for persistence reads and summary generation.
    * @returns visible Session summaries ordered by activity.
    */
   async list(signal?: AbortSignal): Promise<SessionSummary[]> {
@@ -133,12 +134,18 @@ export class ApiSessionList {
       const live = this.ctx.sessions.get(record.header.id)
       if (live !== undefined) {
         items.push(this.summaryFor(live))
+        await scheduler.yield()
+        signal?.throwIfAborted()
         continue
       }
       if (record.header.cwd === undefined) continue
       cold.push(record.header)
     }
-    for (const header of cold) items.push(this.summarizeCold(header))
+    for (const header of cold) {
+      items.push(this.summarizeCold(header))
+      await scheduler.yield()
+      signal?.throwIfAborted()
+    }
     items.sort((left, right) => right.updatedAt - left.updatedAt)
     return items
   }
