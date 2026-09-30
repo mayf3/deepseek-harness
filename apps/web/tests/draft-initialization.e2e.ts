@@ -556,6 +556,7 @@ it('applies a parameter transition matrix to one reusable target without changin
   const replacement = structuredDraft(firstId, '目标替换草稿')
   const plain = { text: '已有目标文字 🧭', references: [] }
   await initialize(page, source, first.id)
+  await assertDraft(page, firstId, source)
   await initialize(page, structured, second.id, true)
   await expect.poll(() => second.sessionIds.length, SETTLE).toBe(1)
   const secondId = second.sessionIds[0]!
