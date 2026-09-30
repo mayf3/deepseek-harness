@@ -724,15 +724,9 @@ export class LocalCredentialProvider extends CredentialProvider {
     return task
   }
 
-  /** Queue a reload; only an invariant violation escaping the fan-out can reject it. */
+  /** Queue a reload; `refresh()` contains its own failures, so the queued task never rejects. */
   private queueRefresh(): void {
-    void this.enqueue(() => this.refresh()).catch((error: unknown) => {
-      // Only an invariant violation escaping the update fan-out can reject a
-      // refresh; keep the operation queue alive and surface it as an error so
-      // one poisoned commit cannot silently end hot reloading forever.
-      this.ctx.logger.error('credentials-local: reload commit failed at %s', this.spec.filename)
-      this.ctx.logger.error(error)
-    })
+    void this.enqueue(() => this.refresh())
   }
 
   /** Queue one line edit; entry checks reject early, the queue re-judges them at run time. */

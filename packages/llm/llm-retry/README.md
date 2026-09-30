@@ -76,7 +76,6 @@ The executor is built on one rule: **durable before wait, open-step boundaries.*
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The function plugin: waterfall listener, policy lookup, backoff, durable event appends |
-| [`src/history.ts`](src/history.ts) | Durable retry-history lookup from the session log |
 | [`src/types.ts`](src/types.ts) | Browser-safe `llm/retry` and `llm/retry-started` event payload types |
 | [`src/brand.ts`](src/brand.ts) | The `RetryId` brand shared by the event payloads |
 

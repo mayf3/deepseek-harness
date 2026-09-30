@@ -76,7 +76,6 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 函数插件：waterfall 监听器、策略查找、退避、持久事件追加 |
-| [`src/history.ts`](src/history.ts) | 从会话日志查找持久重试历史 |
 | [`src/types.ts`](src/types.ts) | 浏览器安全的 `llm/retry` 与 `llm/retry-started` 事件载荷类型 |
 | [`src/brand.ts`](src/brand.ts) | 事件载荷共享的 `RetryId` 品牌 |
 
