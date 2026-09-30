@@ -1,6 +1,7 @@
 /** Compiled worker for Client history folding and live tool preparation. */
 
 import { performance } from 'node:perf_hooks'
+import { Context } from '@deepseek-ai/cordis'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
 import { LlmAttemptId, ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -9,12 +10,10 @@ import type { ChatNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/cli
 import type { SessionEventLikeEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 // These Client-only fold modules have no plain-Node package export and are compiled into this worker.
 import { ConversationNodeAssembler } from '../../packages/client/ui-conversation/src/client/conversation/assembler.ts'
+import { ConversationEventRegistry } from '../../packages/client/ui-conversation/src/client/conversation/event-registry.ts'
 import { inspectRequestPrompt } from '../../packages/client/ui-conversation/src/client/contract/request-inspection.ts'
-import type {
-  ConversationNodeDefinition,
-  ConversationViewDefinition,
-} from '../../packages/client/ui-conversation/src/client/contract/conversation.ts'
-import { assistantDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/assistant.ts'
+import type { ConversationViewDefinition } from '../../packages/client/ui-conversation/src/client/contract/conversation.ts'
+import { registerAssistantConversationNode } from '../../packages/client/ui-chat/src/client/conversation-nodes/assistant.ts'
 import { chatViewDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { commandDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/compaction.ts'
@@ -24,11 +23,11 @@ import { messageDefinition } from '../../packages/client/ui-chat/src/client/conv
 import { processGroupDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/process-groups.ts'
 import { requestPromptDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/request-prompt.ts'
 import { retryDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/retry.ts'
-import { toolDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/tool.ts'
+import { registerToolConversationNode } from '../../packages/client/ui-chat/src/client/conversation-nodes/tool.ts'
 import { turnErrorDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-error.ts'
 import { turnMaxTokensDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-max-tokens.ts'
-import { turnProcessDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts'
-import { turnTailDefinition } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-tail.ts'
+import { registerTurnProcess } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts'
+import { registerTurnTailConversationNode } from '../../packages/client/ui-chat/src/client/conversation-nodes/turn-tail.ts'
 import { assertBuiltBenchmarkRuntime } from '../support/built-worker.ts'
 
 const TIME_ZERO = 1_700_000_000_000
@@ -58,29 +57,24 @@ export interface PreparingToolWorkerReport {
   readonly detail: string | undefined
 }
 
-class BenchEventDefinitions {
-  readonly definitions: readonly ConversationNodeDefinition[] = [
-    nextStepInboxDefinition,
-    messageDefinition,
-    requestPromptDefinition(inspectRequestPrompt),
-    assistantDefinition,
-    turnProcessDefinition,
-    toolDefinition,
-    commandDefinition,
-    compactionDefinition,
-    retryDefinition,
-    turnErrorDefinition,
-    turnMaxTokensDefinition,
-    turnTailDefinition,
-  ]
-
-  entries(): readonly ConversationNodeDefinition[] {
-    return this.definitions
-  }
-
-  fallbackEntry(): ConversationNodeDefinition {
-    return unknownFallbackDefinition
-  }
+function registerEventDefinitions(ctx: Context): ConversationEventRegistry {
+  const events = new ConversationEventRegistry(ctx)
+  // Only the service holder is an adapter; registrations and routing use production code.
+  Object.defineProperty(ctx, 'uiConversation', { value: { events } })
+  events.register(nextStepInboxDefinition)
+  events.register(messageDefinition)
+  events.register(requestPromptDefinition(inspectRequestPrompt))
+  registerAssistantConversationNode(ctx)
+  registerTurnProcess(ctx)
+  registerToolConversationNode(ctx)
+  events.register(commandDefinition)
+  events.register(compactionDefinition)
+  events.register(retryDefinition)
+  events.register(turnErrorDefinition)
+  events.register(turnMaxTokensDefinition)
+  registerTurnTailConversationNode(ctx)
+  events.registerFallback(unknownFallbackDefinition)
+  return events
 }
 
 class BenchViewDefinitions {
@@ -162,9 +156,9 @@ function synthesizeWindow(
   return { entries, records }
 }
 
-function foldOnce(entries: readonly SessionEventLikeEntry[]): { readonly ms: number; readonly nodes: number } {
+function foldOnce(entries: readonly SessionEventLikeEntry[], definitions: ConversationEventRegistry): { readonly ms: number; readonly nodes: number } {
   const started = performance.now()
-  const assembler = new ConversationNodeAssembler(new BenchEventDefinitions(), new BenchViewDefinitions())
+  const assembler = new ConversationNodeAssembler(definitions, new BenchViewDefinitions())
   assembler.replaceWindow(entries, false)
   assembler.activateTarget('chat')
   const snapshot = assembler.snapshot('chat') as ChatSnapshot | undefined
@@ -174,10 +168,11 @@ function foldOnce(entries: readonly SessionEventLikeEntry[]): { readonly ms: num
 function bestOf(
   entries: readonly SessionEventLikeEntry[],
   attempts: number,
+  definitions: ConversationEventRegistry,
 ): { readonly ms: number; readonly nodes: number } {
-  let best = foldOnce(entries)
+  let best = foldOnce(entries, definitions)
   for (let attempt = 1; attempt < attempts; attempt += 1) {
-    const next = foldOnce(entries)
+    const next = foldOnce(entries, definitions)
     if (next.ms < best.ms) best = next
   }
   return best
@@ -189,7 +184,7 @@ function positiveInteger(value: string | undefined, label: string): number {
   return parsed
 }
 
-function preparingTool(tool: 'write' | 'bash', characters: number): PreparingToolWorkerReport {
+function preparingTool(tool: 'write' | 'bash', characters: number, definitions: ConversationEventRegistry): PreparingToolWorkerReport {
   if (globalThis.gc === undefined) throw new Error('preparing benchmark requires --expose-gc')
   const chunkSize = 16
   const chunksPerPublication = 64
@@ -210,7 +205,7 @@ function preparingTool(tool: 'write' | 'bash', characters: number): PreparingToo
   const chunks: SessionEventLikeEntry[] = []
   for (let at = 0; at < tail.length; at += chunkSize) chunks.push(delta(at + 1, tail.slice(at, at + chunkSize)))
   const assembler = new ConversationNodeAssembler(
-    new BenchEventDefinitions(), new BenchViewDefinitions(),
+    definitions, new BenchViewDefinitions(),
     { entries: () => [processGroupDefinition], forTarget: target => target === 'chat' ? processGroupDefinition : undefined },
   )
   assembler.replaceWindow([
@@ -270,32 +265,38 @@ assertBuiltBenchmarkRuntime(import.meta.url, {
   '@deepseek-ai/dsh-token-meter/client': import.meta.resolve('@deepseek-ai/dsh-token-meter/client'),
   '@deepseek-ai/dsh-util-values': import.meta.resolve('@deepseek-ai/dsh-util-values'),
 })
-if (process.argv[2] === 'preparing') {
-  const tool = process.argv[3]
-  if (tool !== 'write' && tool !== 'bash') throw new Error('preparing benchmark tool must be write or bash')
-  const report = preparingTool(tool, positiveInteger(process.argv[4], 'characters'))
-  process.stdout.write(`${JSON.stringify(report)}\n`)
-} else {
-  const [turnsValue, smallDeltasValue, largeDeltasValue, attemptsValue] = process.argv.slice(2)
-  const turns = positiveInteger(turnsValue, 'turns')
-  const smallDeltas = positiveInteger(smallDeltasValue, 'small deltas')
-  const largeDeltas = positiveInteger(largeDeltasValue, 'large deltas')
-  const attempts = positiveInteger(attemptsValue, 'attempts')
-  const small = synthesizeWindow(turns, smallDeltas)
-  const large = synthesizeWindow(turns, largeDeltas)
-  if (large.entries.length !== small.entries.length || large.records !== small.records) {
-    throw new Error('conversation-fold workloads must have matching event and compact-record counts')
+const scope = new Context()
+try {
+  const definitions = registerEventDefinitions(scope)
+  if (process.argv[2] === 'preparing') {
+    const tool = process.argv[3]
+    if (tool !== 'write' && tool !== 'bash') throw new Error('preparing benchmark tool must be write or bash')
+    const report = preparingTool(tool, positiveInteger(process.argv[4], 'characters'), definitions)
+    process.stdout.write(`${JSON.stringify(report)}\n`)
+  } else {
+    const [turnsValue, smallDeltasValue, largeDeltasValue, attemptsValue] = process.argv.slice(2)
+    const turns = positiveInteger(turnsValue, 'turns')
+    const smallDeltas = positiveInteger(smallDeltasValue, 'small deltas')
+    const largeDeltas = positiveInteger(largeDeltasValue, 'large deltas')
+    const attempts = positiveInteger(attemptsValue, 'attempts')
+    const small = synthesizeWindow(turns, smallDeltas)
+    const large = synthesizeWindow(turns, largeDeltas)
+    if (large.entries.length !== small.entries.length || large.records !== small.records) {
+      throw new Error('conversation-fold workloads must have matching event and compact-record counts')
+    }
+    const smallFold = bestOf(small.entries, attempts, definitions)
+    const largeFold = bestOf(large.entries, attempts, definitions)
+    const report: ConversationFoldWorkerReport = {
+      events: large.entries.length,
+      compactRecords: large.records,
+      streamedDeltas: turns * (largeDeltas + Math.floor(largeDeltas / 4)),
+      chatNodes: largeFold.nodes,
+      smallFoldMs: Math.round(smallFold.ms * 10) / 10,
+      largeFoldMs: Math.round(largeFold.ms * 10) / 10,
+      scaling: Math.round((largeFold.ms / Math.max(smallFold.ms, 1)) * 100) / 100,
+    }
+    process.stdout.write(`${JSON.stringify(report)}\n`)
   }
-  const smallFold = bestOf(small.entries, attempts)
-  const largeFold = bestOf(large.entries, attempts)
-  const report: ConversationFoldWorkerReport = {
-    events: large.entries.length,
-    compactRecords: large.records,
-    streamedDeltas: turns * (largeDeltas + Math.floor(largeDeltas / 4)),
-    chatNodes: largeFold.nodes,
-    smallFoldMs: Math.round(smallFold.ms * 10) / 10,
-    largeFoldMs: Math.round(largeFold.ms * 10) / 10,
-    scaling: Math.round((largeFold.ms / Math.max(smallFold.ms, 1)) * 100) / 100,
-  }
-  process.stdout.write(`${JSON.stringify(report)}\n`)
+} finally {
+  await scope.fiber.dispose()
 }
