@@ -86,6 +86,9 @@ describe('tool preparation', () => {
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('hello.txt')).toBeTruthy()
     expect(view.getByText('1KB')).toBeTruthy()
+    args.append('"}')
+    view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
+    expect(view.getByText('1KB')).toBeTruthy()
     fireEvent.click(view.getByText('hello.txt'))
     expect(props.openFile).toHaveBeenCalledWith('hello.txt')
     const started: StartedToolCall = {
@@ -97,7 +100,8 @@ describe('tool preparation', () => {
     expect(row).toBe(preparingRow)
     expect(view.getByText('hello.txt')).toBeTruthy()
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
-    expect(view.queryByText('1KB')).toBeNull()
+    expect(view.getByText('1KB')).toBeTruthy()
+    expect(row?.textContent).toMatch(/1KB.*\+1 -0/)
     const result: ToolResultNode = {
       kind: 'tool-result', seq: 3, time: 3, callId: 'call', callTime: 2,
       name: 'write', args: PartialArguments.fromText(started.argsRaw),
@@ -106,6 +110,28 @@ describe('tool preparation', () => {
     view.rerender(<FileMutationRow {...props} phase="result" block={result} />)
     expect(view.container.querySelector('[data-tool="write"]')).toBe(row)
     expect(view.container.querySelector('[data-state="ok"]')).not.toBeNull()
+    expect(view.getByText('1KB')).toBeTruthy()
+    expect(row?.textContent).toMatch(/1KB.*\+1 -0/)
+  })
+
+  it('keeps the combined edit size before diff totals in every stage', () => {
+    const argsRaw = JSON.stringify({ file_path: 'hello.txt', old_string: 'a'.repeat(600), new_string: 'b'.repeat(425) })
+    const args = PartialArguments.fromText(argsRaw)
+    const props = preparation('edit', args)
+    const view = render(<FileMutationRow {...props} />)
+    const row = view.container.querySelector('[data-tool="edit"]')
+    expect(view.getByText('2KB')).toBeTruthy()
+    const started: StartedToolCall = { ...props.block, phase: 'start', argsRaw }
+    view.rerender(<FileMutationRow {...props} phase="start" block={started} />)
+    expect(row?.textContent).toMatch(/2KB.*\+1 -1/)
+    const result: ToolResultNode = {
+      kind: 'tool-result', seq: 3, time: 3, callId: 'call', callTime: 2,
+      name: 'edit', args, call: { name: 'edit', argsRaw }, content: [], isError: false, subCalls: [],
+      meta: { diffs: [{ path: 'hello.txt', oldText: 'before', newText: 'after' }] },
+    }
+    view.rerender(<FileMutationRow {...props} phase="result" block={result} />)
+    expect(view.container.querySelector('[data-tool="edit"]')).toBe(row)
+    expect(row?.textContent).toMatch(/2KB.*\+1 -1/)
   })
 
   it.each([

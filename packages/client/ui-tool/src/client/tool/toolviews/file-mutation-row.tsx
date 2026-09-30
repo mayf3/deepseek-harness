@@ -13,25 +13,27 @@ const FILE_MUTATION_ICON = <IconEditOutlineRegular size={14} />
 const CONTENT_FIELDS = ['content', 'old_string', 'new_string']
 const KILOBYTE = 1024
 
-/** Kilobytes of decoded content so far; null when no content field is open. */
-function pendingContentKilobytes(block: FileMutationRowProps['block']): number | null {
+/** Kilobytes of decoded input at every stage; null before any content field arrives. */
+function contentKilobytes(block: FileMutationRowProps['block']): number | null {
   const { args } = block
   const open = CONTENT_FIELDS.find(key => args.has(key) && !args.complete(key))
-  if (open === undefined) return null
   const completed = CONTENT_FIELDS.reduce((total, key) => key !== open && args.complete(key)
     ? total + (args.stringLength(key, { step: KILOBYTE }) ?? 0) : total, 0)
+  if (open === undefined) {
+    return CONTENT_FIELDS.some(key => args.has(key)) ? Math.ceil(completed / KILOBYTE) : null
+  }
   const chars = completed + (args.stringLength(open, { step: KILOBYTE, offset: completed }) ?? 0)
   return Math.ceil(chars / KILOBYTE)
 }
 
 /**
- * Lets users open the path as soon as its string closes, watch the content
- * size alongside it while it streams, and expand the applied diff once the call settles.
+ * Shows the path and decoded input size through preparation, execution, and
+ * settlement, with the applied diff available once the call settles.
  */
 export function FileMutationRow({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: FileMutationRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const diff = diffCardModel(block)
-  const kilobytes = pendingContentKilobytes(block)
+  const kilobytes = contentKilobytes(block)
   const size = kilobytes === null ? null : t('tool.preparing.content', { kilobytes })
   return (
     <ToolRow

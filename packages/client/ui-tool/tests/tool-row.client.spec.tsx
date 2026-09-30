@@ -465,6 +465,18 @@ describe('ToolRow', () => {
     expect(failed.queryByText('+2')).toBeNull()
   })
 
+  it('places the summary suffix before diff totals without replacing them', () => {
+    const diff = { card: { diffs: [{ path: 'out.txt', oldText: null, newText: 'one\ntwo\n' }] } }
+    const view = render(<ToolRow {...rowProps} variant="write" summary="out.txt" summarySuffix="2KB" diff={diff} />)
+    expect(view.container.querySelector('[data-disclosure-row]')?.textContent).toMatch(/2KB.*\+2 -0/)
+    for (const state of ['error', 'stopped'] as const) {
+      view.rerender(<ToolRow {...rowProps} state={state} summarySuffix="2KB" diff={diff} />)
+      expect(view.queryByText('2KB')).toBeNull()
+      expect(view.queryByText('+2')).toBeNull()
+      expect(view.queryByText('-0')).toBeNull()
+    }
+  })
+
   it('an error file row drops the open-file link (the summary is failure prose, not the path)', () => {
     const open = vi.fn()
     const view = render(
