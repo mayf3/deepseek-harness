@@ -138,10 +138,6 @@ The installed-consumer probe captures npm's HTTP diagnostics and includes them w
 | `vendor/README.md` | records `src` joining `cordis`'s `files` as a local modification |
 | the three native packages | `publishConfig.access: public`, and their workflow passes no `--access` |
 
-### Relationship to the earlier proposal
-
-This Agent Note replaces the version scheme and the release-set boundary in [artifact-first npm baseline publication](../../rejected/process/2026-08-04-artifact-first-npm-baseline-publication.md): its `<base>-<timestamp>-<short SHA>` prerelease versions and `dev-<base>` dist-tag are not adopted, and vendor is not excluded from the release set. What both agree on stands: pack and publish are separate, publish consumes only verified tarballs, and the payload and installed-artifact probes are release gates.
-
 ## Alternatives considered
 
 **A `<base>-<timestamp>-<short SHA>` version.** Planned for continuous dev publication. It conflicts with keeping the published version in the repository: the version embeds a commit SHA, and writing the version back produces a new commit, so the SHA can only name the parent commit that was published and the link needs a convention to explain it. With numbered versions, a prerelease such as `0.0.1-rc.1` already covers "verify first, then release".

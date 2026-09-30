@@ -10,7 +10,7 @@ Full access 让有用的项目工作无需反复审批即可继续，但也允�
 
 ## 决策
 
-[`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.zh.md)是显式安装的实验性 Web 层，按[实验包发布决策](../process/2026-09-12-publish-all-experimental-packages.zh.md)参与发布。默认 Web 保持 Read Only、Workspace Write 与 Full access。此层贡献仅限当前会话的 `auto`，唯一持久身份为 `permission/preset:auto`；它使用 Full access 的 `danger-full-access` 沙箱与工具定义，审批策略由[用户审批兜底决策](2026-09-24-auto-review-user-approval-fallback.zh.md)决定。Headless、通用设置与新会话默认值都排除此 integration。
+[`dsh-experimental-auto-review`](../../../../packages/experimental/auto-review/README.zh.md)是显式安装的实验性 Web 层，按[实验包发布策略](../process/2026-09-12-experimental-publication-denylist.zh.md)参与发布。默认 Web 保持 Read Only、Workspace Write 与 Full access。此层贡献仅限当前会话的 `auto`，唯一持久身份为 `permission/preset:auto`；它使用 Full access 的 `danger-full-access` 沙箱与工具定义，审批策略由[用户审批兜底决策](2026-09-24-auto-review-user-approval-fallback.zh.md)决定。Headless、通用设置与新会话默认值都排除此 integration。
 
 每个原生调用与已开始的 PTC `tools.*` inner call 都在 body 前接受一次审查。外层 `run_code` transport 与 PTC 程序内直接 Node 效果不在保证范围内。不提供按工具名豁免、缓存 grant、重试、可配置策略或第二授权检查；拒绝之后的行为由[用户审批兜底决策](2026-09-24-auto-review-user-approval-fallback.zh.md)负责。重复调用也重新审查。
 

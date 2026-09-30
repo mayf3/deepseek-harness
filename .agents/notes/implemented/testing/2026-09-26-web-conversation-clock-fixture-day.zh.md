@@ -32,7 +32,7 @@ steering 的 mid 捕获在截图前等待该稳定标题出现；[整队场景](
 
 **为整条通道固定时钟。** 在 `launchWebScaffold` 与 `newEnglishPage` 内固定时钟可以一次覆盖所有场景，包括将来以同样方式失败的场景。它因影响面而落选：83 个 golden 带有时钟，且会话树 golden 断言字面相对时间，因此通道级的 now 会同时把所有场景移离各自的会话与 fixture 时间，而每个场景仍需自己的锚点才能读出录制时的分桶。
 
-**让场景避开本地午夜。** 在边界附近调度或拒绝运行会把依赖留在原处，并让运行而非被测代码失败。[CI 就绪与完成决策](2026-09-08-ci-readiness-and-completion.zh.md) 已经拒绝用预算或重试替代受控观察。
+**让场景避开本地午夜。** 在边界附近调度或拒绝运行会把依赖留在原处，并让运行而非被测代码失败。[CI 测试可靠性工作流](../../../skills/dsh-ci-test-reliability/SKILL.md#reject-flake-masking-fixes)拒绝用预算或重试替代受控观察。
 
 ## Verification
 

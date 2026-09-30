@@ -12,7 +12,7 @@ The [plugin-install scenario](../../../../apps/web/tests/plugin-install-cancel.e
 
 The scenario registers its `installBundle` and `cancelInstall` interceptors before navigation and retains them until the browser closes. Each interceptor calls a typed handler that the scenario replaces when it changes phases. The delivery and cancellation barriers retain their ordering, and `activeReplySettled` joins the lost-response handler before the next installation starts. Ordinary requests still reach the real Host.
 
-The [input-state decision](2026-09-27-web-lane-assertions-name-their-input-state.md) owns the separate wait for the highlighted card's status to become `running`. Keeping interception active lets the directory read complete; polling its result still establishes the state the golden records.
+The [scenario](../../../../apps/web/tests/plugin-install-cancel.e2e.ts) separately waits for the highlighted card's status to become `running`. Keeping interception active lets the directory read complete; polling its result still establishes the state the golden records.
 
 ## Alternatives considered
 
