@@ -5496,6 +5496,9 @@ importers:
       xlsx:
         specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
         version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
 
   packages/client/ui-sidebar-files:
     devDependencies:
