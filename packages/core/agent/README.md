@@ -53,7 +53,7 @@ handle.agent.followup({
 })
 handle.agent.steer({
   content: [{ type: 'text', text: 'Focus on the tests.' }],
-  source: { kind: 'plugin', plugin: 'my-plugin' },
+  source: { kind: 'my-plugin' },
 })
 await handle.agent.whenIdle()
 ```

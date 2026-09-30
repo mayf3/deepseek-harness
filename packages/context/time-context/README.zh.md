@@ -64,7 +64,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-插件前置注册一个 `agent/pre-step` 监听器，先委托下游，需要注入且下游决策进入步骤时追加一条带来源的 `UserMessage`。每个读数都使用确切的快照来源 `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`，不变式配套模块会校验该形状，根据原始 `user-rpc` 消息重新派生当前轮次的浏览器策略，并检查时间戳时区与经过时长基线。
+插件前置注册一个 `agent/pre-step` 监听器，先委托下游，需要注入且下游决策进入步骤时追加一条带来源的 `UserMessage`。每个读数都使用确切的快照来源 `{ kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`，不变式配套模块会校验该形状，根据原始 `user-rpc` 消息重新派生当前轮次的浏览器策略，并检查时间戳时区与经过时长基线。
 
 ### 源码地图
 

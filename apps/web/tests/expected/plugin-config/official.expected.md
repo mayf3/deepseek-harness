@@ -2,7 +2,9 @@
 - text: 安装、启用和配置插件
 - button "插件说明"
 - button "刷新"
-- button "添加插件"
+- group "添加插件":
+  - button "添加插件"
+  - button "选择添加插件方式"
 - heading "官方" [level=3]
 - text: "7"
 - list:

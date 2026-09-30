@@ -37,6 +37,15 @@ kind: "package-reference"
 
 ### 安装一个组合包
 
+**添加插件**控件包含主按钮和独立箭头，箭头用于选择添加方式。
+
+| 按钮或菜单项 | 结果 |
+| --- | --- |
+| **添加插件** | 打开安装对话框并聚焦包名输入框。 |
+| 箭头：**选择添加插件方式** | 打开包含安装及插件贡献动作的菜单。 |
+| **安装第三方插件** | 关闭菜单，打开同一对话框，从包名、Git 仓库或本地目录安装。 |
+| **让 Agent 创建插件** | 由 [ui-agent-preset](../ui-agent-preset/README.zh.md#use-this-package) 提供此项时，关闭菜单并进入创造模式，制作 DSH 插件。 |
+
 首次使用时，如果未显式配置安装源、pnpm 使用官方 npm 源，且列表提供 npmmirror，Host 会并发探测这两个源，选择最先成功响应 HTTPS ping 的源。已记住的选择、用户手选、管理器显式配置，以及自定义或未知的 pnpm 源均保留。在初次探测期间点击安装会等待这次有时限的操作；迟到结果不会覆盖手选或重新打开已关闭的对话框。
 
 Host 通过普通 fetch 代理向 `https://registry.npmjs.org/-/ping` 和 `https://registry.npmmirror.com/-/ping` 发送 GET 请求，以最先返回 2xx 的源为结果；重定向和失败不参与选择。随后取消另一条请求、丢弃两个响应体，并在清理完成后返回。默认时限为 1500 毫秒，包括不可用结果在内的探测结果均缓存五分钟。在 `ui-plugin-manager` 上配置 `registryProbeTimeoutMs` 和 `registryProbeCacheTtlMs`；`registryProbeEnabled: false` 关闭探测。两条请求都失败或超时时保留现有默认源。不使用 IP 地区服务，也不发送 Session 内容。
@@ -49,7 +58,7 @@ Host 将网络失败或超时归因于 GitHub 地址，且提供 npmmirror 时�
 
 ### 切换一个组合包
 
-组合包页面在标题下方显示完整包名，也就是在别处安装它所需的 spec。组合包开关改变其层选择。启用了 HMR 的 profile 在操作完成前重组；没有 HMR 的 profile，以及被更高层覆盖的组合包，会以 toast 说明。Host 读不了的组合包带异常标签，其页面给出原因，且不能打开；提供管理组件的组合包保持锁定。Host 以错误码作答，由页面字典措辞；pnpm 与 Loader 自己的诊断原样显示。页面从卡片与数量中排除内置 profile 组合包，即使 profile 将它们列为依赖或 Host 报告了异常。Host 清单仍保留完整数据；设置中「插件」分区的「插件列表」标签页负责查看它们的插件。
+组合包页面在标题下方显示完整包名。组件列表之后的「来源信息」给出在别处安装它所需的 spec（`pnpm add` 接受的形式），安装随附的官方组合包显示「内置」，随后是当前版本。组合包开关改变其层选择。启用了 HMR 的 profile 在操作完成前重组；没有 HMR 的 profile，以及被更高层覆盖的组合包，会以 toast 说明。Host 读不了的组合包带异常标签，其页面给出原因，且不能打开；提供管理组件的组合包保持锁定。Host 以错误码作答，由页面字典措辞；pnpm 与 Loader 自己的诊断原样显示。页面从卡片与数量中排除内置 profile 组合包，即使 profile 将它们列为依赖或 Host 报告了异常。Host 清单仍保留完整数据；设置中「插件」分区的「插件列表」标签页负责查看它们的插件。
 
 ### 切换组合包里的一行
 
@@ -98,6 +107,8 @@ ctx.slots.inject('plugins.detail.section', () => ctx.slots.register({
 Host 入口通过生成的 Remote 接口暴露 `pluginRegistryProbe.fastest()`，共享进行中的比较、让缓存按时过期，并在卸载时中止和等待未完成探测。卸载后调用会返回拒绝的 Promise。
 
 浏览器插件通过 `ctx.slots.inject()` 注册 `plugins` 侧栏入口与它的 `main` 面板，使两者跟随 slot 延迟声明、本地化变化与销毁。页面为全局页面，不属于任何 Session。显示文本来自包元信息与页面字典。
+
+添加控件复用 `Button`、`Menu` 和 `MenuItemButton`。两个安装入口调用同一个 `openInstall` 回调，使用 `InstallDialog` 与 `PluginManagerController`。root 作用域的 list slot `plugins.add.actions` 接受贡献的 `MenuItemButton` 行，放在安装项之后；每个贡献者接收 `onDismiss()` 回调，在开始动作前关闭菜单。
 
 ### store
 
