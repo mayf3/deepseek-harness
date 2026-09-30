@@ -5,11 +5,12 @@ import { Context, Inject, Service, type Plugin } from '@deepseek-ai/cordis'
 import { ModuleLoader, type ModuleJob, type ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { readFileSync, realpathSync } from 'node:fs'
 import { readProfileManifest, readProfilePatches, reconcileProfilePatches, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { handleError } from './error.ts'
+import { PackageManifests } from './package-manifest.ts'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -131,6 +132,7 @@ class Hmr extends Service {
   private applicationReady: Promise<boolean> = Promise.resolve(true)
   private closing = false
   private readonly configPaths = new Set<string>()
+  private readonly manifests = new PackageManifests()
 
   /** Serialize a caller-owned mutation with all automatic reload paths.
    * @param operation Work that must not overlap module or configuration replacement.
@@ -201,6 +203,7 @@ class Hmr extends Service {
       await this.watcher?.close()
       // A configuration reload may remove its own HMR entry.
       if (!this.executing.getStore()) await this.operations
+      this.manifests.dispose()
     }
 
     const profile = this.ownerContext.get('profileContext')
@@ -276,6 +279,11 @@ class Hmr extends Service {
           const filename = canonicalPath(resolve(watchBaseDir, path))
           const configuredFilename = resolve(this.baseDir, path)
           if (this.configPaths.has(filename) || this.configPaths.has(configuredFilename)) continue
+          // Package configuration is not a module: later resolutions read it again, but nothing reloads for it.
+          if (basename(filename) === 'package.json' && !filename.includes(`${sep}node_modules${sep}`)) {
+            this.manifests.invalidate(filename)
+            continue
+          }
           const url = pathToFileURL(filename).href
           if (this.externals.has(url)) {
             fullReload = true

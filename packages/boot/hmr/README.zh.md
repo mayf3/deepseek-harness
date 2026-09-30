@@ -56,7 +56,7 @@ Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时�
 
 `watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将配置变更、Loader 更新与自动重载串行化，并拒绝嵌套事务。包安装和删除在该队列之外执行。HMR 不获取包操作写锁；manifest 通知仅在有序的 `dsh.profile.bundles` 列表变化时触发重载。profile 与 home patch 变化也会触发重新组合。配置事务期间收到的文件事件在事务结束后处理。 Include 刷新和 profile 重载都通过普通的 Loader 条目更新到达插件；仅 volatile 变化由 Loader 就地提交。
 
-App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。HMR 也负责模块缓存替换和重载调度。配置监听器在当前事务上下文之外启动，使后续通知可以进入队列。
+App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。HMR 也负责模块缓存替换和重载调度。`node_modules` 之外的 `package.json` 变化不作为模块重载：HMR 让该包目录在 Node 中缓存的包配置失效，包括 package 读取、scope、type 与最近 manifest 查询、ESM `ResolveCache` 和 CommonJS `_pathCache` 条目，但不因此重载任何插件。之后的解析，包括同一批或之后因源码变化重载的插件的 import，都读取当前 manifest；重载的插件按已加载的 URL 重新 import，因此新入口在其 Loader 条目重启时生效。[package-manifest.ts](src/package-manifest.ts) 封装这里用到的 Node internal 接口。配置监听器在当前事务上下文之外启动，使后续通知可以进入队列。
 
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 
@@ -86,7 +86,7 @@ App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提
 <a id="known-limitations-and-deferred-work"></a>
 
 - 模块替换需要 Node loader 内部接口。框架依赖变化调用宿主提供的 `loader.exit()` 钩子；HMR 本身不重启进程。
-- 通过插件管理器替换已安装包版本仍需要重启。浏览器 Client 模块图保留独立的浏览器侧加载机制。
+- 通过插件管理器替换已安装包版本仍需要重启；`node_modules` 之下的 manifest 保留 Node 缓存的配置。浏览器 Client 模块图保留独立的浏览器侧加载机制。
 - `watchConfig()` 在 Chokidar 报告就绪时 resolve。darwin 上 libuv 随后才在自己的线程启动 FSEvents 流，因此注册后数毫秒内落地的写入要等到该目录的下一个事件才会被报告；启动之后的编辑不受影响。
 
 ### 开发备注
