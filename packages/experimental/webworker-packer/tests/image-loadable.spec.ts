@@ -314,8 +314,9 @@ const archive = async (): Promise<Uint8Array> =>
     inventory.apply({
       baseUrl,
       loader: tree,
+      // The inventory reads both optional services; this host provides neither.
       get: (name: string): undefined => {
-        expect(name).toBe('pluginPackages')
+        expect(['pluginPackages', 'agentPresets']).toContain(name)
         return undefined
       },
       deepseekLlmApiExtensions: {
