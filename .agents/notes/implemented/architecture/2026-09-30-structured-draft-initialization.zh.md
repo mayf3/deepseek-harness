@@ -34,7 +34,7 @@ Status: implemented
 | `SessionInputShell.requestDraftInitialization` | 在已经恢复的模型上执行清空／保留／填入规则；提交中拒绝修改，失败前不先清稿 |
 | `SessionInputShell.draftSnapshot`／`persistCurrentDraft()` | 按内容修订号缓存不含运行时 ID 的快照；`InputActions.persistDraft()` 委托显式保存方法；`bindDraftPersistence(write)` 仍只绑定回调 |
 | `DraftEditorRuntime.restoreDraft` | 接受引用的语义字段，重建 ReferenceChipNode；既有发送失败恢复继续使用同一实现 |
-| `SessionInputShell.refreshLexiconSubscription()`／`DraftEditorRuntime.refreshLexiconSubscription()` | 构造时接上可用词典；`InputHub` 用 Session scope 的 `inject` 在服务到达或替换时重接，销毁时退订；词典更新重扫当前 editor，不覆盖旧文本 |
+| `SessionInputShell.refreshLexiconSubscription()`／`DraftEditorRuntime.refreshLexiconSubscription()` | `InputHub` 缓存输入对象后，由草稿导入流程接上可用词典；构造时不解析词典，避免其初始化同步重入输入对象解析。Session scope 的 `inject` 在服务到达或替换时重接，销毁时退订；词典更新重扫当前 editor，不覆盖旧文本 |
 | `ConversationStoreState`／`createConversationStore` | draft 支持兼容旧字符串的结构化输入，View 状态及原 key 保持 |
 | `DefaultConversationViews` | 删除恢复／预填 effect；保留持久化回调的绑定和解绑。初始保存只能读取 owner 的当前快照，不能把 render 时的旧文字写回 |
 | `apply.ts` 中现有 `selectWorkspace` 回调 | 沿用原有跨工作区携带规则，但传递 `draftSnapshot` 而不是纯文本，防止携带时再次丢失引用 |
