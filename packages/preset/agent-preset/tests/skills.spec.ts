@@ -113,10 +113,8 @@ describe('the shipped creator skills', () => {
       }
       expect(manifest).not.toHaveProperty('icon')
       expect(manifest.exports['./locale/*.json']).toBe('./locale/*.json')
+      // The package-meta gate validates these resources through the real metadata reader.
       expect(manifest.exports['./icon']).toBe('./icon.svg')
-      const icon = readFileSync(join(dir, manifest.exports['./icon']), 'utf8')
-      expect(Buffer.byteLength(icon)).toBeLessThanOrEqual(256 * 1024)
-      expect(icon).toContain('<svg xmlns="http://www.w3.org/2000/svg"')
       const locales = readdirSync(join(dir, 'locale')).map(file => `locale/${file}`)
       expect(locales).toContain('locale/en.json')
       for (const file of locales) {
