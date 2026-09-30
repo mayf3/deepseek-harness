@@ -53,4 +53,4 @@ Status: implemented
 
 [Trajectory 参考](../../../../packages/client/ui-trajectory/README.zh.md)说明列表计数与详情面板附件布局。
 
-[输入回显入档决策](../bug-fix/2026-09-22-input-echo-admission-ownership.zh.md)负责有无附件提交的按展示归属回收和迟到 Inbox 排除。
+[输入回显入档参考](../../../../packages/api/session-controller/README.zh.md)负责有无附件提交的按展示归属回收和迟到 Inbox 排除。

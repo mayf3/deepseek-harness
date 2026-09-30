@@ -128,7 +128,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Hooks group map](../README.md) — the sibling group page and its package table.
 - [Hook protocol library](../hook-protocol/README.md) — the shared hook rules this bridge applies.
 - [Hook bridges Agent Note](../../../.agents/notes/archived/feature/2026-06-30-hook-bridges.md) — the bridge design, decision mapping, and deferred gaps.
-- [Interception extension-points Agent Note](../../../.agents/notes/implemented/feature/2026-06-30-interception-extension-points.md) — the typed-Decision surface the bridge maps onto.
+- [Interception extension-points reference](../../../docs/tool-execution-pipeline.md) — the typed-Decision surface the bridge maps onto.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-hooks-claude-code) — every accepted config field and its source declaration.
 
 -----

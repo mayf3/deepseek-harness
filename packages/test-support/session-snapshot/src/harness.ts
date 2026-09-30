@@ -11,7 +11,7 @@
  * shutdown flush. The pure normalizers in ./normalize.ts turn the captured
  * stdout frames and the session-log events into stable, snapshot-able text.
  *
- * See .agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md.
+ * See packages/test-support/session-snapshot/README.md.
  *
  * @module @deepseek-ai/dsh-session-snapshot/harness
  */

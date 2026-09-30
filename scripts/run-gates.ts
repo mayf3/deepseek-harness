@@ -3,7 +3,6 @@
  *
  * Package scripts own public aggregate names; this runner owns their validated
  * dependency graphs, scheduler environment, and process diagnostics.
- * @see ../.agents/notes/implemented/process/2026-07-06-parallel-pre-push-gates.md
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'

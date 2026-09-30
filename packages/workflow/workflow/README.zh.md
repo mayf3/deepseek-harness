@@ -104,7 +104,7 @@ return { reviewed: reviews.length }
 - [组地图](../README.zh.md)——工作流能力家族及其包。
 - [workflow 工具](../tool-workflow/README.zh.md)——拥有调用 schema 与结果包络的模型侧消费方。
 - [PTC 工作流引擎](../workflow-ptc/README.zh.md)——当前执行引擎及其隔离边界。
-- [动态工作流 Agent Note](../../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.zh.md)——seam 设计及其决策。
+- [历史动态工作流 Agent Note](../../../.agents/notes/archived/feature/2026-07-05-dynamic-workflows.md)——seam 设计及其决策。
 
 -----
 

@@ -2,7 +2,7 @@
 
 Status: implemented
 
-CPython PTC 运行时位于 `packages/experimental/ptc-runtime-python`，以 `@deepseek-ai/dsh-experimental-ptc-runtime-python` 名称发布；[发布策略](../process/2026-09-12-experimental-publication-denylist.zh.md)保留其实验性状态。
+CPython PTC 运行时位于 `packages/experimental/ptc-runtime-python`，以 `@deepseek-ai/dsh-experimental-ptc-runtime-python` 名称发布；[发布策略](../../../../packages/experimental/README.zh.md)保留其实验性状态。
 
 [English](2026-07-31-ptc-runtime-python-fd3-protocol.md) | 中文
 

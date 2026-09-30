@@ -8,13 +8,13 @@ Status: proposed
 
 [文件系统 invariant](../../../../packages/fs/fs/src/invariant.ts) 检查目标字符串非空、present 版本非空及观察值的判别标签。它只读取一次分发的载荷，不保留历史，也不与提供方、策略、文件系统或独立可变状态比较。其[测试](../../../../packages/fs/fs/tests/invariant.spec.ts) 直接构造格式错误的载荷。发布该检查需要配套模块、导出/构建配置、invariant 依赖、编译器引用和专用测试。
 
-当前指导需要显式决策：[独立观察规则](../../implemented/simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md) 要求能够独立分歧的观察值，而[运行时约定示例](../../implemented/architecture/2026-07-19-package-invariant-runtime-contracts.zh.md) 明确认可文件系统目标/版本有效性检查。后者的语义权威仍被较新的规则保留，因此不能仅凭时间先后解决冲突。
+[包规则](../../../../packages/AGENTS.md)要求能够独立分歧的观察值，[运行时 invariant 参考](../../../../packages/runtime-diagnostics/invariants/README.zh.md)描述的是事件流或可变数据关系，而非单个载荷校验。这个配套模块不进行此类比较。保留它需要为当前规则明确设置例外。
 
 ## 提案
 
 将独立观察标准应用于这个具体配套模块，并删除它。事件生产方来自独立插件，但逐一检查单个载荷的格式，并没有比较它们的观察值。保留类型化文件系统事件和实际的[观察策略消费方](../../../../packages/fs/fs-observation-policy/src/index.ts)，以及现有归属处的解析器、wire、读取、编辑和写入校验。
 
-删除 48 行配套模块、55 行专用测试、`./invariant` 导出/发布项、仅供 invariant 使用的依赖和编译器引用。在 fs 的两个 README 中补充包特有的省略理由。实现本决策时修改较早的代表性检查行，保留其他语义示例及共享 invariant 注册机制。本提案获接受前不修改这些当前归属文档。
+删除 48 行配套模块、55 行专用测试、`./invariant` 导出/发布项、仅供 invariant 使用的依赖和编译器引用。在 fs 的两个 README 中补充包特有的省略理由。保留其他关系检查及共享 invariant 注册机制。
 
 ## 考虑过的替代方案
 
@@ -24,7 +24,7 @@ Status: proposed
 
 ## 验收标准
 
-- 在当前归属 Agent Notes 中解决已指出的策略冲突；不将其宣称为已有共识的机械省略。
+- 删除配套模块前，先决定单个载荷诊断是否值得明确的策略例外；记录该包的具体理由，并保留关系检查。
 - 不再保留配套源码、测试、导出、产物条目、仅供 invariant 使用的依赖或编译器引用；包拓扑检查接受有说明的省略。
 - 真实文件工具和观察策略测试保留过期版本、目标缺失、别名、执行方路由及外部状态断言。事件及其消费方保留。
 - 运行聚焦的 fs 与观察策略测试、相关文件工具集成检查、源码/构建产物 invariant 拓扑检查、build/hygiene、doc-sync（文档同步门禁）和 lint。不用等价的通用载荷校验机制替换该模块。

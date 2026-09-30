@@ -85,4 +85,4 @@ skill 是可编辑文字，不转为文件胶囊。词典尚未返回时不锁�
 
 旧字符串草稿缺失的引用信息不能无损推断，按普通文字恢复；不为兼容旧数据自动查询并猜测文件。附件文件对象、上传状态、跨浏览器同步、多个独立编辑器和完整 Undo 持久化不在本次范围。
 
-本决策与[编辑器隔离方案](../../proposed/architecture/2026-09-14-composer-model-and-draft-editor.zh.md)共享输入 owner 的归属，但不实现其多编辑器目标；[引用预览](../feature/2026-09-10-composer-reference-previews.zh.md)和[Session 引用生命周期](2026-09-15-client-session-references.zh.md)继续各自约束来源路由和代次清理，不被本次决策取代。
+本决策与[编辑器隔离方案](../../proposed/architecture/2026-09-14-composer-model-and-draft-editor.zh.md)共享输入 owner 的归属，但不实现其多编辑器目标；[引用预览](../../../../packages/client/ui-input-trigger/README.zh.md)和[Session 引用生命周期](2026-09-15-client-session-references.zh.md)继续各自约束来源路由和代次清理，不被本次决策取代。

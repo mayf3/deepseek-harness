@@ -177,7 +177,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 - [dsh-home-paths](../../util/home-paths/README.zh.md)——harness home 解析器（`resolveDshHome`）。
 - [配置来源归属](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.zh.md)——被发现的文件为何不得决定 bootstrap 行为。
 - [Profile 插件组合包](../../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.zh.md)——profile 与组合包组合设计。
-- [用户 patch HMR 测试](../../../.agents/notes/implemented/testing/2026-09-09-user-patch-hmr-test-delivery.zh.md)——实时 patch 行为与原生文件系统投递的验证归属。
+- [用户 patch HMR 测试](tests/user-patches.spec.ts)——实时 patch 行为与原生文件系统投递的验证归属。
 
 -----
 

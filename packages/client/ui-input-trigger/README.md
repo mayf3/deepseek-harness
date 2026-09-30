@@ -57,7 +57,7 @@ Read these pages when the trigger pipeline is not enough. They move from the pip
 - [ui-commands](../ui-commands/README.md) — registers the `/` command source into this pipeline and owns the command popup shell.
 - [ui-reference](../ui-reference/README.md) — registers the `@` file and session reference sources.
 - [ui-conversation](../ui-conversation/README.md) — declares the input overlay slot and owns the composer and input machine.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 
 -----
 

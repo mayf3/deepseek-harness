@@ -102,7 +102,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [jobs group map](../README.md) — the sibling group page and its package table.
 - [Process-local registry](../jobs-local/README.md) — the shipped implementation that runs jobs in this process.
 - [Model-facing job controls](../tool-jobs/README.md) — the `job_output`, `job_list`, and `job_kill` tools and completion notices.
-- [Generic long-running tool runtime Agent Note](../../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md) — the design behind the background-job runtime.
+- [Jobs lifecycle and output ownership](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.md) — one lifecycle, output ring, and observation stream.
 - [job-registry seam Agent Note](../../../.agents/notes/archived/architecture/2026-07-26-job-registry-seam.md) — the owner-fenced registry contract and its rationale.
 - [Jobs seam consolidation Agent Note](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.md) — one output ring, one projection, one event stream.
 

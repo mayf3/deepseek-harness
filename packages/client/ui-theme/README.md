@@ -87,7 +87,7 @@ The `--dsw-alias-turn-trigger-*` tokens provide separate resting and hover backg
 
 ### Preference persistence
 
-The service provides itself immediately with the schema defaults on a loopback browser, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Non-loopback pages do not create that Host-backed scope. The persistence boundary is owned by the [Host-backed preferences note](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md).
+The service provides itself immediately with the schema defaults on a loopback browser, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Non-loopback pages do not create that Host-backed scope. The persistence boundary is owned by the [Host-backed preferences reference](../ui-settings/README.md).
 
 </details>
 
@@ -102,7 +102,7 @@ These pages cover the layout presenter, the token consumers, and the styling rul
 - [ui-sidebar](../ui-sidebar/README.md) — a consumer of the scrollbar rebinding contract.
 - [ui-conversation](../ui-conversation/README.md) — a consumer of `--dsh-scrollbar-width` for the composer seat.
 - [Web styling](../../../docs/web-styling.md) — the authoritative styling rules for web client components.
-- [Host-backed preferences](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md) — the persistence boundary decision.
+- [historical Host-backed preferences](../../../.agents/notes/archived/bug-fix/2026-08-06-host-backed-web-preferences.md) — the persistence boundary decision.
 
 -----
 
