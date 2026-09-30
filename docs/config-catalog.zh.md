@@ -4121,7 +4121,7 @@ export interface WebRuntimeConfig {
 ## `@deepseek-ai/dsh-web-app`
 
 - `inject`: `webServer`
-- `source`: [`packages/bundle/web-app/src/index.ts:44`](../packages/bundle/web-app/src/index.ts)
+- `source`: [`packages/bundle/web-app/src/index.ts:46`](../packages/bundle/web-app/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: composed deployment settings plus per-invocation command-line values. */
@@ -4137,6 +4137,14 @@ export interface Config {
    * orientation text would be false.
    */
   surfaceContext: boolean
+  /**
+   * Canonical HTTP(S) root to advertise in the printed and opened URL,
+   * `DSH_WEB_URL`, and the web-surface orientation, e.g.
+   * `https://app.example/ui/`, normalized to end in `/`. Advertisement only;
+   * see [public deployments](../README.md#public-deployments). Absent or YAML
+   * `null` advertises the loopback URL.
+   */
+  publicUrl?: string
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
 }

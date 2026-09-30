@@ -47,7 +47,7 @@ it('persists Coding Tools and limits the built-in PTC and Minimal choices in ses
   await expect.poll(visiblePresets).toEqual(['standard', 'cordis', 'custom'])
   await settings.getByRole('button', { name: 'New task default: Standard mode', exact: true }).waitFor()
   await expect.poll(async () => (await scaffold.ctx.agentPresets.remoteExportList()).presets.find(preset => preset.isDefault)?.id).toBe('standard')
-  expect(await settings.getByRole('button', { name: 'Let the agent help me create a preset', exact: true }).isEnabled()).toBe(true)
+  await expect.poll(() => settings.getByRole('button', { name: 'Let the agent help me create a preset', exact: true }).isEnabled()).toBe(true)
   await settings.getByRole('button', { name: 'Close', exact: true }).last().click()
   await connectFreshWorkspace(page, scaffold.workspaceCwd)
   await expect.poll(livePresets).toEqual(['standard'])
