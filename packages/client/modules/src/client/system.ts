@@ -63,15 +63,20 @@ function chunkUrl(row: BootModuleRow, fileName: string, rev: string): string {
   return `${url.slice(0, resourceStart)}/${row.id}/${fileName}?${url.slice(revisionStart + 1)}`
 }
 
+/** Untagged <style> elements present before a factory runs; they belong to other owners. */
+const untaggedStyles = (): ReadonlySet<Element> =>
+  typeof document === 'undefined' ? new Set() : new Set(document.querySelectorAll('style:not([data-plugin])'))
+
 /**
  * Claim and inventory the <style> tags a factory injected during
  * materialization: preset-emitted tags arrive pre-tagged with data-plugin;
- * any untagged tag is claimed for the materializing plugin (HMR bookkeeping).
+ * an untagged tag that was absent from `before` is claimed for the
+ * materializing plugin (HMR bookkeeping).
  */
-const claimStyles = (id: string): string[] => {
+const claimStyles = (id: string, before: ReadonlySet<Element>): string[] => {
   if (typeof document === 'undefined') return []
   for (const el of document.querySelectorAll('style:not([data-plugin])')) {
-    el.setAttribute('data-plugin', id)
+    if (!before.has(el)) el.setAttribute('data-plugin', id)
   }
   const owned: string[] = []
   for (const el of document.querySelectorAll(`style[data-plugin=${JSON.stringify(id)}]`)) {
@@ -302,8 +307,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
     this.materializing.add(id)
     try {
       const edges = new Set<string>()
+      const before = untaggedStyles()
       const exports = registered.factory(this.makeRequire(ownerId, edges))
-      const record: ClientModuleRecord = { id, exports, styles: claimStyles(ownerId), edges }
+      const record: ClientModuleRecord = { id, exports, styles: claimStyles(ownerId, before), edges }
       this.loadCache.set(id, record)
       return record
     } catch (error) {
