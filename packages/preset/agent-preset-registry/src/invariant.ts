@@ -9,10 +9,7 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 // joins, and the `agent` field `dsh-agent` merges into its context.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-agent'
-// Imported through the package name, not `./mount.ts`: a module shared between
-// the two build entry points becomes a third chunk that the published `files`
-// list does not carry, which `verify-built-package-invariants` rejects.
-import { leakedServices, livePresetMounts } from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-agent-preset-registry'
 
@@ -32,11 +29,12 @@ export const inject = ['invariants']
  */
 const install: InvariantInstaller = (ctx, fail) => {
   ctx.on('internal/service', function (this: Context, name) {
-    for (const mount of livePresetMounts()) {
-      const leaked = leakedServices(ctx, mount.fiber)
+    const presets = ctx.get('agentPresets')
+    if (presets === undefined) return
+    for (const { id, leakedServices: leaked } of presets.inspectCompositions()) {
       if (leaked.length === 0) continue
       fail(
-        `preset "${mount.presetId}" published process-global service(s) [${leaked.join(', ')}] `
+        `preset "${id}" published process-global service(s) [${leaked.join(', ')}] `
         + `after its mount was audited (observed while notifying "${name}") — `
         + 'a preset service must sit behind an `isolate` realm or move to the host composition',
       )
