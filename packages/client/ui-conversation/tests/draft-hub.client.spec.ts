@@ -2,6 +2,7 @@
 /** InputHub restores drafts before views and follows Session-owned lexicon subscriptions. */
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
+import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { makeTranslate, TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -11,7 +12,7 @@ import type { DraftSnapshot } from '../src/client/contract/draft-editor.ts'
 import type { InputTriggerController } from '../src/client/contract/input.ts'
 import { ReferenceChipNode } from '../src/client/input/editor/chip-node.tsx'
 import { TextRefNode } from '../src/client/input/editor/text-ref.ts'
-import type { SessionInputShell } from '../src/client/input/facade.ts'
+import { SessionInputShell } from '../src/client/input/facade.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -24,7 +25,7 @@ const saved: DraftSnapshot = {
   }],
 }
 
-async function fixture(draft: unknown) {
+async function storedSession(draft: unknown) {
   const id = SessionId(`draft-hub-${randomUUID()}`)
   const key = `dsh.conversation.${id}`
   const previous = localStorage.getItem(key)
@@ -47,8 +48,12 @@ async function fixture(draft: unknown) {
   await reference.ready
   const binding = reference.binding
   const hub = new InputHub(ctx, makeTranslate(zh, {}))
-  const shell = hub.shellFor(binding)
-  return { ctx, sessions, id, key, raw, reference, binding, hub, shell }
+  return { ctx, sessions, id, key, raw, reference, binding, hub }
+}
+
+async function fixture(draft: unknown) {
+  const b = await storedSession(draft)
+  return { ...b, shell: b.hub.shellFor(b.binding) }
 }
 
 function textReferences(shell: SessionInputShell): string[] {
@@ -97,14 +102,84 @@ function controller(lexicon: () => InputTriggerController['lexicon']): InputTrig
 }
 
 class TriggerProvider extends Service {
-  constructor(ctx: Context, private readonly config: { readonly controller: InputTriggerController }) {
+  constructor(ctx: Context, private readonly config: {
+    readonly controller: InputTriggerController
+    readonly initialize?: () => void
+  }) {
     super(ctx, 'inputTriggers')
   }
 
   sessionOf(): InputTriggerController {
+    this.config.initialize?.()
     return this.config.controller
   }
 }
+
+it('does not resolve input triggers until the first draft initialization', async () => {
+  const b = await storedSession(saved)
+  const source = catalog(['saved'])
+  const triggers = controller(() => source.source)
+  const resolve = vi.fn(() => triggers)
+  const shell = new SessionInputShell({
+    actx: b.binding.ctx,
+    inputTriggers: resolve,
+    defaultSink: () => Promise.resolve({ kind: 'success' }),
+    commandAttachments: {
+      serialize: () => Promise.resolve([]),
+      release: () => {},
+      unsupportedNotice: token => token,
+    },
+  })
+  onTestFinished(() => { shell.dispose() })
+
+  expect(resolve).not.toHaveBeenCalled()
+  shell.setDraft(saved)
+  expect(resolve).toHaveBeenCalled()
+  expect(source.subscribers).toBe(1)
+  expect(shell.draftSnapshot).toEqual(saved)
+})
+
+it('reuses one shell during synchronous catalog retention and restores its initial draft before returning', async () => {
+  const b = await storedSession(saved)
+  const source = catalog(['saved'])
+  const retained: SessionReference[] = []
+  onTestFinished(() => { for (const reference of retained) reference.release() })
+  const reentered: SessionInputShell[] = []
+  let warming = false
+  let initialized = false
+  let observed = false
+  const stop = b.sessions.retainInfo(b.id).subscribe(() => {
+    // One reentry exposes duplicate shells without exhausting the stack on a regression.
+    if (!warming || observed) return
+    observed = true
+    reentered.push(b.hub.shellFor(b.binding))
+  })
+  onTestFinished(stop)
+  const provider = b.ctx.plugin(TriggerProvider, {
+    controller: controller(() => source.source),
+    initialize: () => {
+      if (initialized) return
+      initialized = true
+      warming = true
+      try {
+        retained.push(b.sessions.retain(b.id))
+      } finally { warming = false }
+    },
+  })
+  await provider.await()
+
+  const first = b.hub.shellFor(b.binding)
+  expect(observed).toBe(true)
+  expect(reentered).toHaveLength(1)
+  expect(retained).toHaveLength(1)
+  expect(retained[0]?.binding).toBe(b.binding)
+  expect(new Set([first, ...reentered, b.hub.shellFor(b.binding)]).size).toBe(1)
+  expect(source.subscribers).toBe(1)
+  expect(first.draftSnapshot).toEqual(saved)
+  expect(reentered[0]?.draftSnapshot).toBe(first.draftSnapshot)
+  expect(first.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
+  expect(localStorage.getItem(b.key)).toBe(b.raw)
+})
 
 it('restores legacy text before a view and reuses the live draft on later shell lookups', async () => {
   const b = await fixture('/saved legacy\n🙂 中文')

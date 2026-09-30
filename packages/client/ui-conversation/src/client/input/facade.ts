@@ -180,7 +180,6 @@ export class SessionInputShell implements SessionInput {
     this.unregister = this.draftEditor.register()
     this.state = createSnapshotStore<InputState>(this.compose())
     this.unsubscribeInbox = deps.inbox?.subscribe(() => { this.publish() })
-    this.draftEditor.refreshLexiconSubscription()
   }
 
   // ---- editor plumbing ----
@@ -217,6 +216,8 @@ export class SessionInputShell implements SessionInput {
    * @param text - plain text or the complete semantic document.
    */
   setDraft(text: DraftInput): void {
+    // Catalog resolution can reenter InputHub, which caches this shell before importing its draft.
+    this.refreshLexiconSubscription()
     const draft = resolveDraftInput(text)
     if (draft.references.length === 0) this.draftEditor.setDraft(draft.text)
     else this.draftEditor.restoreDraft(draft.text, draft.references)
