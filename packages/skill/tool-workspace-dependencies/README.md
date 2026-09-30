@@ -123,6 +123,4 @@ Append-only tool result in the turn history; no prompt section is added.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-Placement and carrier choices are recorded in the [shared-runtime Agent Note](../../../.agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.md).
-
 </details>

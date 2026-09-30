@@ -13,7 +13,7 @@ Read [AGENTS.md](../../../AGENTS.md), [architecture](../../../docs/architecture.
 
 Agree on the user-visible endpoint, workload range, resource constraints, acceptable minor behavior differences, and stopping rule. Keep backend and browser end-to-end measurements separate: a fast history iterator or Client fold does not prove fast transport, paint, scrolling, or input response. Exclude model/network latency when measuring local overhead, and state that exclusion rather than calling the result complete product latency.
 
-Inspect the exact current base, not just the running checkout. Study final merged diffs, owning source, tests, and resolved review threads; a PR body can describe an abandoned implementation. Separate merged, closed-unmerged, superseded, estimated, and newly measured evidence. The [performance workflow decision and evidence](../../notes/implemented/process/2026-09-06-evidence-driven-performance-skill.md) supply historical leads, not authority to reintroduce their implementations.
+Inspect the exact current base, not just the running checkout. Study final merged diffs, owning source, tests, and resolved review threads; a PR body can describe an abandoned implementation. Separate merged, closed-unmerged, superseded, estimated, and newly measured evidence. The [archived performance workflow decision and evidence](../../notes/archived/process/2026-09-06-evidence-driven-performance-skill.md) supply historical leads, not authority to reintroduce their implementations.
 
 ## Survey user paths, then rank candidates
 

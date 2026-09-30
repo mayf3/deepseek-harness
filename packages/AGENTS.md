@@ -16,7 +16,7 @@ These package-specific rules supplement the repo-wide [conventions](../AGENTS.md
 - **Apply bounds to the complete result.** Enforce byte, token, item, and time limits where the complete emitted or retained value, including wrappers and metadata, is known; test tiny and exact limits, oversized single chunks, and multibyte byte limits.
 - **Registry contributions prove disposal** through the HMR-safety test required by [testing policy](../docs/testing.md): dispose the fiber and observe removal.
 - **Specs run concurrently** in forked workers beside other gate processes. Own each acquired port, path, and child process through teardown; a spec that passes only when run alone is a defect in the spec ([execution model](../docs/testing.md#how-specs-execute)).
-- **Publish `./invariant` only for diverging observations.** Check an owned relation under the manifest name. Otherwise omit wiring and give the package-specific README reason. Empty companions and ignored reporters fail [`verify-package-invariants`](../.agents/notes/implemented/simplification/2026-08-28-omit-unneeded-invariant-companions.md).
+- **Publish `./invariant` only for diverging observations.** Check an owned relation under the manifest name. Otherwise omit wiring and give the package-specific README reason. Empty companions and ignored reporters fail [`verify-package-invariants`](../scripts/verify-package-invariants.ts).
 
 [Naming rules](../docs/cookbook/adding-a-package.md#name-the-role-that-exists):
 

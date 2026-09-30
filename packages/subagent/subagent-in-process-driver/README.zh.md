@@ -87,7 +87,7 @@ kind: "package-library"
 - [Subagent 子系统](../../../docs/subsystems/subagent.zh.md)——启动请求、结果、提供方约定与进程内深度和初始内容。
 - [dsh-subagent-spawn-in-process](../subagent-spawn-in-process/README.zh.md)——构建于本驱动器之上的全新子 agent 后端。
 - [dsh-subagent-fork-in-process](../subagent-fork-in-process/README.zh.md)——构建于本驱动器之上的带初始内容的子 agent 后端。
-- [委派策略决策](../../../.agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.zh.md)——父级沙箱与审批策略如何到达子 agent。
+- [委派策略参考](../subagent/README.zh.md)——父级沙箱与审批策略如何到达子 agent。
 
 -----
 

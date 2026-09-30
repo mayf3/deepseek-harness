@@ -22,7 +22,7 @@ Two hard blockers sat in the way. All 217 workspace manifests set `private: true
 
 | Sequence | Members | Version baseline | Tag | Workflow |
 |---|---|---|---|---|
-| dsh | Publish set: public members of `packages/*/*` + `apps/*`, with [private experimental exceptions](2026-09-12-experimental-publication-denylist.md); private packages join only the shared version bump | one version for the publish set, private dsh packages, and workspace root, `0.0.x` | `dsh-v<version>` | `release.yml` (pack) / `release-publish.yml` (publish) |
+| dsh | Publish set: public members of `packages/*/*` + `apps/*`, with [private experimental exceptions](../../../../packages/experimental/README.md); private packages join only the shared version bump | one version for the publish set, private dsh packages, and workspace root, `0.0.x` | `dsh-v<version>` | `release.yml` (pack) / `release-publish.yml` (publish) |
 | vendored framework | the nine `vendor/*` packages | each package on its own version line | `vendor-<package>-v<version>` (one per package) | `release-vendor.yml` (pack) / `release-vendor-publish.yml` (publish) |
 | native | `native/system/packages/*` | its own `0.0.x` | `node-addon-system-v<version>` | `node-addon-system-release.yml` |
 
@@ -78,7 +78,7 @@ Two registry behaviours shape how a publish is attempted. Writes are spaced by a
 
 ### Workspace-internal references use the `workspace:` protocol
 
-Every reference to a workspace member uses the `workspace:` protocol. The [release-range policy](2026-09-22-workspace-release-ranges.md) requires exact `workspace:*` DSH references and `workspace:~` vendor/native references in every dependency section and consumer, including the native entry's optional platform packages. Local workspace linking is unchanged.
+Every reference to a workspace member uses the `workspace:` protocol. Every dependency section and consumer uses exact `workspace:*` DSH references and `workspace:~` vendor/native references, including the native entry's optional platform packages. Vendor and native patch releases must preserve consumer-facing APIs and binary interfaces. Local workspace linking is unchanged.
 
 `scripts/check-workspace-constraints.ts` reads every member declared in `pnpm-workspace.yaml` plus the root manifest and enforces ranges by dependency target, not consumer directory. The invariant-companion rule requires `workspace:*` for `@deepseek-ai/dsh-invariants`; the dependency repairer preserves vendor/native tilde ranges. Published DSH peers therefore require the matching release instead of admitting later compatible versions.
 

@@ -123,6 +123,4 @@ kind: "package-reference"
 <details>
 <summary>维护者的工作上下文——点击展开</summary>
 
-包归属与载体选择记录在[共享运行时 Agent Note](../../../.agents/notes/implemented/architecture/2026-09-17-shared-office-runtime.zh.md) 中。
-
 </details>

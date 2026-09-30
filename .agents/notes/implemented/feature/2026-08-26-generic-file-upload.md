@@ -53,4 +53,4 @@ Unit and integration coverage pins verbatim and streamed storage, name sanitizat
 
 The [Trajectory reference](../../../../packages/client/ui-trajectory/README.md) documents ledger counts and inspector attachment layouts.
 
-The [input echo admission decision](../bug-fix/2026-09-22-input-echo-admission-ownership.md) owns placement-specific retirement and delayed Inbox suppression for submissions with or without attachments.
+The [input echo admission reference](../../../../packages/api/session-controller/README.md) owns placement-specific retirement and delayed Inbox suppression for submissions with or without attachments.
