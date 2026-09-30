@@ -110,6 +110,23 @@ describe('tool-call-model', () => {
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"pwd"}' })).summary).toBe('pwd')
   })
 
+  it.each([
+    { name: 'web_search', variant: 'search', prefix: '' },
+    { name: 'custom-tool', variant: 'others', prefix: 'custom-tool · ' },
+  ])('prefers description for $variant summaries and retains the raw-argument fallback', ({ name, variant, prefix }) => {
+    for (const withDescription of [true, false]) {
+      const argsRaw = JSON.stringify({
+        query: 'First argument',
+        ...withDescription ? { description: 'Preferred description\nSecond line' } : {},
+      })
+      for (const block of [running({ name, argsRaw }), result({ call: { name, argsRaw } })]) {
+        expect(toolRowModel(name, block)).toMatchObject({
+          variant, summary: prefix + (withDescription ? 'Preferred description' : 'First argument'),
+        })
+      }
+    }
+  })
+
   it('keeps summaries single-line and falls back for opaque args', () => {
     expect(toolRowModel('bash', running({ argsRaw: '{"command":"a\\nb"}' })).summary).toBe('a')
     expect(toolRowModel('read', running({ name: 'read', argsRaw: '{"path":"/tmp/x.ts"}' })).summary).toBe('/tmp/x.ts')

@@ -85,7 +85,7 @@ function applyDelta(state: ToolState, match: ConversationMatch): ToolState {
       },
     }
   }
-  if ('kind' in root || root.phase !== 'preparing') return state
+  if ('kind' in root || root.phase !== 'preparing' || root.args.isSealed) return state
   root.args.append(chunk.argumentsDelta)
   return state
 }

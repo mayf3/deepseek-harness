@@ -94,6 +94,38 @@ function appendAndRefresh(view: PartialArguments, fragment: string): boolean {
 
 describe('PartialArguments', () => {
   describe('sealed views', () => {
+    it('reports sealing independently of object closure and preserves append rejection', () => {
+      const view = streamed(['{"a":"value"}'])
+      expect(view.closed()).toBe(true)
+      expect(view.isSealed).toBe(false)
+      view.append(' ')
+      expect(view.settle('{"a":"value"} ')).toBe(view)
+      expect(view.isSealed).toBe(true)
+      expect(() => { view.append('') }).toThrow('cannot append to a sealed view')
+      expect(PartialArguments.EMPTY.isSealed).toBe(true)
+      expect(PartialArguments.fromText('{"a":"unfinished').isSealed).toBe(true)
+      const partial = streamed(['{"a":"old'])
+      expect(partial.settle('{"a":"new"}').isSealed).toBe(true)
+      expect(partial.isSealed).toBe(false)
+    })
+
+    it('reads sealing without scanning or observing streamed text', () => {
+      const view = streamed(['{"a":"value'])
+      const search = vi.spyOn(String.prototype, 'indexOf')
+      let sealed: boolean
+      let searches: number
+      try {
+        sealed = view.isSealed
+        searches = search.mock.calls.length
+      } finally {
+        search.mockRestore()
+      }
+      expect(sealed).toBe(false)
+      expect(searches).toBe(0)
+      view.append(' grows"}')
+      expect(view.refresh()).toBe(false)
+    })
+
     it('EMPTY answers every reader with absence and refuses appends', () => {
       const empty = PartialArguments.EMPTY
       expect(empty.keys()).toEqual([])

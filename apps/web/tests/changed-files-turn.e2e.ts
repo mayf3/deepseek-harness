@@ -77,7 +77,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     }
     scaffold = await launchWebScaffold({
       developerTools: false,
-      compareReplaySession: true,
+      compareReplaySession: 'read-only',
       extraOverlayPath: fileURLToPath(new URL('./changed-files-turn.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),
     })
@@ -112,6 +112,9 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
     const preparations = ['edit', 'write'].map(name => ({
       name, callId: '', args: new PartialArguments(), ready: Promise.withResolvers<{ callId: string }>(),
       release: Promise.withResolvers<undefined>(), held: false,
+      contentField: name === 'write' ? 'content' : 'old_string',
+      contentReady: Promise.withResolvers<undefined>(), contentRelease: Promise.withResolvers<undefined>(),
+      contentHeld: false,
     }))
     const names = new Map<string, string>()
     const dispose = scaffold.ctx.on('llm/stream', async function* (_options, next) {
@@ -120,18 +123,29 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
         if (chunk.type !== 'tool-call-delta') continue
         if (chunk.name !== undefined) names.set(chunk.id, chunk.name)
         const preparation = preparations.find(value => value.name === names.get(chunk.id))
-        if (preparation === undefined || preparation.held || chunk.argumentsDelta.length === 0) continue
+        if (preparation === undefined || preparation.contentHeld || chunk.argumentsDelta.length === 0) continue
         if (preparation.callId === '') preparation.callId = chunk.id
         if (preparation.callId !== chunk.id) continue
         preparation.args.append(chunk.argumentsDelta)
-        if (!preparation.args.complete('file_path')) continue
-        preparation.held = true
-        preparation.ready.resolve({ callId: chunk.id })
-        await preparation.release.promise
+        if (!preparation.held) {
+          if (!preparation.args.complete('file_path')) continue
+          preparation.held = true
+          preparation.ready.resolve({ callId: chunk.id })
+          await preparation.release.promise
+        }
+        if (!preparation.args.has(preparation.contentField) || preparation.args.complete(preparation.contentField)) continue
+        const length = preparation.args.stringLength(preparation.contentField)
+        if (length === undefined || length === 0) continue
+        preparation.contentHeld = true
+        preparation.contentReady.resolve(undefined)
+        await preparation.contentRelease.promise
       }
     }, { prepend: true })
     releasePreparations = () => {
-      for (const preparation of preparations) preparation.release.resolve(undefined)
+      for (const preparation of preparations) {
+        preparation.release.resolve(undefined)
+        preparation.contentRelease.resolve(undefined)
+      }
       dispose()
     }
     const input = page.locator('[data-composer-input]').first()
@@ -148,8 +162,18 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await row.getByRole('button').waitFor()
       expect(await row.locator('[aria-expanded]').count()).toBe(0)
       expect(await row.locator('pre').count()).toBe(0)
+      expect(await row.getByText(/正在准备内容 \d+KB/).count()).toBe(0)
       await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}.expected.md`), await row.ariaSnapshot(), MODE)
       preparation.release.resolve(undefined)
+      await Promise.race([
+        preparation.contentReady.promise,
+        settled.then(() => { throw new Error(`No open ${preparation.name} content prefix was streamed`) }),
+      ])
+      await row.getByText('正在准备内容 1KB', { exact: true }).waitFor()
+      expect(await row.locator('[aria-expanded]').count()).toBe(0)
+      expect(await row.locator('pre').count()).toBe(0)
+      await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}-content.expected.md`), await row.ariaSnapshot(), MODE)
+      preparation.contentRelease.resolve(undefined)
     })
     const [sessionId] = await Promise.all([settled, ...observations]).finally(() => { releasePreparations?.() })
     const session = scaffold.ctx.agents.get(sessionId)?.session

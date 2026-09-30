@@ -279,12 +279,14 @@ interface ToolCallHead {
 }
 
 /**
- * The call's top-level arguments read the same way at every stage: a lazily
- * scanned view that answers per field (`has`, `complete`, `stringLength`,
- * `text`, `value`) and scans nothing until asked. While preparing the view
- * grows with the streamed text and reports a change only when an answer it
- * already gave would differ; once dispatched it wraps the finished text or the
- * parsed payload. Empty for a settled call whose `tool/call` left the window.
+ * Lazy top-level argument readers shared by preparing, start, and result;
+ * {@link PartialArguments} defines field, prefix, length, and completion reads.
+ * A preparing view grows in place. Read it during render or view construction,
+ * not into independent state keyed only by the args or block object identity.
+ * The Definition publishes the initial named block, then republishes when an
+ * observed answer changes. Unread fields alone do not request republication.
+ * Dispatched views are sealed over finished text or parsed values. The view is
+ * empty for a result whose `tool/call` left the loaded window.
  */
 export type ToolArgs = PartialArguments
 

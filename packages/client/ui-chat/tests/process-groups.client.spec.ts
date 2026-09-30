@@ -90,11 +90,64 @@ describe('Definition-owned Chat process groups', () => {
     ['combining marks', 'e\u0301'.repeat(161), `${'e\u0301'.repeat(159)}…`],
     ['emoji at limit', '👩‍💻'.repeat(160), '👩‍💻'.repeat(160)],
     ['emoji overflow', '👩‍💻'.repeat(161), `${'👩‍💻'.repeat(159)}…`],
+    ['sealed unpaired surrogate', 'x'.repeat(159) + '\ud83d', 'x'.repeat(159) + '\ud83d'],
   ])('preserves normalized live detail for %s', (_label, command, expected) => {
     const node = tool('call', 2)
     const argsRaw = JSON.stringify({ command })
     const root = { ...node.data.root, argsRaw, args: PartialArguments.fromText(argsRaw) }
     expect(processActivity([{ ...node, data: { root } }]).runningDetail).toBe(expected)
+  })
+
+  it('keeps 160 graphemes when the bounded prefix splits a surrogate pair', () => {
+    const command = '👩‍💻'.repeat(87) + '☀️' + 'a'.repeat(71) + '👩‍💻'
+    expect(command).toHaveLength(513)
+    const argsRaw = JSON.stringify({ command })
+    const args = PartialArguments.fromText(argsRaw)
+    const node: ChatNode<'tool-call'> = {
+      ...tool('call', 2),
+      data: { root: { phase: 'start', argsRaw, args, callId: 'call', name: 'bash', turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    const prefix = vi.spyOn(args, 'textPrefix')
+    const text = vi.spyOn(args, 'text')
+    try {
+      expect(processActivity([node]).runningDetail).toBe(command)
+      expect(text).not.toHaveBeenCalled()
+      expect(prefix.mock.calls.every(([, limit]) => limit <= 513)).toBe(true)
+    } finally {
+      prefix.mockRestore()
+      text.mockRestore()
+    }
+  })
+
+  it.each([false, true])('waits for a low surrogate across deltas before truncating (escaped=%s)', (escaped) => {
+    const command = '👩‍💻'.repeat(87) + '☀️' + 'a'.repeat(71) + '👩‍💻'
+    const args = new PartialArguments()
+    args.append(`{"command":"${command.slice(0, 511)}${escaped ? '\\ud83d' : command[511]}`)
+    const node: ChatNode<'tool-call'> = {
+      ...tool('call', 2),
+      data: { root: { phase: 'preparing', args, callId: 'call', name: 'bash', turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    expect(processActivity([node]).runningDetail).toBe(command.slice(0, 511))
+    args.append(escaped ? '\\udcbb' : command[512]!)
+    expect(args.refresh()).toBe(true)
+    expect(processActivity([node]).runningDetail).toBe(command)
+    args.append('x"}')
+    expect(args.refresh()).toBe(true)
+    expect(processActivity([node]).runningDetail).toBe(`${command.slice(0, -5)}…`)
+  })
+
+  it.each(['"}', 'x"}'])('counts an unpaired surrogate once its continuation is known (%s)', (ending) => {
+    const command = '👩‍💻'.repeat(87) + '☀️' + 'a'.repeat(71) + '👩‍\ud83d'
+    const args = new PartialArguments()
+    args.append(`{"command":"${command}`)
+    const node: ChatNode<'tool-call'> = {
+      ...tool('call', 2),
+      data: { root: { phase: 'preparing', args, callId: 'call', name: 'bash', turn: 1, step: 1, time: 2, subCalls: [] } },
+    }
+    expect(processActivity([node]).runningDetail).toBe(command.slice(0, -1))
+    args.append(ending)
+    expect(args.refresh()).toBe(true)
+    expect(processActivity([node]).runningDetail).toBe(`${command.slice(0, -4)}…`)
   })
 
   it('bounds grapheme traversal while allowing a later description to replace a long command', () => {

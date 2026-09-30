@@ -62,8 +62,20 @@ function normalizeLiveToolDetail(value: unknown): string {
 function argumentTextDetail(args: ToolArgs, key: string): string | undefined {
   let limit = LIVE_TOOL_DETAIL_PREFIX_CHARS
   while (true) {
-    const prefix = args.textPrefix(key, limit)
+    let prefix = args.textPrefix(key, limit)
     if (prefix === undefined) return undefined
+    const last = prefix.charCodeAt(prefix.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) {
+      // The extra prefix read also observes a low surrogate arriving in a later delta.
+      const extended = args.textPrefix(key, limit + 1) as string
+      const next = extended.charCodeAt(prefix.length)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        prefix = extended
+        limit++
+      } else if (extended.length === prefix.length && !args.isSealed && !args.complete(key)) {
+        prefix = prefix.slice(0, -1)
+      }
+    }
     const detail = normalizeLiveToolText(prefix)
     if (detail.truncated || !args.stringExceeds(key, limit)) return detail.text
     limit *= 2

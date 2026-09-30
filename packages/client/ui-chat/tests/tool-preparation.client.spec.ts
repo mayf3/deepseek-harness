@@ -144,6 +144,39 @@ describe('Tool preparation and durable replay', () => {
     expect(h.tools()[0]!.data.root.args).toBe(view)
   })
 
+  it.each([null, 'write'])('ignores late tool deltas after block-end (name=%s)', (name) => {
+    const h = harness()
+    h.assembler.append(delta(2.1, first, args))
+    const view = h.tools()[0]!.data.root.args
+    h.assembler.append(blockEnd(2.2, args))
+    const ended = h.tools()[0]!
+    expect(() => h.assembler.append(delta(2.3, first, ' ignored', name))).not.toThrow()
+    expect(h.tools()[0]).toBe(ended)
+    expect(view.text('content')).toBe('hello')
+    h.assembler.append(call(6))
+    expect(h.phases()).toEqual([[first, 'start']])
+    expect(h.tools()[0]!.data.root.args).toBe(view)
+    h.assembler.append(result(7))
+    expect(h.phases()).toEqual([[first, 'result']])
+    expect(h.tools()[0]!.data.root.args).toBe(view)
+  })
+
+  it('accepts deltas after a closing brace until block-end without checking closed()', () => {
+    const h = harness()
+    h.assembler.append(delta(2.1, first, args))
+    const view = h.tools()[0]!.data.root.args
+    expect(view.closed()).toBe(true)
+    const closed = vi.spyOn(view, 'closed')
+    try {
+      h.assembler.append(delta(2.2, first, ' ', null))
+      expect(closed).not.toHaveBeenCalled()
+    } finally {
+      closed.mockRestore()
+    }
+    h.assembler.append(blockEnd(2.3, args + ' '))
+    expect(h.tools()[0]!.data.root.args).toBe(view)
+  })
+
   it.each([
     '{"file_path":"other.txt","content":"hello"}',
     '{"file_path":"hello.txt","content":"he',

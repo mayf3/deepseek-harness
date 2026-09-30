@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-util-values` gives runtime packages one implementation for lossless JSON values, streamed arguments, immutable object graphs, structural JSON equality, and exhaustive closed-union failures. Callers can validate untrusted values, read partial arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. The helpers hold no shared registry, constructor identity, or mutable module state.
+Callers can validate lossless JSON, read streamed arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. Each streamed call uses its own `PartialArguments` reader; `PartialArguments.EMPTY` is a shared sealed view with no fields.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ const snapshot = snapshotJsonValue(input) as JsonValue
 
 `PartialArguments` reads a JSON object's top-level fields lazily. `append()` retains separate fragments without scanning or concatenating them. Readers index new key/value ranges, skipping unrequested contents; only requested strings are decoded or counted, and only requested complete non-string values are parsed. `complete()` reports a closing delimiter, not validated contents; `invalid` reports errors already discovered by indexing or content reads. It is not a substitute for tool-input validation.
 
-`refresh()` reports changes to previously observed answers at publication time; intervening reads do not acknowledge pending changes. It evaluates content before comparing completion, so decoding errors cannot suppress a completion update. String readers provide decoded text, bounded prefixes, and exact UTF-16 length, with optional step and offset for change detection. `settle(finalText)` compares fragments directly against the complete text: equal input seals the same view and retains its caches; missing or conflicting deltas produce a new sealed view. `fromText()` and `fromObject()` also create sealed views that reject appends. `closed()` covers a closed outer object, failed indexing, or sealing. See [the readers](src/partial-json.ts) for return distinctions.
+`refresh()` reports changes to previously observed answers at publication time; intervening reads do not acknowledge pending changes. It evaluates content before comparing completion, so decoding errors cannot suppress a completion update. String readers provide decoded text, bounded prefixes, and exact UTF-16 length, with optional step and offset for change detection. `settle(finalText)` compares fragments directly against the complete text: equal input seals the same view and retains its caches; missing or conflicting deltas produce a new sealed view. `fromText()` and `fromObject()` also create sealed views that reject appends. `isSealed` reads that append restriction without scanning or observing content; `closed()` also covers a closed outer object or failed indexing. See [the readers](src/partial-json.ts) for return distinctions.
 
 ### Publish, compare, or retain keyed values
 

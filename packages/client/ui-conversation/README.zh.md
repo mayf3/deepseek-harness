@@ -37,7 +37,7 @@ kind: "package-reference"
 
 注册入口接受原有可调用的 `match`，或只读的事件类型到处理函数表。Registry 在注册关系变化时复制表条目并预计算有序候选 Set。函数形式的 Definition 保持原有可调用 API，接收全部事件；表中的处理函数只接收已声明类型。修改表需要注销后重新注册。只有 `entries()` 与 `fallbackEntry()` 的旧 assembler 适配器保留原有分发路径。
 
-所有接受的 Match 按顺序更新 State。两次 flush 之间，发布索引只登记一次脏 Context；每个输入的 owner 列表只建立一次索引，并收集所有匹配的 Context。append 仅在 kind 和 id 都相同时复用已索引 Context 的 key，也可复用私有的已校验坐标；传给 Definition 的 Context 快照仍为独立对象。最多认领两个目标的输入不需要临时目标 Set；普通 Definition 处理结束后，fallback 选择仍检查全部已认领的目标。
+所有接受的 Match 按顺序更新 State。两次 flush 之间，同一 Context 的重复更新合批发布。kind 和 id 相同时，Context 保持原有 key；传给 Definition 的 Context 快照仍为独立对象。fallback 只处理未被其目标的普通 Definition 认领的输入。
 
 Location 查询按 Turn 和 Step 编号索引 Step，因此非边界 append 不扫描 Turn 的 Step 数组。每个输入的数值坐标与解析出的 Location 共用一条私有索引记录；已发布的 Location 值保持不可变。边界更新、完整替换和向前补页使这些索引与当前时间线保持一致。
 

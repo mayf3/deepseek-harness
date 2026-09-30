@@ -37,7 +37,7 @@ Definitions may share the same read-only Match and Location for one input and li
 
 Registration accepts the existing callable `match` or a read-only event-type-to-handler table. The Registry copies table entries and precomputes ordered candidate Sets on registration changes. Function-form Definitions keep their callable API and receive every event; table handlers receive only their declared types. Changing a table requires unregistering and registering again. Legacy assembler adapters with only `entries()` and `fallbackEntry()` retain their original dispatch path.
 
-All accepted Matches update State in order. Publication indexes record a dirty Context only once between flushes; each input's owner list is indexed once and collects every matching Context. Append reuses an indexed Context key only when both kind and id match, and may reuse private validated coordinates; Definition-facing Context snapshots remain distinct objects. Inputs claiming at most two targets require no temporary target Set; fallback selection still checks every claimed target after ordinary Definitions finish.
+All accepted Matches update State in order. Repeated updates to one Context are coalesced between flushes. A Context retains its key while kind and id match; Definition-facing Context snapshots remain distinct objects. The fallback handles only inputs not claimed by an ordinary Definition for its target.
 
 Location lookup indexes Steps by Turn and Step number, so a non-boundary append does not scan the Turn's Step array. Each input's numeric coordinates and resolved Location share one private index record; published Location values remain immutable. Boundary updates, replacement, and prepend keep the indexes aligned with the current timeline.
 

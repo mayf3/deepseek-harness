@@ -129,6 +129,11 @@ export class PartialArguments {
   readonly #order: string[] = []
   readonly #reads = new Map<string, Read>()
 
+  /** Whether this view rejects further appends; does not scan text or register reads. */
+  get isSealed(): boolean {
+    return this.sealed
+  }
+
   /** Whether indexing or a content read found invalid JSON; unread value contents are not validated. */
   get invalid(): boolean {
     this.scan()

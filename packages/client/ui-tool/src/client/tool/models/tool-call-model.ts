@@ -256,6 +256,7 @@ function argumentSummary(
 ): { summary: string; filePath: string | undefined } {
   if (FILE_PATH_VARIANTS.has(variant)) {
     const path = args.complete('file_path') ? args.text('file_path') : undefined
+    // Decoding text can discover an invalid escape and make complete() false.
     const filePath = path !== undefined && path !== '' && args.complete('file_path') ? firstLine(path) : undefined
     return { summary: filePath === undefined ? '' : abbreviateHomePath(relativizeToCwd(filePath, cwd), home), filePath }
   }
