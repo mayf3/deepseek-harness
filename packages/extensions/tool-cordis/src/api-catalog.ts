@@ -999,8 +999,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'fileUploads',
-    summary: 'Host service owning upload storage and Agent-scoped staged receipts.',
-    description: 'Host service owning upload storage and Agent-scoped staged receipts.',
+    summary: 'Host service owning upload storage and receipts keyed by each receiving Agent\'s exact Session.',
+    description: 'Host service owning upload storage and receipts keyed by each receiving Agent\'s exact Session.',
     methods: [
       {
         signature: 'registerAgentResolver(resolve: AgentResolver): () => void',
@@ -1022,7 +1022,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined',
-        description: 'Resolve one staged receipt inside its receiving Agent scope.',
+        description: 'Resolve one staged receipt for the receiving Agent\'s exact Session.',
         parameters: [{ name: 'agent', description: 'receiving Agent.' }, { name: 'receiptId', description: 'opaque receipt minted for one completed upload.' }],
         returns: 'durable file reference, or `undefined` for an unknown or foreign receipt.',
       },
