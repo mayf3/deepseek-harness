@@ -146,17 +146,17 @@ it('excludes tests, installed dependencies, and build output from metadata disco
 it.each([
   ['valid bundle', {}, 'Nested', undefined],
   ['manifest icon takes precedence', {
-    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './missing.svg' },
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './fallback.svg' },
   }, 'Nested', undefined],
   ['unpublished manifest icon', {
-    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './missing.svg' }, files: ['locale'],
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './fallback.svg' }, files: ['locale'],
   }, 'Nested', 'files must include icon.svg'],
   ['missing locale export', { exports: { './icon': './icon.svg' } }, 'Nested', 'exports must expose locale/en.json'],
   ['unpublished locale', { files: ['icon.svg'] }, 'Nested', 'files must include locale/en.json'],
   ['unpublished icon', { files: ['locale'] }, 'Nested', 'files must include icon.svg'],
-  ['missing icon target', { exports: { './locale/*.json': './locale/*.json', './icon': './missing.svg' } }, 'Nested', 'missing.svg'],
+  ['missing icon target', { exports: { './locale/*.json': './locale/*.json', './icon': './missing.svg' } }, 'Nested', 'exports["./icon"] must resolve to a file'],
   ['invalid display text', {}, false, 'meta.title must be a non-empty string'],
-  ['ordinary locale-only metadata', { dsh: undefined, exports: { './locale/*.json': './locale/*.json', './icon': './missing.svg' } }, 'Nested', undefined],
+  ['ordinary plugin with an exported icon', { dsh: undefined }, 'Nested', undefined],
 ] as const)('validates a named nested package independently: %s', (_label, fields, title, expected) => {
   manifest({ exports: { '.': './entry.js' }, files: ['examples'] })
   json('examples/nested/package.json', {
@@ -166,6 +166,7 @@ it.each([
   })
   json('examples/nested/locale/en.json', { meta: { title } })
   file('examples/nested/icon.svg', '<svg/>')
+  file('examples/nested/fallback.svg', '<svg/>')
   const problems = packageMetaProblems(root)
   if (expected === undefined) expect(problems).toEqual([])
   else expect(problems.join('\n')).toContain(expected)
