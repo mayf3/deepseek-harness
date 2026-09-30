@@ -17,6 +17,8 @@ Profile and balance HTTP 401 responses or top-level response code `40003` (inval
 
 ## Summary
 
+Platform requests report `no-response` when fetch rejects before returning a Response, including request timeouts. HTTP errors and response-body failures do not use this code; authorization-attempt expiry retains `expired`.
+
 Sign in through the system browser and keep the account credential in the existing local credential store. Local cancellation prevents late callbacks and exchange responses from signing the user in.
 
 Device identity reads validate the existing login device record and expose only its ID, the current account ID, and the shared login OS version string.
