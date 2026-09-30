@@ -44,11 +44,12 @@ describe('Client Cordis inspect catalog', () => {
     const result = queryServiceApi('uiWorkspace') as {
       referencedTypes: readonly { name: string; declaration: string }[]
     }
-    expect(result.referencedTypes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'StartSessionOptions', declaration: expect.stringContaining('DraftInitializationOptions') }),
-      expect.objectContaining({ name: 'DraftInitializationOptions', declaration: expect.stringContaining('readonly prompt?: DraftInput') }),
-      expect.objectContaining({ name: 'DraftSnapshot', declaration: expect.stringContaining('readonly references: readonly DraftReference[]') }),
-    ]))
+    expect(result.referencedTypes.find(type => type.name === 'StartSessionOptions')?.declaration)
+      .toContain('DraftInitializationOptions')
+    expect(result.referencedTypes.find(type => type.name === 'DraftInitializationOptions')?.declaration)
+      .toContain('readonly prompt?: DraftInput')
+    expect(result.referencedTypes.find(type => type.name === 'DraftSnapshot')?.declaration)
+      .toContain('readonly references: readonly DraftReference[]')
   })
 
   it('includes the current referenced type closure for the Sessions service', () => {
