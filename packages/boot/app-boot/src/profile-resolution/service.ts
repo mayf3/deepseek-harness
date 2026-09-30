@@ -11,7 +11,7 @@ import {
   registerWorkerResolution,
   type RuntimeInterception,
 } from './resolver.ts'
-import type { RuntimeResolution } from '../profile.ts'
+import { ProfileRuntimeResolution, type RuntimeResolution } from '../profile.ts'
 import { readPluginMeta } from '../package-meta.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -61,10 +61,12 @@ export class PluginPackages extends Service {
   private packages = new Map<string, PluginPackage | undefined>()
   private readonly interception: RuntimeInterception | undefined
   private disposeWorkerResolution: (() => void) | undefined
+  private current: RuntimeResolution | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
     if (config.resolution === undefined) return
+    this.current = config.resolution
     const interception = installRuntimeInterception(config.resolution)
     this.disposeWorkerResolution = registerWorkerResolution(config.resolution)
     this.interception = interception
@@ -82,9 +84,22 @@ export class PluginPackages extends Service {
   replace(successor: RuntimeResolution): void {
     if (this.interception === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
     this.interception.replace(successor)
+    this.current = successor
     this.packages = new Map()
     this.disposeWorkerResolution?.()
     this.disposeWorkerResolution = registerWorkerResolution(successor)
+  }
+
+  /**
+   * Publish the latest generation computed by the installed resolution through {@link replace}. Package contents
+   * and loaded modules are not reloaded.
+   * @throws when no resolution is installed, the installed one was not computed from a profile, or the successor is rejected.
+   */
+  async refresh(): Promise<void> {
+    if (!(this.current instanceof ProfileRuntimeResolution)) {
+      throw new Error('plugin-packages: the installed runtime resolution cannot be recomputed')
+    }
+    this.replace(await this.current.computeLatestResolution())
   }
 
   /**

@@ -124,11 +124,12 @@ export interface RuntimeInterception {
    */
   packageDir(specifier: string, parentURL: string): string | undefined
   /**
-   * Atomically publish a complete successor and fresh caches. Linked roots may be added or removed.
-   * Removed roots stop intercepting uncovered directories; existing modules and Node caches remain intact.
-   * @param successor - fully constructed generation retaining existing package mappings and local names.
-   * @throws when the profile scope or existing mappings change, local names are removed or override
-   * existing mappings, or a previously published link name selects a different real directory.
+   * Atomically publish a complete successor and fresh caches. Profile-scoped mappings, local names, and linked
+   * roots may be removed; removed roots stop intercepting uncovered directories. Existing modules and Node caches
+   * remain intact, so callers remove a package only after its plugins stop.
+   * @param successor - fully constructed generation retaining the installation mappings.
+   * @throws when the profile scope or a retained mapping changes, an installation mapping is removed, a new local name
+   * overrides an existing mapping, or a previously published link name selects a different real directory.
    */
   replace(successor: RuntimeResolution): void
   /** Restore the native resolver methods. Interceptions dispose in reverse order. */
@@ -378,6 +379,7 @@ class ResolutionRouter {
     }
     for (const [name, current] of this.current.entries) {
       const next = entries.get(name)
+      if (next === undefined && current.scope === 'profile') continue
       if (next === undefined
         || !sameResolution(current.packageDir, next.packageDir)
         || !sameResolution(current.declarer, next.declarer)
@@ -387,11 +389,6 @@ class ResolutionRouter {
       }
     }
     const localPackageNames = new Set(successor.localPackageNames)
-    for (const name of this.current.localPackageNames) {
-      if (!localPackageNames.has(name)) {
-        throw new Error(`profile resolution: removing local package ${JSON.stringify(name)} requires a process restart`)
-      }
-    }
     for (const name of localPackageNames) {
       if (!this.current.localPackageNames.has(name) && this.current.entries.has(name)) {
         throw new Error(`profile resolution: overriding ${JSON.stringify(name)} locally requires a process restart`)

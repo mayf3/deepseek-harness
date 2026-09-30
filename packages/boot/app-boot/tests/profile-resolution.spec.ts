@@ -1629,7 +1629,6 @@ describe('runtime resolution', { concurrent: false }, () => {
     }).toThrow(/cannot change its profile scope/u)
     registration.replace({ ...first, localPackageNames: ['new-local'] })
     registration.replace({ ...first, localPackageNames: ['new-local'] })
-    expect(() => { registration.replace(first) }).toThrow(/removing local package/u)
     const linked = { name: 'linked-plugin', realPath: join(f.root, 'work', 'a') }
     const withLocal = { ...first, localPackageNames: ['new-local'] }
     registration.replace({ ...withLocal, linkedRoots: [linked] })
@@ -1641,6 +1640,35 @@ describe('runtime resolution', { concurrent: false }, () => {
     expect(registration.packageDir(
       '@deepseek-ai/dsh-core', pathToFileURL(join(f.profile.dir, 'entry.mjs')).href,
     )).toBe(f.installed)
+  })
+
+  it('removes profile mappings and local names while retaining changed profile mappings as restarts', async () => {
+    const f = fixture()
+    const firstDir = join(f.root, 'bundle-a', 'node_modules', 'private-lib')
+    const secondDir = join(f.root, 'bundle-b', 'node_modules', 'private-lib')
+    pkg(firstDir, 'private-lib', 1)
+    pkg(secondDir, 'private-lib', 2)
+    const base = await resolutionOf(f)
+    const entry = {
+      name: 'private-lib', packageDir: firstDir, version: '1.0.0',
+      declarer: join(firstDir, 'package.json'), scope: 'profile' as const,
+    }
+    const first = { ...base, entries: [...base.entries, entry], localPackageNames: ['local-lib'] }
+    const registration = installRuntimeInterception(first)
+    registrations.push(registration)
+    const parent = pathToFileURL(join(f.profile.dir, 'entry.mjs')).href
+    expect(registration.packageDir('private-lib', parent)).toBe(firstDir)
+    expect(() => {
+      registration.replace({ ...first, entries: [...base.entries, {
+        ...entry, packageDir: secondDir, version: '2.0.0', declarer: join(secondDir, 'package.json'),
+      }] })
+    }).toThrow(/replacing "private-lib" requires a process restart/u)
+    expect(registration.packageDir('private-lib', parent)).toBe(firstDir)
+    registration.replace(base)
+    expect(registration.packageDir('private-lib', parent)).toBeUndefined()
+    expect(() => resolveFrom('private-lib', parent)).toThrow(expect.objectContaining({ code: 'ERR_MODULE_NOT_FOUND' }))
+    registration.replace(first)
+    expect(registration.packageDir('private-lib', parent)).toBe(firstDir)
   })
 
   it('leaves non-package and out-of-scope metadata lookups to native resolution', async () => {
