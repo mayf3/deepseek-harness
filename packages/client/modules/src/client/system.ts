@@ -63,7 +63,7 @@ function chunkUrl(row: BootModuleRow, fileName: string, rev: string): string {
   return `${url.slice(0, resourceStart)}/${row.id}/${fileName}?${url.slice(revisionStart + 1)}`
 }
 
-/** Untagged <style> elements present before a factory runs; they belong to other owners. */
+/** Untagged <style> elements present before a factory runs; the factory must not claim them. */
 const untaggedStyles = (): ReadonlySet<Element> =>
   typeof document === 'undefined' ? new Set() : new Set(document.querySelectorAll('style:not([data-plugin])'))
 
@@ -75,7 +75,7 @@ const untaggedStyles = (): ReadonlySet<Element> =>
  */
 const claimStyles = (id: string, before: ReadonlySet<Element>): string[] => {
   if (typeof document === 'undefined') return []
-  for (const el of document.querySelectorAll('style:not([data-plugin])')) {
+  for (const el of untaggedStyles()) {
     if (!before.has(el)) el.setAttribute('data-plugin', id)
   }
   const owned: string[] = []
@@ -305,14 +305,15 @@ export class ClientModuleSystem implements ClientModuleLoader {
       throw new Error(`client-modules: require cycle through "${id}" (factory-form CJS cannot deliver partial exports)`)
     }
     this.materializing.add(id)
+    const before = untaggedStyles()
     try {
       const edges = new Set<string>()
-      const before = untaggedStyles()
       const exports = registered.factory(this.makeRequire(ownerId, edges))
       const record: ClientModuleRecord = { id, exports, styles: claimStyles(ownerId, before), edges }
       this.loadCache.set(id, record)
       return record
     } catch (error) {
+      claimStyles(ownerId, before)
       removeOwnedStyles(ownerId)
       throw error
     } finally {
