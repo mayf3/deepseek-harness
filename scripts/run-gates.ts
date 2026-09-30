@@ -582,15 +582,15 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates().map(gate => ({
+  const coverage = coverageGates('win32').map(gate => gate.id === 'electron-install' ? gate : {
     ...gate,
     needs: [...new Set(['build', ...(gate.needs ?? [])])],
-  }))
+  })
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
-    // The required production site replaces the observational MPA build; both
-    // VitePress modes write the same output directory and cannot overlap.
-    .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build')
+    // Coverage owns Electron preparation. The required production site replaces
+    // the MPA build, which writes to the same output directory.
+    .filter(gate => gate.id !== 'build' && gate.id !== 'docs-site-build' && gate.id !== 'electron-install')
     .map(gate => ({
       ...gate,
       allowFailure: true,
@@ -607,17 +607,21 @@ function ciWindowsCompleteGates(): Gate[] {
   ]
 }
 
+// Native Electron fixtures need the locked binary before Vitest removes ambient proxies.
+function electronInstallGate(): Gate {
+  return {
+    id: 'electron-install',
+    label: 'Electron binary',
+    displayCommand: 'pnpm --filter @deepseek-ai/dsh-desktop exec install-electron',
+    ...pnpmInvocation(['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron']),
+    env: { ELECTRON_GET_USE_PROXY: '1' },
+  }
+}
+
 function ciWindowsObservationalGates(): Gate[] {
   const predecessors = [
     ...ciStaticGates({ ownsBuild: true }),
-    // Electron's lazy download must finish before Vitest removes ambient proxies.
-    {
-      id: 'electron-install',
-      label: 'Electron binary',
-      displayCommand: 'pnpm --filter @deepseek-ai/dsh-desktop exec install-electron',
-      ...pnpmInvocation(['--filter', '@deepseek-ai/dsh-desktop', 'exec', 'install-electron']),
-      env: { ELECTRON_GET_USE_PROXY: '1' },
-    },
+    electronInstallGate(),
     // Linux owns required lint and snapshots; Windows omits those duplicates.
     pnpmScript('duplication', 'duplication'),
     pnpmScript('publint', 'publint', { needs: ['build'] }),
@@ -679,7 +683,8 @@ function coverageWorkerArgs(): { instrumented: string[]; exempt: string[] } {
   }
 }
 
-function coverageGates(): Gate[] {
+function coverageGates(platform: NodeJS.Platform = process.platform): Gate[] {
+  const electron = platform === 'win32' ? [electronInstallGate()] : []
   const workers = coverageWorkerArgs()
   const partitions = parseCoveragePartitionCount(process.env[COVERAGE_PARTITIONS_ENV])
   const instrumented = partitions === undefined
@@ -700,7 +705,8 @@ function coverageGates(): Gate[] {
     })
   return [
     pnpmScript('native-system', 'build:native-system'),
-    { ...instrumented, needs: ['native-system'] },
+    ...electron,
+    { ...instrumented, needs: ['native-system', ...electron.map(gate => gate.id)] },
     pnpmExec('coverage-exempt-heavy', [
       'vitest',
       'run',
