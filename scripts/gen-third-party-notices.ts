@@ -15,6 +15,7 @@ import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutB
 import parseSpdx from 'spdx-expression-parse'
 import primaryRuntimeLock from './primary-runtime/lock.json' with { type: 'json' }
 import { browserBundledExternals } from './browser-bundled-externals.ts'
+import { DEVTOOLS_CDN, DEVTOOLS_CHROMIUM_VERSION } from '../packages/experimental/inspector/scripts/download-devtools.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const OUT = 'THIRD_PARTY_NOTICES.md'
@@ -793,6 +794,11 @@ ${renderNpmTable(runtimeDeps)}
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
 ${patchedLines.join('\n')}
+
+## Chrome DevTools frontend
+
+The optional experimental Inspector distributes a local copy of [Chrome ${DEVTOOLS_CHROMIUM_VERSION}'s frontend](${DEVTOOLS_CDN.href}devtools_app.html). The Chromium [BSD-3-Clause license](packages/experimental/inspector/assets/devtools/LICENSE) is included with the frontend. Copied JavaScript retains its embedded license comments; the resource downloader does not collect separate upstream third-party license files. The Chromium root license does not replace those dependencies' licenses.
+
 ${renderClaudeDistribution(claudeDistribution)}
 ${kitRuntime ? `
 ## LibreOffice conversion kit

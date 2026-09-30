@@ -35,6 +35,8 @@ pnpm install
 
 安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定。
 
+根 workspace 的 `postinstall` 还会从 appspot 预取固定版本的 [DevTools 前端](../packages/experimental/inspector/README.zh.md#use-this-package)。冷缓存需要网络连接；下载失败会中止安装。运行 `pnpm run prefetch:devtools` 可重试下载，或在离线构建前准备缓存。构建复用缓存，并下载缺失的资源。发布的 CLI 与 Inspector 包携带已构建的前端，没有 DevTools 安装钩子。
+
 如果依赖是从缓存恢复或 `postinstall` 被跳过而导致钩子缺失，请手动安装：
 
 ```sh
