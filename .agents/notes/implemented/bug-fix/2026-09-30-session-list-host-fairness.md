@@ -1,4 +1,4 @@
-# Agent Note: Cooperative Session-list projection reads
+# Agent Note: Time-sliced Session-list work
 
 Status: implemented
 
@@ -6,62 +6,64 @@ English | [中文](2026-09-30-session-list-host-fairness.zh.md)
 
 ## Problem
 
-A Session list reads headers asynchronously, then computes cached projection summaries in a synchronous batch. Large plugin states make that batch block unrelated Host work even when each individual view is small. Real Host profiles identified repeated checkpoint decoding; CPU samples alone did not establish a speedup.
+Large cached projection states can monopolize the Host while a Session list is assembled. Yielding after every row avoids that batch stall but adds thousands of event-loop round trips when a list contains many cheap rows. Row count alone is not a useful scheduling budget.
 
 ## Decision
 
-[ApiSessionList](../../../../packages/api/session-controller/src/list.ts) yields to the Node event loop after each complete live or cold summary, including the final row. Cancellation is checked after each yield and rejects without partial results. Each summary remains synchronous. Live summaries still precede cold summaries before the stable activity sort; there is no cross-Session atomic snapshot promise. The [cached-row identity and precedence rules](../architecture/2026-09-19-projection-cache-listing-identity-and-cached-rows.md) remain unchanged.
+[ApiSessionList](../../../../packages/api/session-controller/src/list.ts) uses one monotonic deadline for classification and summary generation. It yields only after elapsed work exhausts the configured `listWorkSliceMs`, then starts a new deadline after the wait. The optional deployment setting defaults to 16 positive integral milliseconds. Small lists have no forced final yield or no-op asynchronous helper. Cancellation is checked per row, after each yield, and before returning; no partial list is returned.
 
-The [projection-list benchmark](../../../../benchmarks/session-corpus/projection-list.bench.ts) complements the existing [corpus throughput cases](../testing/2026-09-28-session-corpus-performance.md). It uses the real built Session Controller, query engine, JSONL persistence, projection registry/cache, and storage domain. Only integrations outside the list path are inert. Each fresh child writes deterministic checksum-enabled Zstd headers and projection records, closes the writer, and mounts a fresh reader. No recorded user content is used.
+Every row remains synchronous. Live rows precede queued cold rows before the stable activity sort; the list promises no cross-Session atomic cut. A cold row already queued before an attachment remains cached, and Client mutation replay plus [cached/sequenced precedence](../architecture/2026-09-19-projection-cache-listing-identity-and-cached-rows.md) reconcile the newer live state. No projection data or validation is omitted.
 
-| Workload | Sessions | Projection observation rows | Request records | Uncompressed state JSON |
+## Measurement and calibration
+
+The [production-entry benchmark](../../../../benchmarks/session-corpus/projection-list.bench.ts) measures the real Session Controller, query engine, persistence, projection registry/cache and storage domain. Persisted fixtures use `generationLogPath`, `toHeaderLine` and `compressZstdFrame` from the persistence owner. All content is deterministic generated data. Setup and explicit GC are outside timing; complete results and JSON remain reachable during memory sampling.
+
+| Workload | Sessions | State observations | Request records | State JSON |
 |---|---:|---:|---:|---:|
-| Modest | 50 | 4,925 | 641 | 1,813,852 bytes |
-| Tail | 300 | 300,000 | 37,575 | 111,255,440 bytes |
+| Cheap live | 3,000 | 0 | 0 | 277,890 bytes |
+| Modest persisted | 50 | 4,925 | 641 | 1,813,852 bytes |
+| Heavy persisted | 300 | 300,000 | 37,575 | 111,255,440 bytes |
 
-Per-Session row counts repeat 50%, 75%, 100%, and 175% of the workload's base count, 100 or 1,000. Rows contain nested counters, text, tags, and request references; the wire view returns only summary counters. These observations are generated initial projection state, not fabricated durable Session events. Header-only logs suffice because listing must not read bodies.
+The cheap live case avoids disk enumeration masking scheduling cost. Persisted row counts use 50/75/100/175% strata of 100 or 1,000 generated observations. Each fresh child measures one first call and three repeats with a single fixed-cost immediate probe per call. A separate fifth call re-arms at most one pending probe to measure the worst queue delay over the complete list. Full-probe timings are not throughput evidence: per-row yielding would otherwise execute proportionally more diagnostic callbacks. Yield counts exclude post-measurement GC helpers. Peak RSS includes setup and the entire process lifetime.
 
-Each child measures its first list and three separate repeats, including JSON serialization. Setup and explicit GC are outside timing. Complete results and their JSON remain reachable during post-GC heap/RSS sampling; peak RSS includes the entire process lifetime, including setup. The histogram starts before work and is drained after completion to include the final stall. A view-triggered immediate records queued Host work; this does not measure browser input, network transport, or paint.
+Local Node 26.5.0/macOS arm64 comparisons alternate implementations and use three fresh children per workload. Repeat metrics first take each child's median, then the median across children. Queue delay takes the maximum in each separate diagnostic call, then the median across children.
 
-At most one probe immediate is pending. Views re-arm it after each callback, so `maxViewsPerBatch === 1` protects the entire list, not just its first yield. The original synchronous loop fails with 300; a first-row-only yield fails with 299. Wall-clock delay is diagnostic rather than a scheduler-sensitive timing assertion. A coarse throughput bound uses the shared 500 ms reference allowance, time scale 2, and 1.25 headroom: 1,250 ms. Retained heap uses 240 MiB and only 1.25 headroom: 300 MiB.
+| Repeated metric | Synchronous | Per-row yield | 16 ms slices |
+|---|---:|---:|---:|
+| Cheap live: list + JSON | 61.60 ms | 111.65 ms | 65.68 ms |
+| Cheap live: yield calls | 0 | 3,000 | 3 |
+| Cheap live: maximum queue delay | 54.35 ms | 0.54 ms | 16.54 ms |
+| Modest persisted: list + JSON | 19.76 ms | 18.23 ms | 18.26 ms |
+| Modest persisted: yield calls | 0 | 50 | 0 |
+| Heavy persisted: list + JSON | 253.22 ms | 291.36 ms | 232.18 ms |
+| Heavy persisted: yield calls | 0 | 300 | 10 |
+| Heavy persisted: maximum queue delay | 172.39 ms | 0.80 ms | 16.67 ms |
 
-## Measurement evidence
+For cheap lists, slicing removes 99.9% of per-row yields and reduces measured repeat time by 41.2%; the synchronous reference remains slightly faster. Heavy-list wall time varies substantially on the shared host, so no universal throughput speedup is asserted. Retained heap stays about 35 MB for cheap lists and 186–188 MB for heavy lists, without a decoded-state cache.
 
-Local plain-Node 26.5.0 measurements on macOS arm64 use three fresh children per implementation. Repeat throughput takes each child's median, then the median across children. Repeated blocking takes each child's maximum event-loop delay, then the median across children. Heap uses each child's maximum post-GC heap over all four calls, then the median across children.
+| Raw child aggregates | Synchronous | Per-row yield | 16 ms slices |
+|---|---|---|---|
+| Cheap repeat ms | [63.10, 61.60, 59.08] | [108.19, 115.61, 111.65] | [65.68, 71.75, 65.17] |
+| Cheap maximum queue ms | [112.69, 54.35, 49.67] | [0.54, 0.76, 0.41] | [16.41, 16.54, 41.15] |
+| Heavy repeat ms | [277.06, 253.22, 236.22] | [291.36, 302.76, 282.01] | [212.35, 232.18, 304.38] |
+| Heavy maximum queue ms | [297.76, 172.39, 164.17] | [0.56, 1.34, 0.80] | [16.39, 16.67, 16.76] |
 
-| Tail metric | Synchronous | Per-summary yield |
-|---|---:|---:|
-| Worst repeated event-loop delay | 159.12 ms | 4.66 ms |
-| First list plus JSON | 214.59 ms | 215.25 ms |
-| Repeated list plus JSON | 188.19 ms | 199.33 ms |
-| Repeated process CPU | 225.29 ms | 237.18 ms |
-| Retained heap | 187.55 MB | 186.46 MB |
+Separate 4/8/16 ms experiments measured cheap-list repeat medians of 58.39/58.57/52.34 ms and heavy-list medians of 279.81/253.85/216.67 ms. Their heavy-list maximum queued-work delay medians were 5.19/8.45/16.70 ms. The 16 ms default chooses fewer round trips while retaining a short work target; deployments can select a smaller budget.
 
-The blocking metric falls 97.1%; this is not a throughput optimization. Repeated total time increases about 5.9%, while retained heap stays approximately constant. Raw samples below retain the child order; each bracket contains that child's three repeats. All times are milliseconds, rounded to three decimals.
+CI uses elapsed queue-delay and coarse throughput limits, not an exact batch size. The shared scale 2 and headroom 1.25 turn a 30 ms queue reference allowance into 75 ms, leaving room for one-row overshoot and scheduling variance while rejecting an unyielded heavy batch. Throughput reference allowances are 50/500/150 ms for modest/heavy/cheap, producing 125/1,250/375 ms bounds. These are safety ceilings, not claims of fine-grained non-regression. The earlier Linux Node 24.21 EPYC run measured 102.16/779.57 ms first calls for modest/heavy cases; the larger heavy allowance accounts for the observed hosted/reference ratio exceeding 2. Heap uses 240 MiB and only variance headroom, giving 300 MiB.
 
-| Observation | Synchronous samples | Per-summary yield samples |
-|---|---|---|
-| First list plus JSON | 214.590, 215.985, 209.984 | 215.254, 213.276, 226.746 |
-| Repeated list plus JSON, child 1 | [195.159, 222.613, 188.618] | [198.127, 211.949, 204.683] |
-| Repeated list plus JSON, child 2 | [188.193, 205.724, 184.953] | [186.018, 226.307, 199.334] |
-| Repeated list plus JSON, child 3 | [187.546, 204.704, 187.872] | [186.525, 198.262, 211.093] |
-| Event-loop maximum, child 1 | [152.437, 167.903, 141.558] | [3.228, 4.067, 2.636] |
-| Event-loop maximum, child 2 | [143.393, 159.121, 141.296] | [2.879, 4.874, 3.564] |
-| Event-loop maximum, child 3 | [137.232, 157.811, 142.475] | [3.478, 4.657, 3.164] |
-| First process CPU | 300.073, 298.702, 300.600 | 293.328, 292.392, 302.004 |
-| Repeated process CPU, child medians | 232.473, 224.689, 225.287 | 237.178, 230.197, 240.000 |
-| Maximum retained heap, bytes | 187550048, 187549664, 186474808 | 187581360, 186462176, 186463408 |
+The existing [3,000-Session corpus lane](../testing/2026-09-28-session-corpus-performance.md) remains the stored-corpus throughput authority. Its earlier per-row CI run measured first-call samples 3,205.3/3,166.2/3,165.1 ms and repeat samples 2,643.5/2,577.8/2,589.6 ms, within its existing calibrated limits. The projection benchmark adds a distinct cheap-live and large-state dimension rather than replacing that corpus. On the same local machine, the stored-corpus per-row/sliced first medians are 885.5/859.4 ms and repeat medians are 700.3/692.1 ms; that small difference is within ordinary run variation, with no observed throughput regression. The new three-workload file takes 23.98 s locally, including fixture setup and all nine children; its previously measured two-workload CI version took 36.80 s on EPYC Node 24.21.0.
 
 ## Alternatives considered
 
-**Cache decoded projection states.** A trial improved repeated lists but retained an extra graph per stored row: about 189 MB became 346 MB, and first-read latency worsened. It also changed repeated schema-transform evaluation and required explicit alias ownership. Scheduling avoids these costs without weakening state or wire validation.
+**Unconditional per-row yielding.** It minimizes individual queue waits but charges an event-loop round trip for every cheap row. The many-live-Session comparison exposes that cost; a fixed number of rows would still ignore variable row cost.
 
-**Cache or truncate wire views.** Dynamic view choices can change between reads, and consumers require every currently available projection hint. Reuse or filtering would change behavior rather than remove batch blocking.
+**Larger or smaller time slices.** Smaller slices offer shorter queue waits at more scheduling cost. Larger slices reduce switching but extend the period other Host work waits. Configuration exposes this tradeoff without changing row semantics.
 
-**Yield only once, or use a resolved Promise.** A first-row-only yield leaves the remaining batch synchronous; microtasks do not allow the event loop to service queued Host work. Bounded immediate probes reject both forms of lost fairness.
+**Caching decoded state or wire views.** Decoded-state reuse retains another graph per stored row and changes schema-evaluation ownership. Wire views can depend on current runtime state. Scheduling needs neither cache and preserves all schema checks and dynamic views.
 
 ## Consequences
 
-The Host can service other work between summaries without storing additional projection state. [Deterministic scheduling tests](../../../../packages/api/session-controller/tests/list-scheduling.host.spec.ts) pin middle and final yields, cancellation reasons, empty/omitted rows, stable ties, and attachment/removal/status interleavings. Existing Client mutation replay and cached-versus-sequenced precedence continue to reconcile in-flight lists.
+[Controlled-clock tests](../../../../packages/api/session-controller/tests/list-scheduling.host.spec.ts) require cheap rows to remain in one synchronous slice, budget exhaustion and post-wait reset to govern yields, and cancellation to stop work even when no yield is due. They also preserve stable ties and attachment/removal/status interleavings. The time-based benchmark guard rejects unyielded or first-only-yield heavy work without forbidding efficient batches.
 
-A single large projection, final sorting, and response serialization remain synchronous. Concurrent lists can accumulate work in one event-loop turn, so the change is not a hard global stall bound. It deliberately trades a small amount of total listing time for Host responsiveness; it does not claim lower model latency, less parsing, or measured browser paint improvements.
+A single row, provider enumeration, GC, final sorting and serialization can exceed the target. Concurrent lists and operating-system scheduling also affect latency. The budget is not a hard global bound, and these measurements do not claim browser paint or model/network latency improvements.

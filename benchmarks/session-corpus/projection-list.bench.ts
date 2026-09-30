@@ -11,8 +11,10 @@ import type { ProjectionListReport } from './projection-list.worker.ts'
 const WORKER = join(import.meta.dirname, '..', '.dsh-build', 'session-corpus', 'projection-list.worker.js')
 const ATTEMPTS = 3
 const WORKER_TIMEOUT_MS = 120_000
-/** Coarse reference-machine throughput allowance, before CI scaling and variance headroom. */
-const LIST_REFERENCE_MS = 500
+/** Coarse reference-machine throughput allowances, before CI scaling and variance headroom. */
+const LIST_REFERENCE_MS = { modest: 50, tail: 500, cheap: 150 } as const
+/** Queue-delay reference allowance above the measured 16 ms work slices and one-row overshoot. */
+const CALLBACK_REFERENCE_MS = 30
 /** Reference retained-heap allowance; memory receives variance headroom but no CPU scaling. */
 const RETAINED_HEAP_REFERENCE_BYTES = 240 * 1024 * 1024
 
@@ -37,12 +39,12 @@ async function run(workload: ProjectionListReport['workload']): Promise<Projecti
   }
 }
 
-it.each(['modest', 'tail'] as const)('serves the %s projection list without monopolizing the Host queue', async (workload) => {
+it.each(['modest', 'tail', 'cheap'] as const)('serves the %s projection list without monopolizing the Host queue', async (workload) => {
   const reports: ProjectionListReport[] = []
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) reports.push(await run(workload))
   const firstMs = reports.map(report => report.samples[0]!.listAndJsonMs)
   const repeatMs = reports.map(report => median(report.samples.slice(1).map(sample => sample.listAndJsonMs)))
-  const heapBytes = reports.map(report => Math.max(...report.samples.map(sample => sample.memory.heapUsedBytes)))
+  const heapBytes = reports.map(report => Math.max(...[...report.samples, report.responsiveness].map(sample => sample.memory.heapUsedBytes)))
   const medians = {
     firstListAndJsonMs: median(firstMs),
     repeatListAndJsonMs: median(repeatMs),
@@ -51,13 +53,16 @@ it.each(['modest', 'tail'] as const)('serves the %s projection list without mono
     firstListAndJsonCpuMs: median(reports.map(report => report.samples[0]!.listAndJsonCpuMs)),
     repeatListAndJsonCpuMs: median(reports.map(report => median(report.samples.slice(1).map(sample => sample.listAndJsonCpuMs)))),
     retainedHeapBytes: median(heapBytes),
+    worstCallbackDelayMs: median(reports.map(report => report.responsiveness.maxCallbackDelayMs)),
+    repeatYieldCalls: median(reports.map(report => median(report.samples.slice(1).map(sample => sample.yieldCalls)))),
     firstCallbackDelayMs: median(reports.map(report => report.samples[0]!.callbackDelayMs)),
     repeatCallbackDelayMs: median(reports.map(report => median(report.samples.slice(1).map(sample => sample.callbackDelayMs)))),
     firstEventLoopMaxMs: median(reports.map(report => report.samples[0]!.eventLoopMaxMs)),
     repeatEventLoopMaxMs: median(reports.map(report => Math.max(...report.samples.slice(1).map(sample => sample.eventLoopMaxMs)))),
   }
   const budgets = {
-    listAndJsonMs: ciTimeBudget(LIST_REFERENCE_MS),
+    listAndJsonMs: ciTimeBudget(LIST_REFERENCE_MS[workload]),
+    callbackDelayMs: ciTimeBudget(CALLBACK_REFERENCE_MS),
     retainedHeapBytes: Math.ceil(RETAINED_HEAP_REFERENCE_BYTES * PERFORMANCE_BUDGET_HEADROOM),
   }
   console.log(JSON.stringify({ benchmark: `session-corpus/projection-list-${workload}`,
@@ -65,17 +70,15 @@ it.each(['modest', 'tail'] as const)('serves the %s projection list without mono
 
   for (const report of reports) {
     expect(report.workload).toBe(workload)
-    expect(report.fixture.sessions).toBe(workload === 'modest' ? 50 : 300)
-    expect(report.fixture.baseRows).toBe(workload === 'modest' ? 100 : 1_000)
+    expect(report.fixture.sessions).toBe({ modest: 50, tail: 300, cheap: 3_000 }[workload])
+    expect(report.fixture.baseRows).toBe({ modest: 100, tail: 1_000, cheap: 0 }[workload])
     expect(report.samples).toHaveLength(4)
-    for (const sample of report.samples) {
+    for (const sample of [...report.samples, report.responsiveness]) {
       expect(sample.items).toBe(report.fixture.sessions)
       expect(sample.wireViews).toBe(report.fixture.sessions)
-      // Each actual view arms a probe only when none is pending, covering the entire list.
-      // A first-row-only yield still leaves the remaining views in one oversized batch.
-      expect(sample.maxViewsPerBatch).toBe(1)
     }
   }
+  expect(medians.worstCallbackDelayMs).toBeLessThanOrEqual(budgets.callbackDelayMs)
   expect(medians.firstListAndJsonMs).toBeLessThanOrEqual(budgets.listAndJsonMs)
   expect(medians.repeatListAndJsonMs).toBeLessThanOrEqual(budgets.listAndJsonMs)
   expect(medians.retainedHeapBytes).toBeLessThanOrEqual(budgets.retainedHeapBytes)

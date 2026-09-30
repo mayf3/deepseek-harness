@@ -231,6 +231,8 @@ export interface Config {
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /** Positive integral milliseconds of list work before yielding between complete rows. */
+  readonly listWorkSliceMs?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-api-session-controller -->

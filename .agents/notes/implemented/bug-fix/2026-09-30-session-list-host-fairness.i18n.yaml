@@ -2,21 +2,21 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-30-session-list-host-fairness.md
-/agent-note-cooperative-session-list-projection-reads:
-  en: 6557de9edb85aa1a
-  zh: 456b8e23c1ef2339
-/agent-note-cooperative-session-list-projection-reads/problem:
-  en: dc30cd86318cced3
-  zh: 9ebf5a17bafcdb33
-/agent-note-cooperative-session-list-projection-reads/decision:
-  en: 7e314b1eb899de07
-  zh: edbe592e3cae8bc4
-/agent-note-cooperative-session-list-projection-reads/measurement-evidence:
-  en: c5ecfe552c1863fd
-  zh: a3c906166e793729
-/agent-note-cooperative-session-list-projection-reads/alternatives-considered:
-  en: 495f5382f2f2ac9b
-  zh: d62aa0c04c846dba
-/agent-note-cooperative-session-list-projection-reads/consequences:
-  en: 7d6e0c50a7b50407
-  zh: 9d64894ee3786325
+/agent-note-time-sliced-session-list-work:
+  en: 0e8f0cce65f887bc
+  zh: 1f3b669c1eef811f
+/agent-note-time-sliced-session-list-work/problem:
+  en: 5ee132d1d44f463b
+  zh: 45589b49771d49e1
+/agent-note-time-sliced-session-list-work/decision:
+  en: 95b04ae405a5299f
+  zh: 53f1d8bf5e29e3ca
+/agent-note-time-sliced-session-list-work/measurement-and-calibration:
+  en: e12fe17a32ede555
+  zh: 6b16a72863073e47
+/agent-note-time-sliced-session-list-work/alternatives-considered:
+  en: a2f441a550c0ed7e
+  zh: 05e8bfd584217103
+/agent-note-time-sliced-session-list-work/consequences:
+  en: 5fd10d559a120ae6
+  zh: a56f45b77ce1f4e6

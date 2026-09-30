@@ -5,11 +5,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { scheduler, setTimeout as delay } from 'node:timers/promises'
-import { constants, zstdCompressSync } from 'node:zlib'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, type SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache, { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
@@ -18,14 +17,19 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import { z } from 'zod'
-import { sessionDir } from '../../packages/session/session-persistence-jsonl/src/format.ts'
+import { generationLogPath, sessionDir, toHeaderLine } from '../../packages/session/session-persistence-jsonl/src/format.ts'
+import { compressZstdFrame } from '../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { assertBuiltBenchmarkRuntime } from '../support/built-worker.ts'
 
 const KEY = 'syntheticProjectionList'
 const CWD = '/synthetic-projection-benchmark'
 const BASE_TIME = 1_700_000_000_000
 const ROW_PERCENTAGES = [50, 75, 100, 175] as const
-const WORKLOADS = { modest: { sessions: 50, baseRows: 100 }, tail: { sessions: 300, baseRows: 1_000 } } as const
+const WORKLOADS = {
+  modest: { sessions: 50, baseRows: 100, live: false },
+  tail: { sessions: 300, baseRows: 1_000, live: false },
+  cheap: { sessions: 3_000, baseRows: 0, live: true },
+} as const
 
 const stateSchema = z.object({
   sessionOrdinal: z.number().int(),
@@ -65,7 +69,9 @@ interface ListSample {
   readonly listCpuMs: number
   readonly listAndJsonCpuMs: number
   readonly callbackDelayMs: number
+  readonly maxCallbackDelayMs: number
   readonly maxViewsPerBatch: number
+  readonly yieldCalls: number
   readonly eventLoopMaxMs: number
   readonly items: number
   readonly wireViews: number
@@ -80,6 +86,7 @@ export interface ProjectionListReport {
   readonly fixture: { sessions: number; baseRows: number; totalRows: number; totalRequests: number; stateJsonBytes: number }
   readonly baselineMemory: Memory
   readonly samples: readonly ListSample[]
+  readonly responsiveness: ListSample
 }
 
 interface ViewObservation {
@@ -87,7 +94,7 @@ interface ViewObservation {
   onView: (() => void) | undefined
 }
 
-function headerOf(ordinal: number) {
+function headerOf(ordinal: number): SessionHeader {
   return { version: SESSION_FORMAT_VERSION, id: SessionId(`projection-bench-${ordinal}`),
     createdAt: BASE_TIME + ordinal, cwd: CWD, isSeeded: false, delegationDepth: 0 }
 }
@@ -123,6 +130,12 @@ async function seed(root: string, workload: typeof WORKLOADS[keyof typeof WORKLO
   const ctx = new Context()
   const fixture = { ...workload, totalRows: 0, totalRequests: 0, stateJsonBytes: 0 }
   try {
+    if (workload.live) {
+      for (let ordinal = 0; ordinal < workload.sessions; ordinal++) {
+        fixture.stateJsonBytes += Buffer.byteLength(JSON.stringify(makeState(ordinal, workload.baseRows)))
+      }
+      return fixture
+    }
     await mountStorage(ctx, root)
     const domain = await ctx.storageDomain.open(projectionCacheDomainSpec)
     try {
@@ -131,8 +144,8 @@ async function seed(root: string, workload: typeof WORKLOADS[keyof typeof WORKLO
         const header = headerOf(ordinal)
         const directory = sessionDir(join(root, 'sessions'), header.cwd, header.id)
         await mkdir(directory, { recursive: true })
-        await writeFile(join(directory, `session.v${SESSION_FORMAT_VERSION}.jsonl.zstd`),
-          zstdCompressSync(JSON.stringify({ type: 'session', ...header }) + '\n', { params: { [constants.ZSTD_c_checksumFlag]: 1 } }), { flag: 'wx' })
+        await writeFile(generationLogPath(join(root, 'sessions'), header.cwd, header.id, SESSION_FORMAT_VERSION, 'zstd'),
+          await compressZstdFrame(JSON.stringify(toHeaderLine(header)) + '\n'), { flag: 'wx' })
         const state = makeState(ordinal, workload.baseRows)
         await table.put(header.id, {
           identity: { formatVersion: header.version, createdAt: header.createdAt, cwd: header.cwd, isSeeded: false, inheritedEventCount: SessionLogOffset(0) },
@@ -154,13 +167,13 @@ async function seed(root: string, workload: typeof WORKLOADS[keyof typeof WORKLO
   return fixture
 }
 
-async function mountHost(ctx: Context, root: string, baseRows: number, observation: ViewObservation): Promise<SessionController> {
+async function mountHost(ctx: Context, root: string, workload: typeof WORKLOADS[keyof typeof WORKLOADS], observation: ViewObservation, listWorkSliceMs?: number): Promise<SessionController> {
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionProjectionRegistry)
   ctx.sessionProjections.register({
     key: KEY, stateVersion: 1, stateSchema,
-    init: header => makeState(Number(header.id.slice('projection-bench-'.length)), baseRows),
+    init: header => makeState(Number(header.id.slice('projection-bench-'.length)), workload.baseRows),
     apply: state => state,
     wire: {
       viewSchema,
@@ -171,6 +184,12 @@ async function mountHost(ctx: Context, root: string, baseRows: number, observati
       },
     },
   })
+  if (workload.live) {
+    for (let ordinal = 0; ordinal < workload.sessions; ordinal++) {
+      const header = headerOf(ordinal)
+      ctx.sessions.create(header.id, { meta: header })
+    }
+  }
   await ctx.plugin(JsonlSessionPersistence, { root: join(root, 'sessions'), compression: 'zstd' })
   await mountStorage(ctx, root)
   await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 200, writeIntervalMs: 5_000 })
@@ -181,7 +200,7 @@ async function mountHost(ctx: Context, root: string, baseRows: number, observati
   ctx.provide('fileUploads', { registerAgentResolver: () => dispose } as never)
   ctx.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'synthetic', model: 'generated-model' }) } as never)
   ctx.provide('workspaceRegistry', { list: () => [], archivedSessionIds: [] } as never)
-  return new SessionController(ctx, { nativeOpen: false }, { canOpenPath: () => false })
+  return new SessionController(ctx, { nativeOpen: false, ...(listWorkSliceMs === undefined ? {} : { listWorkSliceMs }) }, { canOpenPath: () => false })
 }
 
 async function memory(): Promise<Memory> {
@@ -194,20 +213,31 @@ async function memory(): Promise<Memory> {
   return { heapUsedBytes: usage.heapUsed, rssBytes: usage.rss, peakRssBytes: process.resourceUsage().maxRSS * 1024 }
 }
 
-async function measure(controller: SessionController, observation: ViewObservation, sessions: number, baseline: Memory): Promise<ListSample> {
+async function measure(controller: SessionController, observation: ViewObservation, sessions: number, baseline: Memory, fullProbe = false): Promise<ListSample> {
   const histogram = monitorEventLoopDelay({ resolution: 1 })
   let immediate: NodeJS.Immediate | undefined
   const initialViews = observation.calls
+  const yieldDescriptor = Object.getOwnPropertyDescriptor(scheduler, 'yield')
+  const yieldWork = scheduler.yield.bind(scheduler)
+  let yieldCalls = 0
+  Object.defineProperty(scheduler, 'yield', {
+    configurable: true,
+    value: () => { yieldCalls++; return yieldWork() },
+  })
   let queued: Promise<void> | undefined
   let callbackDelayMs = 0
+  let maxCallbackDelayMs = 0
   let maxViewsPerBatch = 0
   observation.onView = () => {
     if (immediate !== undefined) return
+    if (!fullProbe) observation.onView = undefined
     const beforeView = observation.calls - 1
     const start = performance.now()
     queued = new Promise<void>((resolve) => {
       immediate = setImmediate(() => {
-        if (maxViewsPerBatch === 0) callbackDelayMs = performance.now() - start
+        const elapsed = performance.now() - start
+        if (maxViewsPerBatch === 0) callbackDelayMs = elapsed
+        maxCallbackDelayMs = Math.max(maxCallbackDelayMs, elapsed)
         maxViewsPerBatch = Math.max(maxViewsPerBatch, observation.calls - beforeView)
         immediate = undefined
         resolve()
@@ -223,6 +253,7 @@ async function measure(controller: SessionController, observation: ViewObservati
     const start = performance.now()
     const result = await controller.list({}, new AbortController().signal)
     const listDone = performance.now()
+    const listYieldCalls = yieldCalls
     const listCpu = process.cpuUsage(cpu)
     const json = JSON.stringify(result)
     const jsonDone = performance.now()
@@ -240,12 +271,14 @@ async function measure(controller: SessionController, observation: ViewObservati
     assert.ok(json.length > result.items.length)
     return { listMs: listDone - start, listAndJsonMs: jsonDone - start,
       listCpuMs: (listCpu.user + listCpu.system) / 1000, listAndJsonCpuMs: (jsonCpu.user + jsonCpu.system) / 1000,
-      callbackDelayMs, maxViewsPerBatch, eventLoopMaxMs, items: result.items.length, wireViews: observation.calls - initialViews,
+      callbackDelayMs, maxCallbackDelayMs, maxViewsPerBatch, yieldCalls: listYieldCalls, eventLoopMaxMs, items: result.items.length, wireViews: observation.calls - initialViews,
       responseJsonBytes: Buffer.byteLength(json), retainedHeapDeltaBytes: endpoint.heapUsedBytes - baseline.heapUsedBytes, memory: endpoint }
   } finally {
     observation.onView = undefined
     if (immediate !== undefined) clearImmediate(immediate)
     histogram.disable()
+    if (yieldDescriptor === undefined) Reflect.deleteProperty(scheduler, 'yield')
+    else Object.defineProperty(scheduler, 'yield', yieldDescriptor)
   }
 }
 
@@ -255,18 +288,21 @@ assertBuiltBenchmarkRuntime(import.meta.url, {
   cache: import.meta.resolve('@deepseek-ai/dsh-session-projection-cache'),
   persistence: import.meta.resolve('@deepseek-ai/dsh-session-persistence-jsonl'),
 })
-const [root, workload] = process.argv.slice(2)
-if (root === undefined || (workload !== 'modest' && workload !== 'tail')) throw new Error('usage: projection-list.worker.js <private-root> <modest|tail>')
+const [root, workload, sliceArgument] = process.argv.slice(2)
+if (root === undefined || (workload !== 'modest' && workload !== 'tail' && workload !== 'cheap')) throw new Error('usage: projection-list.worker.js <private-root> <modest|tail|cheap> [work-slice-ms]')
+const listWorkSliceMs = sliceArgument === undefined ? undefined : Number(sliceArgument)
+if (listWorkSliceMs !== undefined && (!Number.isSafeInteger(listWorkSliceMs) || listWorkSliceMs < 1)) throw new Error('work-slice-ms must be a positive integer')
 const ctx = new Context()
 try {
   const fixture = await seed(root, WORKLOADS[workload])
   const observation: ViewObservation = { calls: 0, onView: undefined }
-  const controller = await mountHost(ctx, root, fixture.baseRows, observation)
+  const controller = await mountHost(ctx, root, WORKLOADS[workload], observation, listWorkSliceMs)
   assert.equal(observation.calls, 0, 'setup must not warm wire views')
   const baselineMemory = await memory()
   const samples: ListSample[] = []
   for (let call = 0; call < 4; call++) samples.push(await measure(controller, observation, fixture.sessions, baselineMemory))
-  const report: ProjectionListReport = { workload, fixture, baselineMemory, samples }
+  const responsiveness = await measure(controller, observation, fixture.sessions, baselineMemory, true)
+  const report: ProjectionListReport = { workload, fixture, baselineMemory, samples, responsiveness }
   console.log(JSON.stringify(report))
 } finally {
   await ctx.fiber.dispose()
