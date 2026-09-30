@@ -37,12 +37,14 @@ The Host reads installed bundles and their declared plugin rows without importin
 
 Each field falls back independently before view-specific name formatting:
 
-| Field | Existing locale fallback chain | Same-address package fallback | Final fallback |
+| Field | Existing locale fallback chain | Package-root fallback | Final fallback |
 |---|---|---|---|
-| Title | `meta.title` | Non-empty `name` from `<plugin specifier>/package.json` | Complete configured Cordis plugin name |
-| Description | `meta.description` | Non-empty `description` from `<plugin specifier>/package.json` | No package description |
+| Title | `meta.title` | Non-empty `name` from `<package name>/package.json` | Complete configured Cordis plugin name |
+| Description | `meta.description` | Non-empty `description` from `<package name>/package.json` | No package description |
 
-The package fallback obeys resource exports and belongs to the same plugin address; a subpath does not inherit its owning package's introduction. The Host supplies the package or final value as the English fallback for a field that has translations but no English value, preserving the existing Client locale API. Missing or unexported resources and missing fields use these fallbacks; invalid locale fields or malformed files report a diagnostic instead of silently falling back, while retaining management operations.
+The package fallback obeys resource exports and applies only when the configured plugin name is the package itself. A subpath plugin is not a package: it never reads a `package.json`, even one exported at its address, and does not inherit its owning package's introduction. The Host supplies the package or final value as the English fallback for a field that has translations but no English value, preserving the existing Client locale API. Missing or unexported resources and missing fields use these fallbacks; invalid locale fields or malformed files report a diagnostic instead of silently falling back, while retaining management operations.
+
+Icons follow the same address rule. A package root uses its manifest `icon`, or the exported `<package name>/icon` when that field is omitted. A subpath uses only `<plugin specifier>/icon`, resolved through Node exports like its locale resources and confined to its package.
 
 Plugin Manager uses this metadata on installed bundle cards and details, component lists, and component configuration details, preserving complete technical-name fallbacks. Settings uses it in the plugin inventory, including preset plugins, but shortens literal package-name and module-name fallbacks by removing their npm scope and Cordis/DSH prefixes. Translated titles remain verbatim in both views; full module names, entry ids, search identities, and operation targets stay unchanged. The [Settings inventory README](../../../../packages/client/ui-settings-plugin-inventory/README.md#use-this-package) owns the prefix rules.
 
@@ -62,6 +64,8 @@ Built-in bundle introductions live in their exported language files. Beta marker
 
 **Declare references in package.json.** This duplicates the declaration between a manifest and locale files, and one package-level declaration cannot distinguish its exported plugins.
 
+**Read `<subpath>/package.json` for subpath plugins.** A package has one manifest; exporting another at a subpath suggests that subpaths own manifests. Locale files and `<subpath>/icon` already give each subpath independent text and artwork.
+
 **Read locale beside the resolved JavaScript file.** Build tools can put several plugin entries in the same directory. Resource exports preserve each plugin's identity independently of its compiled layout.
 
 **Register copy when the displayed plugin activates.** Disabled packages, packages without a Client half, and packages that fail to load still need readable introductions.
@@ -77,7 +81,7 @@ Built-in bundle introductions live in their exported language files. Beta marker
 - Direct metadata, unrelated locale content, absent resources, malformed JSON, missing display fields, and conflicting language identifiers have focused coverage.
 - Separate exports in one package and same-named packages under different parents retain independent metadata without executing plugin entries.
 - Windows drive paths, UNC paths, relative and absolute file paths, and file URLs return no metadata without invoking resource resolution.
-- Missing locale resources and individual fields fall back independently to address-local package fields, then the complete module specifier without a description.
+- Missing locale resources and individual fields fall back independently to package-root manifest fields, then the complete module specifier without a description; subpath plugins ignore exported manifests and read only `<plugin specifier>/icon`.
 - Publication checks require readable resource exports and included language files, without duplicate ownership of built-in copy in the manager and plugins.
 - Management tools preserve existing model output, and pre-installation inspection adds no package-content lookup.
 - Focused tests and the complete `pnpm run build` succeed.

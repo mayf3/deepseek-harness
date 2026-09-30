@@ -10,7 +10,7 @@ import { chromium } from 'playwright'
 import { FiberState } from '@deepseek-ai/cordis'
 import { OPTIONAL_BUNDLES } from '@deepseek-ai/dsh-app-boot'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest'
 import { join } from 'node:path'
 import {
   SCAFFOLD_DEFAULTS_BUNDLE, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -495,9 +495,11 @@ describe('web e2e: plugin manager', () => {
     await closeSettings()
   })
 
-  it('decodes manifest icons for disabled bundles and independent plugin rows', async () => {
+  it('prefers manifest icons for packages and reads exported icons for subpath plugins', async () => {
     const panel = await openPluginsPanel()
+    onTestFinished(closeSettings)
     const fixtureIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/icon.svg'))).toString('base64')}`
+    const fallbackIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/fallback-icon.svg'))).toString('base64')}`
     const teamIcon = `data:image/svg+xml;base64,${(await readFile(fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/icon.svg', import.meta.url)))).toString('base64')}`
     const images: string[] = []
     const checkImage = async (selector: string, source: string, label: string) => {
@@ -533,13 +535,17 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).click()
     await checkImage('[data-plugin-detail]', fixtureIcon, 'Third-party bundle detail')
-    await checkImage('[data-plugin-row="fixture-search"]', fixtureIcon, 'Independent search row')
+    await checkImage('[data-plugin-row="fixture-search"]', fallbackIcon, 'Independent search row')
+    expect(await panel.locator('[data-plugin-row="fixture-review"] img').count()).toBe(0)
+    expect(await panel.locator('[data-plugin-row="fixture-review"] svg').count()).toBeGreaterThan(0)
+    images.push('Independent review row: generic artwork')
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'icons.expected.md'), images.join('\n'), MODE)
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     expect(tripwire.pageErrors).toEqual([])
   })
 
   it('localizes independent exports and falls back per field without activating the plugins', async () => {
+    onTestFinished(closeSettings)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-exports'))
     const panel = await openPluginsPanel()
     await panel.getByRole('button', { name: '查看 @fixture/bundle' }).click()
@@ -558,7 +564,7 @@ describe('web e2e: plugin manager', () => {
       await setLanguage('en')
       await search.getByText('File Search', { exact: true }).waitFor()
       expect(await review.getByText('@fixture/bundle/review', { exact: true }).count()).toBeGreaterThan(0)
-      expect(await search.getByText('Search package introduction.', { exact: true }).count()).toBe(1)
+      expect(await search.getByText('Search package introduction.', { exact: true }).count()).toBe(0)
       expect(await review.getByText('审查工作区中的改动。', { exact: true }).count()).toBe(0)
       await compareOrRefreshGolden(EXPORTS_EN_EXPECTED, await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
         replacements: [[FIXTURE_PLUGINS, '{{fixtures}}']],
@@ -566,13 +572,13 @@ describe('web e2e: plugin manager', () => {
       expect(await panel.locator('[data-plugin-name]').textContent()).toBe('@fixture/bundle')
     } finally {
       await setLanguage('zh')
-      await closeSettings()
     }
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     expect(tripwire.pageErrors).toEqual([])
   })
 
   it('updates built-in names and descriptions when the UI language changes', async () => {
+    onTestFinished(closeSettings)
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-manager-locale'))
     const panel = await openPluginsPanel()
     await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).click()
@@ -600,7 +606,6 @@ describe('web e2e: plugin manager', () => {
       }
     } finally {
       await setLanguage('zh')
-      await closeSettings()
     }
     await panel.getByRole('button', { name: '查看 智能体团队', exact: true }).waitFor()
     expect(tripwire.pageErrors).toEqual([])

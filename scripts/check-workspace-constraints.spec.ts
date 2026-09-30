@@ -255,9 +255,21 @@ describe('dsh family version coherence', () => {
 })
 
 describe('package payload constraints', () => {
-  it.each(['./art/icon.svg', 'art/icon.svg'])('includes declared icon %s in the canonical payload', (icon) => {
-    expect(expectedDshPackageFiles({ icon, exports: { './locale/*.json': './locale/*.json' } })).toEqual([
-      'art/icon.svg', 'locale/*.json', 'lib/index.js', 'lib/types/**/*.d.ts',
+  it.each([
+    ['./art/icon.svg', ['art/icon.svg']],
+    [{ import: './art/icon.svg', default: './art/fallback.svg' }, ['art/icon.svg', 'art/fallback.svg']],
+    [['./art/icon.svg', './art/icon.svg'], ['art/icon.svg']],
+  ] as const)('includes exported icon targets in the canonical payload: %j', (icon, expected) => {
+    expect(expectedDshPackageFiles({ exports: { './icon': icon } })).toEqual([...expected, 'lib/index.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it.each(['icon.svg', './icon.svg'])('includes and deduplicates manifest icon %s', (icon) => {
+    expect(expectedDshPackageFiles({ icon, exports: { './icon': './icon.svg' } })).toEqual(['icon.svg', 'lib/index.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it('includes manifest, root, and subpath icon targets', () => {
+    expect(expectedDshPackageFiles({ icon: './legacy.svg', exports: { './icon': './fallback.svg', './search/icon': './search.svg' } })).toEqual([
+      'legacy.svg', 'fallback.svg', 'search.svg', 'lib/index.js', 'lib/types/**/*.d.ts',
     ])
   })
 

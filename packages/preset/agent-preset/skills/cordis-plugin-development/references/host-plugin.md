@@ -42,7 +42,7 @@ Plugin Manager cards, bundle details, component rows, and the Settings plugin in
 }
 ```
 
-`icon` is a path relative to the manifest directory; SVG, PNG, JPEG, and WebP up to 256 KiB are accepted, while absolute paths, URLs, paths outside the directory, and symlinks leaving it are rejected. Missing fields fall back to `package.json` `name` and `description` and to the panel's default artwork; malformed metadata produces a diagnostic and keeps the valid text.
+`icon` is a path relative to the manifest directory; SVG, PNG, JPEG, and WebP up to 256 KiB are accepted, while absolute paths, URLs, paths outside the directory, and symlinks leaving it are rejected. When `icon` is omitted, an exported `./icon` resource supplies the image. A subpath plugin such as `my-plugins/search` is not a package and never reads a `package.json`; it exports `./search/locale/*.json` and `./search/icon` instead. Missing fields of a package-root plugin fall back to `package.json` `name` and `description`, and missing images use the panel's default artwork; malformed metadata produces a diagnostic and keeps the valid text.
 
 ## Host plugin export forms
 

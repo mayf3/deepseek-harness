@@ -14,7 +14,7 @@
     - code: fixture-row
     - text: "Off"
   - listitem:
-    - text: File Search Search package introduction.
+    - text: File Search
     - code: fixture-search
     - code: "@fixture/bundle/search"
     - text: "Off"
