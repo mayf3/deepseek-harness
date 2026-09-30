@@ -6,7 +6,7 @@
   - button "添加插件"
   - button "选择添加插件方式"
 - heading "官方" [level=3]
-- text: "7"
+- text: "8"
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
@@ -16,6 +16,10 @@
     - button "查看 自动授权审查": 自动授权审查
     - text: 实验性 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
     - switch "启用 自动授权审查"
+  - listitem:
+    - button "查看 开发者工具": 开发者工具
+    - text: 实验性 查看调试会话原始数据、聊天消息分组数据，以及调试 NodeJS 后端
+    - switch "启用 开发者工具"
   - listitem:
     - button "查看 语音输入": 语音输入
     - text: 实验性 在本机使用 SenseVoice 转写录音，首次使用需安装依赖。

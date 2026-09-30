@@ -121,6 +121,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`readable-stream`](https://github.com/nodejs/readable-stream) | MIT |
 | [`resolve.exports`](https://github.com/lukeed/resolve.exports) | MIT |
 | [`semver`](https://github.com/npm/node-semver) | ISC |
+| [`serve-static`](https://github.com/expressjs/serve-static) | MIT |
 | [`sharp`](https://github.com/lovell/sharp) | Apache-2.0 |
 | [`sherpa-onnx-node`](https://github.com/csukuangfj/sherpa-onnx) | Apache-2.0 |
 | [`shiki`](https://github.com/shikijs/shiki) | MIT |
@@ -146,6 +147,11 @@ pnpm applies local patches to the following packages at install time, so shipped
 - `@yao-pkg/pkg@6.21.0` — [`patches/@yao-pkg__pkg@6.21.0.patch`](patches/@yao-pkg__pkg@6.21.0.patch)
 - `exceljs@4.4.0` — [`patches/exceljs@4.4.0.patch`](patches/exceljs@4.4.0.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
+
+## Chrome DevTools frontend
+
+The optional experimental Inspector distributes a local copy of [Chrome 150.0.7871.186's frontend](https://chrome-devtools-frontend.appspot.com/serve_rev/@ec97cf3bbeea2cb623fbf97c4e3f22f5acb4d568/devtools_app.html). The Chromium [BSD-3-Clause license](packages/experimental/inspector/assets/devtools/LICENSE) is included with the frontend. Copied JavaScript retains its embedded license comments; the resource downloader does not collect separate upstream third-party license files. The Chromium root license does not replace those dependencies' licenses.
+
 
 ## Official Claude Code platform payloads
 
@@ -205,6 +211,7 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@types/react-dom`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/readable-stream`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/semver`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
+| [`@types/serve-static`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/spdx-expression-parse`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/turndown`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |
 | [`@types/use-sync-external-store`](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT |

@@ -205,7 +205,8 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
     "dev:web": "tsx scripts/dev-web.ts --poll",
-    "postinstall": "node scripts/install-lefthook.mjs"
+    "prefetch:devtools": "tsx packages/experimental/inspector/scripts/download-devtools.ts",
+    "postinstall": "node scripts/install-lefthook.mjs && pnpm run prefetch:devtools"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
