@@ -52,7 +52,13 @@ it.skipIf(webSnapshotMode() === 'record')('inspects a replayed Session log and C
   await page.getByRole('option', { name: 'user/message', exact: true }).click()
   await raw.getByRole('button', { name: 'user/message', exact: true }).first().click()
   const panel = page.locator('section[aria-label="Raw Log"]')
-  expect(await panel.locator('pre').innerText()).toContain(prompts[0])
+  const details = panel.getByRole('separator').locator('..').locator('ul').first()
+  expect(await details.innerText()).toContain(prompts[0])
+  expect(await details.locator('details:not([open])').count()).toBe(0)
+  expect(await panel.getByRole('navigation').count()).toBe(0)
+  const expansion = await details.locator('details').evaluateAll(nodes => nodes.map(node =>
+    `- ${node.querySelector('summary')?.textContent?.trim()}: ${node.hasAttribute('open') ? 'expanded' : 'collapsed'}`))
+  await compareOrRefreshGolden(join(directory, 'raw-data.expected.md'), expansion.join('\n'), webSnapshotMode())
   await panel.getByRole('button', { name: 'Close', exact: true }).click()
   const times = await raw.locator('tbody tr td:nth-child(4)').allTextContents()
   const replacements = [...new Set(times)].filter(value => /^\d{2}:\d{2}:\d{2}\.\d{3}$/.test(value))
@@ -75,7 +81,7 @@ it.skipIf(webSnapshotMode() === 'record')('inspects a replayed Session log and C
   expect(kinds.at(-1)).toBe('turn-tail')
   await compareOrRefreshGolden(join(directory, 'groups.expected.md'), kinds.map(kind => `- ${kind}`).join('\n'), webSnapshotMode())
   expect(tripwire.pageErrors).toEqual([])
-  await assertFixtureInventory(directory, ['log.expected.md', 'groups.expected.md', 'array-details.expected.md', 'navigation.expected.md'])
+  await assertFixtureInventory(directory, ['log.expected.md', 'groups.expected.md', 'array-details.expected.md', 'navigation.expected.md', 'raw-data.expected.md'])
 })
 
 it.skipIf(webSnapshotMode() === 'record')('highlights nearby Chat content when the selected recorded call is not displayed', async () => {

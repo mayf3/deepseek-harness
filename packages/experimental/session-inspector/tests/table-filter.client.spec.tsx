@@ -54,7 +54,7 @@ it('filters only on confirmation, preserves contextual ancestors, and reveals pi
   expect(ui.getByText('Session Log · 1 / 5')).toBeTruthy()
   expect(ui.container.querySelectorAll('[data-inspector-context]')).toHaveLength(2)
   fireEvent.click(ui.getByRole('button', { name: 'reasoning-delta' }))
-  expect(ui.container.querySelector('pre')?.textContent).toContain('"index": 7')
+  expect(ui.getByText('$:').closest('ul')?.textContent).toContain('index: 7')
 
   fireEvent.click(ui.getAllByRole('button', { name: 'Collapse children' })[1]!)
   expect(ui.queryByRole('button', { name: 'reasoning-delta' })).toBeNull()
@@ -69,7 +69,7 @@ it('filters only on confirmation, preserves contextual ancestors, and reveals pi
   ui.rerender(<InspectorTable {...props} pickedRow={{ key: 'tool' }} />)
   expect(trigger.getAttribute('aria-pressed')).toBe('false')
   expect(ui.getByRole('button', { name: 'tool/call' }).closest('tr')?.getAttribute('aria-selected')).toBe('true')
-  expect(ui.container.querySelector('pre')?.textContent).toContain('"arguments": "{}"')
+  expect(ui.getByText('$:').closest('ul')?.textContent).toContain('arguments: "{}"')
 
   await act(async () => { fireEvent.click(trigger) })
   fireEvent.click(ui.getByRole('option', { name: 'reasoning-delta' }))

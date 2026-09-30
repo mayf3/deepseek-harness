@@ -1,4 +1,4 @@
-/** Lazy runtime-object tree with identity links and native disclosure controls. */
+/** Shared value rendering for JSON details and lazy runtime objects with identity links. */
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -13,8 +13,16 @@ export type InspectorObjectTreeProps = PropsLocale<'session-inspector'> & {
   readonly navigate: (reference: InspectorObjectReference) => void
 }
 
-interface BranchProps extends InspectorObjectTreeProps {
-  readonly revision: object
+interface ValueTreeProps extends PropsLocale<'session-inspector'> {
+  readonly value: unknown
+  readonly navigation?: {
+    readonly objects: InspectorObjects
+    readonly navigate: InspectorObjectTreeProps['navigate']
+    readonly revision: object
+  } | undefined
+}
+
+interface BranchProps extends ValueTreeProps {
   readonly name: string
   readonly path: string
   readonly ancestors: ReadonlyMap<object, string>
@@ -25,18 +33,22 @@ interface BranchProps extends InspectorObjectTreeProps {
 
 const PAGE_SIZE = 50
 
-function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, objects, revision, navigate, t }: BranchProps) {
-  const [expanded, setExpanded] = useState(root === true)
-  const [limit, setLimit] = useState(PAGE_SIZE)
+function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, navigation, t }: BranchProps) {
+  const json = navigation === undefined
+  const objects = navigation?.objects
+  const revision = navigation?.revision
+  const [expanded, setExpanded] = useState(root === true || json)
+  const [limit, setLimit] = useState(json ? Infinity : PAGE_SIZE)
   const content = useMemo(() => {
     try {
-      const reference = !root && value !== null && typeof value === 'object' ? objects.reference(value) : undefined
+      const reference = !root && value !== null && typeof value === 'object' ? objects?.reference(value) : undefined
       const circular = value !== null && typeof value === 'object' ? ancestors.get(value) : undefined
       const inline = reference === undefined || reference.kind === 'nodeData'
       const display = inline && circular === undefined && !accessor ? new InspectorObjectValue(value) : undefined
       const entries: InspectorObjectEntry[] = []
       if (expanded && display?.expandable === true) {
         for (const entry of display.entries()) {
+          if (json && entry.properties) continue
           entries.push(entry)
           if (entries.length > limit) break
         }
@@ -45,7 +57,7 @@ function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, ob
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
-  }, [value, root, objects, ancestors, accessor, expanded, limit, revision])
+  }, [value, root, objects, ancestors, accessor, expanded, limit, revision, json])
   const children = useMemo(() => {
     const next = new Map(ancestors)
     if (value !== null && typeof value === 'object') next.set(value, path)
@@ -56,8 +68,8 @@ function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, ob
   if (absent) return <li>{field}<span className={css.objectMuted}>{t('object.absent')}</span></li>
   if (accessor) return <li>{field}<span className={css.objectMuted}>{t('object.accessor')}</span></li>
   const reference = content.reference
-  const link = reference === undefined ? undefined : <button type="button" className={css.objectReference}
-    onClick={(event) => { event.preventDefault(); event.stopPropagation(); navigate(reference) }}>
+  const link = reference === undefined || navigation === undefined ? undefined : <button type="button" className={css.objectReference}
+    onClick={(event) => { event.preventDefault(); event.stopPropagation(); navigation.navigate(reference) }}>
     ↗ {t(`object.${reference.kind}`)} · {reference.identity}
   </button>
   if (reference !== undefined && (reference.kind !== 'nodeData' || content.circular !== undefined)) return <li>{field}{link}</li>
@@ -70,12 +82,27 @@ function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, ob
     {expanded && <ul>
       {content.entries.slice(0, limit).map(({ key, properties, ...entry }) => <ObjectBranch key={key} {...entry}
         name={properties ? t('object.properties') : entry.name}
-        path={properties ? path : `${path}.${entry.name}`} ancestors={children} objects={objects} revision={revision} navigate={navigate} t={t} />)}
+        path={properties ? path : `${path}.${entry.name}`} ancestors={children} navigation={navigation} t={t} />)}
       {content.entries.length === 0 && <li className={css.objectMuted}>{t('object.empty')}</li>}
       {content.entries.length > limit && <li><button type="button" className={css.objectReference}
         onClick={() => { setLimit(value => value + PAGE_SIZE) }}>{t('object.more')}</button></li>}
     </ul>}
   </details></li>
+}
+
+function ValueTree(props: ValueTreeProps) {
+  const ancestors = useMemo(() => new Map<object, string>(), [])
+  return <ul className={css.objectTree}><ObjectBranch {...props} name="$" path="$" ancestors={ancestors} root /></ul>
+}
+
+/**
+ * Display serialized Inspector JSON with every container initially expanded and no reference navigation.
+ * @param props - Successful inspectorJson output and localized tree labels; empty text represents undefined.
+ * @returns The same value tree as Chat details, without collection paging or runtime-object links.
+ */
+export function InspectorJsonTree({ text, t }: PropsLocale<'session-inspector'> & { readonly text: string }) {
+  const value = useMemo<unknown>(() => text === '' ? undefined : JSON.parse(text), [text])
+  return <ValueTree value={value} t={t} />
 }
 
 /**
@@ -90,6 +117,6 @@ export function InspectorObjectTree(props: InspectorObjectTreeProps) {
   const subscribe = useCallback((listener: () => void) => updates.subscribe(listener), [updates])
   const getRevision = useCallback(() => updates.getSnapshot(), [updates])
   const revision = useSyncExternalStore(subscribe, getRevision)
-  const ancestors = useMemo(() => new Map<object, string>(), [])
-  return <ul className={css.objectTree}><ObjectBranch {...props} revision={revision} name="$" path="$" ancestors={ancestors} root /></ul>
+  return <ValueTree value={props.value} t={props.t}
+    navigation={{ objects: props.objects, navigate: props.navigate, revision }} />
 }

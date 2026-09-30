@@ -7,7 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { ConversationLocationIndex } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { InspectorObjectTree } from '../src/client/views/InspectorObjectTree.tsx'
+import { InspectorJsonTree, InspectorObjectTree } from '../src/client/views/InspectorObjectTree.tsx'
 import type { InspectorObjects, InspectorObjectReference } from '../src/client/views/objects.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -26,6 +26,39 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 }
 
 afterEach(cleanup)
+
+it('expands all JSON containers and array items without object links or collection-property disclosures', () => {
+  const text = JSON.stringify({ data: { items: Array.from({ length: 75 }, (_, index) => ({ value: index })) } })
+  const ui = render(<InspectorJsonTree text={text} t={makeTranslate(en)} />)
+  expect(ui.getByText('74')).toBeTruthy()
+  expect(ui.container.querySelectorAll('details:not([open])')).toHaveLength(0)
+  expect(ui.queryByRole('button')).toBeNull()
+  expect(ui.queryByText(`${en['object.properties']}:`)).toBeNull()
+  const branch = ui.getByText('data:').closest('details')!
+  branch.open = false
+  fireEvent(branch, new Event('toggle'))
+  expect(ui.queryByText('74')).toBeNull()
+  branch.open = true
+  fireEvent(branch, new Event('toggle'))
+  expect(ui.getByText('74')).toBeTruthy()
+  expect(ui.container.querySelectorAll('details:not([open])')).toHaveLength(0)
+})
+
+it('updates JSON values while retaining collapsed fields and renders an undefined serialization', () => {
+  const t = makeTranslate(en)
+  const ui = render(<InspectorJsonTree text='{"data":{"text":"before"}}' t={t} />)
+  const branch = ui.getByText('data:').closest('details')!
+  branch.open = false
+  fireEvent(branch, new Event('toggle'))
+  ui.rerender(<InspectorJsonTree text='{"data":{"text":"after"}}' t={t} />)
+  expect(ui.getByText('data:').closest('details')).toBe(branch)
+  expect(branch.open).toBe(false)
+  branch.open = true
+  fireEvent(branch, new Event('toggle'))
+  expect(ui.getByText('"after"')).toBeTruthy()
+  ui.rerender(<InspectorJsonTree text="" t={t} />)
+  expect(ui.getByText('undefined')).toBeTruthy()
+})
 
 it.each(['turn', 'step'] as const)('refreshes expanded %s Data after an in-place publication without losing disclosure state', (kind) => {
   const index = new ConversationLocationIndex()

@@ -34,8 +34,8 @@ it('uses the merged reasoning preview only when folded and preserves raw block-s
   }
   const ui = render(<InspectorTable {...props} />)
   fireEvent.click(ui.getByRole('button', { name: 'blockType: reasoning · merged deltas' }))
-  expect(ui.container.querySelector('pre')?.textContent).toContain('"index": 7')
-  expect(ui.container.querySelector('pre')?.textContent).not.toContain('merged deltas')
+  expect(ui.getByText('$:').closest('ul')?.textContent).toContain('index: 7')
+  expect(ui.getByText('$:').closest('ul')?.textContent).not.toContain('merged deltas')
   fireEvent.click(ui.getByRole('button', { name: 'Expand children' }))
   expect(ui.getByRole('button', { name: 'index: 7 · blockType: reasoning' })).toBeTruthy()
   expect(ui.queryByRole('button', { name: 'blockType: reasoning · merged deltas' })).toBeNull()
@@ -60,11 +60,13 @@ it('omits type and sequence fields only from the horizontal data preview', () =>
   expect(ui.getByRole('columnheader', { name: 'Time (UTC)' })).toBeTruthy()
   expect(ui.getByRole('button', { name: 'assistant/message' })).toBeTruthy()
   fireEvent.click(ui.getByRole('button', { name: 'delta' }))
-  const raw = ui.container.querySelector('pre')!.textContent
-  expect(raw).toContain('"type": "reasoning"')
-  expect(raw).toContain('"seq": 9')
-  expect(raw).toContain('"sequence": 3')
-  expect(raw).toContain('"time": 123')
+  const raw = ui.getByText('$:').closest('ul')!.textContent
+  expect(raw).toContain('type: "reasoning"')
+  expect(raw).toContain('seq: 9')
+  expect(raw).toContain('sequence: 3')
+  expect(raw).toContain('time: 123')
+  expect(ui.queryByRole('navigation')).toBeNull()
+  expect(ui.container.querySelectorAll('details:not([open])')).toHaveLength(0)
 })
 
 it('virtualizes the table and updates the selected row in place with an animation', () => {
@@ -126,19 +128,19 @@ it('opens cyclic raw nodes, contains formatter errors, and permits closing and r
   }
   const ui = render(<InspectorTable {...props} />)
   fireEvent.click(ui.getByRole('button', { name: 'assistant' }))
-  expect(ui.container.querySelector('pre')!.textContent).toContain('[Circular]')
+  expect(ui.getByText('$:').closest('ul')!.textContent).toContain('[Circular]')
   fireEvent.click(ui.getByRole('button', { name: 'unserializable' }))
   expect(ui.getByRole('alert').textContent).toContain('unavailable value')
   fireEvent.click(ui.getByRole('button', { name: 'assistant' }))
   expect(ui.queryByRole('alert')).toBeNull()
   fireEvent.click(ui.getByRole('button', { name: 'Close' }))
-  expect(ui.container.querySelector('pre')).toBeNull()
+  expect(ui.queryByText('$:')).toBeNull()
   fireEvent.click(ui.getByRole('button', { name: 'assistant' }))
-  expect(ui.container.querySelector('pre')!.textContent).toContain('node content')
+  expect(ui.getByText('$:').closest('ul')!.textContent).toContain('node content')
   ui.unmount()
   const reopened = render(<InspectorTable {...props} />)
   fireEvent.click(reopened.getByRole('button', { name: 'assistant' }))
-  expect(reopened.container.querySelector('pre')!.textContent).toContain('[Circular]')
+  expect(reopened.getByText('$:').closest('ul')!.textContent).toContain('[Circular]')
 })
 
 it('shows the complete row identity in a tooltip outside the table clipping area', () => {
@@ -199,7 +201,7 @@ it('handles empty history, pagination retry, loading state, and removal of the s
   act(() => { rows.set([{ key: 'row', parent: 'unloaded-parent', depth: 1 }]) })
   ui.rerender(<InspectorTable {...props} pickedRow={{ key: 'row' }} />)
   expect(ui.getByText('00:00:00.000')).toBeTruthy()
-  expect(ui.container.querySelector('pre')?.textContent).toContain('kept')
+  expect(ui.getByText('$:').closest('ul')?.textContent).toContain('kept')
   records.delete('row')
   ui.rerender(<InspectorTable {...props} />)
   expect(ui.container.querySelector('pre')?.textContent).toBe(en['table.removed'])

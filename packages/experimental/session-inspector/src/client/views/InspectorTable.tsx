@@ -10,7 +10,7 @@ import { InspectorTableHierarchy, inspectorRowCollapsed, type InspectorDisclosur
 import { inspectorPreview } from './format.ts'
 import { inspectorJson } from './raw-json.ts'
 import { InspectorDetails } from './InspectorDetails.tsx'
-import { InspectorObjectTree } from './InspectorObjectTree.tsx'
+import { InspectorJsonTree, InspectorObjectTree } from './InspectorObjectTree.tsx'
 import type { InspectorChatTarget, InspectorObjects, InspectorObjectReference } from './objects.ts'
 import { InspectorTableLayout, INSPECTOR_ROW_HEIGHT, type InspectorRowAnchor } from './table-layout.ts'
 import { InspectorTypeFilter } from './type-filter.ts'
@@ -328,7 +328,8 @@ export function InspectorTable({ title, flash, showTime, modeSelector, objects, 
     {selected !== null && <InspectorDetails failed={detail.failed}
       text={record === undefined ? t('table.removed') : detail.failed ? `${t('table.rawError')}\n${detail.text}` : detail.text}
       close={() => { setSelected(null); setObjectHistory(null) }} t={t}>
-      {objects === undefined ? undefined : <>
+      {objects === undefined ? record === undefined || detail.failed ? undefined
+        : <InspectorJsonTree key={selected} text={detail.text} t={t} /> : <>
         <nav className={css.objectBreadcrumbs} aria-label={t('object.navigation')}><ol>
           {breadcrumbs.map((label, index) => <li key={index}>
             {index > 0 && <span aria-hidden="true">›</span>}
