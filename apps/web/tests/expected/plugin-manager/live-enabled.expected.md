@@ -6,7 +6,7 @@
   - button "添加插件"
   - button "选择添加插件方式"
 - heading "官方" [level=3]
-- text: "8"
+- text: "7"
 - list:
   - listitem:
     - button "查看 智能体团队": 智能体团队
@@ -16,10 +16,6 @@
     - button "查看 自动授权审查": 自动授权审查
     - text: 实验性 提供自动审查权限模式，由模型在每次工具调用前判断是否授权。
     - switch "启用 自动授权审查"
-  - listitem:
-    - button "查看 自动化任务": 自动化任务
-    - text: 实验性 按设定的时间或周期，在会话中自动执行任务。
-    - switch "启用 自动化任务"
   - listitem:
     - button "查看 语音输入": 语音输入
     - text: 实验性 在本机使用 SenseVoice 转写录音，首次使用需安装依赖。

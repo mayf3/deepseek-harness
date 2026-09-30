@@ -17,7 +17,9 @@ Create reminders in a conversation, then inspect active and inactive tasks and e
 <a id="create-reminders"></a>
 ## Create reminders
 
-The shipped Web profile does not include Schedule. Open Plugins and enable Automation tasks in the Official group; the optional experimental bundle `@deepseek-ai/dsh-experimental-schedule-bundle` then adds Schedule with the clock context that gives the model the current time and the browser's zone. Configure a model provider before asking it to create reminders.
+The shipped Web profile includes the Host Schedule service and the Automation tasks page. Configure a model provider before asking it to create reminders.
+
+The `standard`, `cordis`, and `ptc` presets declare the four reminder tools and the clock context that gives the model the current time and the browser's zone, so those presets provide `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete`; the `minimal` preset declares neither. A delegated subagent sees none of the four tools, because the presets' delegation rows deny them; a call that reaches one anyway is refused.
 
 Ask the model to create, list, edit, or delete reminders. It uses `schedule_create`, `schedule_list`, `schedule_update`, and `schedule_delete` (update changes one reminder in place and keeps its id and saved delivery records); the Automation tasks page's New action opens a New Session for a creation instead, with the request already written in its composer. Supported choices are a one-time delay in positive whole seconds, an absolute date and time, a fixed interval of at least one minute, a daily local time with an IANA time zone, a weekly local time with an IANA time zone and ISO weekdays from Monday 1 through Sunday 7, or a five-field cron expression with an explicit IANA time zone, stored in canonical form.
 

@@ -23,9 +23,9 @@ Schedule 将一次性、固定周期、按每日、按每周以及 cron 本地�
 <a id="use-this-package"></a>
 ## 使用此包
 
-随发行版交付的 Web 组合不含 `schedule` 行；在插件管理页的“官方”分组中启用可选实验性 bundle `@deepseek-ai/dsh-experimental-schedule-bundle`，或把它列进 profile 的 `dsh.profile.bundles`，即可插入此服务并将它与 storage-domain、Session controller 一起挂载。其 `Config` 声明 `deliveryHistoryDays`（默认 30）与 `deliveryHistoryRecords`（默认 200）。存储后端路由由 storage-domain 管理；会话模型与 preset 恢复由 Session controller 管理。Schedule 无法在 headless 或仅 SDK 的组合中单独挂载：投递需要 Host 的 Web Session controller 和 Session 持久化后端，因为只有在 Session 确认 `session/flush` 之后一次投递才会提交。
+随发行版交付的 Web 组合把此服务与 storage-domain、Session controller 一起挂载。其 `Config` 声明 `deliveryHistoryDays`（默认 30）与 `deliveryHistoryRecords`（默认 200）。存储后端路由由 storage-domain 管理；会话模型与 preset 恢复由 Session controller 管理。Schedule 无法在 headless 或仅 SDK 的组合中单独挂载：投递需要 Host 的 Web Session controller 和 Session 持久化后端，因为只有在 Session 确认 `session/flush` 之后一次投递才会提交。
 
-Agent 获得 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update`。更新原地替换一条提醒的名称、指令或时间，保留其 id 与已保存记录；相对的 `after` 延迟不支持更新。创建时需要非空提示文本、标题，且必须只提供以下六个选择器之一：
+提醒工具 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 来自 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md)，由 preset 挂载；本包提供这些工具调用的宿主服务。更新原地替换一条提醒的名称、指令或时间，保留其 id 与已保存记录；相对的 `after` 延迟不支持更新。创建时需要非空提示文本、标题，且必须只提供以下六个选择器之一：
 
 | 选择器 | 示例 | 时间语义 |
 |---|---|---|
@@ -90,11 +90,11 @@ Schedule domain 声明整 unit 布局，因为任务是权威数据。路由到 
 <a id="model-experience"></a>
 ## 模型体验
 
-### 根 Agent 的工具 schema
+### 挂载 preset 中的工具 schema
 
 #### 模型看到什么
 
-[生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-schedule) 包含 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 的描述与 schema；Schedule 加载期间，这些工具注册在活动根 Agent 的作用域中。
+[生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-schedule) 包含 `schedule_create`、`schedule_list`、`schedule_delete` 和 `schedule_update` 的描述与 schema；这些工具由 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md) 贡献给挂载它的 preset。
 
 #### Token 影响
 
@@ -155,6 +155,7 @@ This is a scheduled message from the user
 - 删除会移除任务行及其已保存的投递记录：后续投递停止，任务离开 `list` 与 `catalog`，`history` 也不再解析到它。
 - 旧会话日志提醒需要明确重新创建。此前已物理删除的任务不会被恢复或虚构。
 - 仅可修改活动任务的管理字段。不支持暂停、执行状态、原会话以外的投递或每次运行新建会话。名称、指令和时间更新可由模型通过 `schedule_update` 修改其自身 Session 内的提醒，也可在 Web 详情中对所选任务修改；不支持跨会话转交工作流，产品权限策略尚未确定，会话绑定校验不等于调用者鉴权。
+- 对由被委派子 agent 拥有的 Session，当该 Agent 的委派深度大于零时，`create` 与 `update` 会以 `subagent_session` 拒绝（这正是委派封顶本身执行的记账，读取自持久化 session header，因此冷恢复后仍然成立）。投递会经由 Session controller 解析该绑定 Session，而后者拒绝被委派子 agent 的活跃 Agent，因此绑定到那里的任务永远无法投递。调用方限制属于工具层：`@deepseek-ai/dsh-tool-schedule` 会拒绝被委派调用方的每一个工具。`list`、`catalog`、`history` 与 `delete` 仍服务该 Session，所以在这条规则之前存储的任务仍可删除。
 - Cron 使用五字段 Vixie 方言，因此最小间隔为一分钟，不支持亚分钟级调度。不接受扩展表达式：`L`、`W`、`#`、月份或星期名称、`@daily` 风格宏以及秒字段都会被拒绝。存储记录只保留规范化表达式，创建时提供的原始拼写不会被保留。
 - Daily、Weekly 与 Cron 的未来目标使用宿主当前的 IANA 数据；解码和重启绝不重新计算已提交的目标。UTC 目标仅支持 0001–9999 年；没有后续目标时，任务在投递后保留为未运行状态。
 - 已保存的发送记录在追加确认时按配置的 `deliveryHistoryDays` 窗口（以每条回执的 `deliveredAt` 向前计算）与 `deliveryHistoryRecords` 条数上限裁剪；新追加的最近一次回执始终保留，发生裁剪时任务标记更早记录不可用。JSON 后端把 Schedule domain 存在一个 `schedule.json` 文档中，因此每次任务变更都会重写全部保留任务及其历史，宿主也会把全部保留历史加载到内存。历史分页仅限制返回的记录数，不限制存储增长、保留的内存、提示文本字节数或写入成本。
