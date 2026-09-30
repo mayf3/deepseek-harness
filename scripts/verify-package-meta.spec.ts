@@ -143,6 +143,74 @@ it('excludes tests, installed dependencies, and build output from metadata disco
   expect(packageMetaProblems(root)).toEqual([])
 })
 
+it.each([
+  ['valid bundle', {}, 'Nested', undefined],
+  ['manifest icon takes precedence', {
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './fallback.svg' },
+  }, 'Nested', undefined],
+  ['unpublished manifest icon', {
+    icon: './icon.svg', exports: { './package.json': './package.json', './locale/*.json': './locale/*.json', './icon': './fallback.svg' }, files: ['locale'],
+  }, 'Nested', 'files must include icon.svg'],
+  ['missing locale export', { exports: { './icon': './icon.svg' } }, 'Nested', 'exports must expose locale/en.json'],
+  ['unpublished locale', { files: ['icon.svg'] }, 'Nested', 'files must include locale/en.json'],
+  ['unpublished icon', { files: ['locale'] }, 'Nested', 'files must include icon.svg'],
+  ['missing icon target', { exports: { './locale/*.json': './locale/*.json', './icon': './missing.svg' } }, 'Nested', 'exports["./icon"] must resolve to a file'],
+  ['invalid display text', {}, false, 'meta.title must be a non-empty string'],
+  ['ordinary plugin with an exported icon', { dsh: undefined }, 'Nested', undefined],
+] as const)('validates a named nested package independently: %s', (_label, fields, title, expected) => {
+  manifest({ exports: { '.': './entry.js' }, files: ['examples'] })
+  json('examples/nested/package.json', {
+    name: '@test/nested', type: 'module', dsh: { bundle: { patch: './cordis.patch.yml' } },
+    exports: { './locale/*.json': './locale/*.json', './icon': './icon.svg' },
+    files: ['locale', 'icon.svg'], ...fields,
+  })
+  json('examples/nested/locale/en.json', { meta: { title } })
+  file('examples/nested/icon.svg', '<svg/>')
+  file('examples/nested/fallback.svg', '<svg/>')
+  const problems = packageMetaProblems(root)
+  if (expected === undefined) expect(problems).toEqual([])
+  else expect(problems.join('\n')).toContain(expected)
+})
+
+it('checks grandchildren once and does not hide adjacent unowned locale directories', () => {
+  manifest({ exports: { '.': './entry.js' } })
+  json('examples/child/package.json', { name: '@test/child', exports: { './locale/*.json': './locale/*.json' } })
+  json('examples/child/locale/en.json', { meta: { title: 'Child' } })
+  json('examples/child/grandchild/package.json', { name: '@test/grandchild', exports: {} })
+  json('examples/child/grandchild/locale/en.json', { meta: { title: 'Grandchild' } })
+  json('examples/child-other/locale/en.json', { meta: { title: 'Unowned' } })
+  const problems = packageMetaProblems(root)
+  expect(problems.filter(problem => problem.includes(join('grandchild', 'package.json')))).toHaveLength(1)
+  expect(problems.join('\n')).toContain('exports must expose examples/child-other/locale/en.json')
+})
+
+it.each([undefined, '', 1])('does not treat an unnamed package manifest as a separate metadata owner: %j', (name) => {
+  manifest({ exports: { '.': './entry.js' } })
+  json('nested/package.json', { name, type: 'module' })
+  json('nested/locale/en.json', { meta: { title: 'Still owned by outer package' } })
+  expect(packageMetaProblems(root).join('\n')).toContain('exports must expose nested/locale/en.json')
+})
+
+it('still checks explicit outer exports of nested package resources', () => {
+  const exports = { './child/locale/*.json': './nested/locale/*.json' }
+  manifest({ exports, files: [] })
+  json('nested/package.json', { name: '@test/nested', exports: { './locale/*.json': './locale/*.json' }, files: ['locale'] })
+  json('nested/locale/en.json', { meta: { title: 'Shared resource' } })
+  expect(packageMetaProblems(root).join('\n')).toContain('files must include nested/locale/en.json')
+  manifest({ exports, files: ['nested'] })
+  expect(packageMetaProblems(root)).toEqual([])
+})
+
+it.each([
+  { './child/locale/*.json': './nested/locale/*.json', './child/locale/en.json': null },
+  { './child/locale/*.json': { require: './nested/locale/*.json' } },
+])('rejects inaccessible outer exports even when the nested package exposes its locale: %j', (exports) => {
+  manifest({ exports, files: ['nested'] })
+  json('nested/package.json', { name: '@test/nested', exports: { './locale/*.json': './locale/*.json' } })
+  json('nested/locale/en.json', { meta: { title: 'Nested' } })
+  expect(packageMetaProblems(root).join('\n')).toContain('exports must expose nested/locale/en.json')
+})
+
 it('ignores unrelated locale content without requiring metadata exports', () => {
   manifest({ exports: { '.': './lib/index.js' }, files: ['lib'] })
   json('locale/zh.json', { buttons: { save: '保存' }, enabled: true, other: null })
