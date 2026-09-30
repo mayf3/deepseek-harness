@@ -34,10 +34,9 @@ export interface PopupDismissFace {
 }
 
 /**
- * Construction dependencies of one facade. The slash/popup faces are THUNKS: the
- * shell is created inside the sessions provide materialization (before the
- * scope record is queryable), where `slash.sessionOf`/`command.popupFor`
- * cannot resolve yet — resolution defers to first interactive use.
+ * Construction dependencies of one input model. Trigger and popup callbacks
+ * resolve the currently available Session-scoped services on demand. InputHub
+ * owns the lexicon subscription through the Session scope's inject lifecycle.
  */
 export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
@@ -242,7 +241,8 @@ export class SessionInputShell implements SessionInput {
   /**
    * Apply one new-task request to this already-initialized input model.
    * @param options - replacement content and explicit permission to clear existing text.
-   * @returns whether text changed, was preserved, or submission prevented editing.
+   * @returns applied when the requested text is adopted, even if unchanged;
+   * preserved when the current draft is kept; blocked after disposal or during a pending submission.
    */
   requestDraftInitialization(options: DraftInitializationOptions): DraftInitializationResult {
     if (this.draftInitializationBlocked()) return 'blocked'

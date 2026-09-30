@@ -217,6 +217,7 @@ export interface SessionInputResolver {
    * @param binding - target Session generation, already retained by the caller.
    * @param options - content to adopt and explicit permission to replace existing text.
    * @returns applied, preserved, or blocked by a pending submission or disposal.
+   * @throws when binding is not the currently retained Session generation.
    */
   requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions): DraftInitializationResult
 }

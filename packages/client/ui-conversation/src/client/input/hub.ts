@@ -1,11 +1,8 @@
 /**
- * InputHub: the SessionInputResolver implementation (`ctx.conversation.input`) — one
- * SessionInputShell per session, created inside the uiSession provide
- * materialization (the 'input' standard-kit entry IS the
- * creation trigger) and torn down by the scope disposer (instance-and-scope
- * share one lifecycle). The hub registers the scoped input-mutation
- * listeners on each Session context and owns the default-sink choreography: every session is a
- * real host entity, so the sink is one unconditional prompt path.
+ * Session-bound input registry and default-send routing for Conversation.
+ * Each retained Session binding owns one shell, its input listeners, and its
+ * catalog subscription. Saved drafts enter the model before the first lookup
+ * returns; Session-scope disposal releases the shell and its resources.
  */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -90,10 +87,9 @@ export class InputHub implements SessionInputResolver {
   }
 
   /**
-   * Resident shell for one session binding — the provide-channel entry
-   * (called during scope materialization, BEFORE the scope record is
-   * queryable, hence binding-fed and hence the thunked slash/popup deps).
-   * Wires the scoped event listeners + teardown into the session scope.
+   * Resolve the resident shell for an already-retained, addressable Session binding.
+   * Draft import completes before return. The Session scope owns input listeners,
+   * the inject-managed catalog subscription, and shell teardown.
    * @param binding - session assembly handle.
    * @returns the shell.
    */
