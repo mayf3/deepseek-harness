@@ -80,7 +80,7 @@ export interface PackageManifest {
   main?: string
   types?: string
   bin?: string | Record<string, string>
-  exports?: Record<string, unknown>
+  exports?: Record<string, ExportTarget | undefined>
   files?: string[]
   icon?: string
   publishConfig?: { access?: string }
@@ -93,6 +93,9 @@ export interface PackageManifest {
     bundle?: DshBundleManifest
   }
 }
+
+/** Node package export target: a path, a fallback list, a conditional map, or an exclusion. */
+export type ExportTarget = string | readonly ExportTarget[] | { readonly [condition: string]: ExportTarget | undefined } | null
 
 /** One workspace manifest and its repo-relative path. */
 export interface WorkspaceManifest {
@@ -247,7 +250,7 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     ...bundleFiles,
     ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
   ]
-  const targets = (value: unknown): string[] => typeof value === 'string' ? [value]
+  const targets = (value: ExportTarget | undefined): string[] => typeof value === 'string' ? [value]
     : typeof value === 'object' && value !== null ? Object.values(value).flatMap(targets) : []
   const icons = [
     ...typeof manifest.icon === 'string' ? [manifest.icon.replace(/^\.\//u, '')] : [],
@@ -298,10 +301,13 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
   ]
 }
 
-/** Fields of a conditional export; scalar and array targets have no named conditions. */
-function exportFields(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown> : undefined
+/** Fields of a conditional export; scalar and list targets have no named conditions. */
+function exportFields(value: ExportTarget | undefined): { readonly [condition: string]: ExportTarget | undefined } | undefined {
+  return typeof value !== 'object' || value === null || isExportList(value) ? undefined : value
+}
+
+function isExportList(value: ExportTarget): value is readonly ExportTarget[] {
+  return Array.isArray(value)
 }
 
 /** Whether one conditional export exactly names the generated runtime and declaration pair. */

@@ -529,3 +529,12 @@ it('reports metadata failures from more than one workspace package', () => {
   expect(problems).toContain('@test/plugin')
   expect(problems).toContain('@test/second')
 })
+
+it.each([[], ['locale']])('rejects a display manifest in build output without reading it: locales %j', (...locales) => {
+  manifest({ exports: { './package.json': './lib/display.json', ...locales.length > 0 ? { './locale/*.json': './locale/*.json' } : {} }, files: ['lib', 'locale'] })
+  if (locales.length > 0) json('locale/en.json', { meta: { title: 'Plugin' } })
+  file('lib/display.json', '{')
+  const problems = packageMetaProblems(root).join('\n')
+  expect(problems).toContain('@test/plugin/package.json: display manifest must resolve to source JSON')
+  expect(problems).not.toContain('Plugin metadata for')
+})

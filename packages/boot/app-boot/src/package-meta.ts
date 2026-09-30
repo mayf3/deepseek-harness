@@ -23,30 +23,33 @@ function iconOf(
 ): string | undefined {
   const icon = manifestPath === undefined ? undefined : textOf(value, `${manifestPath}: icon`)
   let target: string
+  // Diagnostics name the file the author edits: the declaring manifest or the exported image.
+  let label: string
   if (manifestPath !== undefined && icon !== undefined) {
     if (isAbsolute(icon) || win32.isAbsolute(icon) || /^[A-Za-z][A-Za-z\d+.-]*:/u.test(icon)) {
       throw new Error(`${manifestPath}: icon must be a relative file path`)
     }
+    label = manifestPath
     const root = realpathSync(dirname(manifestPath))
     target = resolve(root, icon)
     const local = relative(root, realpathSync(target))
     if (local === '..' || local.startsWith(`..${sep}`) || isAbsolute(local)) {
-      throw new Error(`${target}: icon must remain inside its manifest directory`)
+      throw new Error(`${label}: icon must remain inside its manifest directory`)
     }
   } else {
     const exported = optionalResourcePath(`${specifier}/icon`, parentURL)
     if (exported === undefined) return undefined
-    target = exported
+    target = label = exported
     assertPackageOwned(realpathSync(target), packageName)
   }
   const mediaType = ICON_MEDIA_TYPES.get(extname(target).toLowerCase())
-  if (mediaType === undefined) throw new Error(`${target}: icon must be SVG, PNG, JPEG, or WebP`)
+  if (mediaType === undefined) throw new Error(`${label}: icon must be SVG, PNG, JPEG, or WebP`)
   const file = realpathSync(target)
   const stat = statSync(file)
-  if (!stat.isFile()) throw new Error(`${target}: icon must be a regular file`)
-  if (stat.size > MAX_ICON_BYTES) throw new Error(`${target}: icon exceeds 256 KiB`)
+  if (!stat.isFile()) throw new Error(`${label}: icon must be a regular file`)
+  if (stat.size > MAX_ICON_BYTES) throw new Error(`${label}: icon exceeds 256 KiB`)
   const bytes = readFileSync(file)
-  if (bytes.length > MAX_ICON_BYTES) throw new Error(`${target}: icon exceeds 256 KiB`)
+  if (bytes.length > MAX_ICON_BYTES) throw new Error(`${label}: icon exceeds 256 KiB`)
   return `data:${mediaType};base64,${bytes.toString('base64')}`
 }
 

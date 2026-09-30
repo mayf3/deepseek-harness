@@ -131,7 +131,12 @@ function packageProblems(manifestPath: string): string[] {
       problems.push(`${manifestPath}: exports["${iconExport}"] must resolve to a file`)
     }
     const iconDocument = displayManifest === undefined ? undefined : byPath.get(displayManifest)
-    if (resources.every(({ file }) => byPath.has(file))) {
+    // Build output is not validated source; reading it would make the result depend on stale artifacts.
+    const sourceManifest = displayManifest === undefined || iconDocument !== undefined
+    if (!sourceManifest) {
+      problems.push(`${specifier}/package.json: display manifest must resolve to source JSON, received ${displayManifest}`)
+    }
+    if (sourceManifest && resources.every(({ file }) => byPath.has(file))) {
       const meta = readPluginMeta(specifier, parentURL)
       if (meta?.error !== undefined) problems.push(meta.error)
       const iconTarget = meta?.icon === undefined ? undefined
@@ -145,7 +150,7 @@ function packageProblems(manifestPath: string): string[] {
           problems.push(`${manifestPath}: files must include ${file}`)
         }
       }
-    } else if (exportsIcon || iconDocument?.icon !== undefined) {
+    } else if (sourceManifest && (exportsIcon || iconDocument?.icon !== undefined)) {
       problems.push(`${specifier}: icon metadata requires locale resources to resolve to source JSON`)
     }
     if (!resources.some(({ file }) => byPath.get(file)?.metadata || byPath.get(file)?.invalid)) continue

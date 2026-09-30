@@ -207,7 +207,7 @@ describe('plugin locale display metadata', () => {
     file(join(dir, 'outside.svg'), 'outside')
     file(join(dir, 'fallback.svg'), 'fallback')
     const meta = readPluginMeta('localized', parentURL)
-    expect(meta?.error).toContain('icon must remain inside its manifest directory')
+    expect(meta?.error).toContain(`${join(dir, 'display', 'manifest.json')}: icon must remain inside its manifest directory`)
     expect(meta?.icon).toBeUndefined()
   })
 
