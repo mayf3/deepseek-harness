@@ -172,7 +172,7 @@ Cron decoding preserves the committed instant and the stored zone spelling, and 
 
 ## Historical Session changes
 
-Version-1 `schedule/change` events remain decodable as historical Session data. Their create, fold, and invariant types use `LegacyScheduleRecord`, which admits only After, At, and Every; Daily, Weekly, and Cron belong only to the current Host `ScheduleRecord`. The Host record decoder is separate from the frozen historical decoder. A create record written before titles existed carries no `title`, so the historical decoder admits that absent member while the Host decoder still requires it. Historical events do not populate the storage domain or schedule delivery. Existing reminders in these events require explicit recreation through `schedule_create`; no implicit Session migration or conversion of old `at` records occurs.
+Version-1 `schedule/change` events remain decodable as historical Session data. Their create and fold types use `LegacyScheduleRecord`, which admits only After, At, and Every; Daily, Weekly, and Cron belong only to the current Host `ScheduleRecord`. The Host record decoder is separate from the frozen historical decoder. A create record written before titles existed carries no `title`, so the historical decoder admits that absent member while the Host decoder still requires it. Historical events do not populate the storage domain or schedule delivery. Existing reminders in these events require explicit recreation through `schedule_create`; no implicit Session migration or conversion of old `at` records occurs.
 
 ```ts type-equiv
 /**

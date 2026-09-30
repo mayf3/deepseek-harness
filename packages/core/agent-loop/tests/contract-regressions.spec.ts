@@ -993,6 +993,8 @@ describe('turn and step boundary recovery', () => {
     expect(errors.map(error => error.message)).toEqual([
       'reject first step-end',
     ])
+    // The rejected step/end is not retried, so step 1 stays open in the
+    // durable log while the turn closes with the rejection.
     expect(boundaryCounts(agent)).toMatchObject({
       turnStart: 1,
       turnEnd: 1,

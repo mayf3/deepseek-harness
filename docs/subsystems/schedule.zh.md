@@ -172,7 +172,7 @@ cron 解码保留已提交时点及已存储的时区拼写，并拒绝非规范
 
 ## 历史 Session 变更
 
-版本 1 的 `schedule/change` 事件仍可作为历史 Session 数据解码。其 create、fold 和 invariant 类型使用 `LegacyScheduleRecord`，仅接受 After、At 和 Every；Daily、Weekly 与 Cron 仅属于当前宿主的 `ScheduleRecord`。宿主记录解码器独立于冻结的历史解码器。在 title 出现之前写入的 create 记录不含 `title`，因此历史解码器接受该缺失成员，而宿主解码器仍要求它。历史事件不会填充 storage domain 或触发投递。这些事件中的已有提醒需要显式通过 `schedule_create` 重新创建；不会隐式迁移 Session 或转换旧 `at` 记录。
+版本 1 的 `schedule/change` 事件仍可作为历史 Session 数据解码。其 create 和 fold 类型使用 `LegacyScheduleRecord`，仅接受 After、At 和 Every；Daily、Weekly 与 Cron 仅属于当前宿主的 `ScheduleRecord`。宿主记录解码器独立于冻结的历史解码器。在 title 出现之前写入的 create 记录不含 `title`，因此历史解码器接受该缺失成员，而宿主解码器仍要求它。历史事件不会填充 storage domain 或触发投递。这些事件中的已有提醒需要显式通过 `schedule_create` 重新创建；不会隐式迁移 Session 或转换旧 `at` 记录。
 
 ```ts type-equiv
 /**

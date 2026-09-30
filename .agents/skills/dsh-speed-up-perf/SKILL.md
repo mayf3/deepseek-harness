@@ -75,7 +75,7 @@ Change one causal factor at a time. Re-run both the focused scenario and its end
 
 ## Preserve behavior and resource ownership
 
-Performance measurements complement functional evidence; they do not replace it. Run or add the narrow owning tests for output, ordering, paging, stream indexes, errors, cancellation, concurrency, and disposal as applicable. Preserve model-visible/logged equivalence, released-generation immutability, atomic publication, required validation, and writable readiness. Do not silently truncate history, skip tool results, disable invariants, or change lifecycle semantics to reach a number.
+Performance measurements complement functional evidence; they do not replace it. Run or add the narrow owning tests for output, ordering, paging, stream indexes, errors, cancellation, concurrency, and disposal as applicable. Preserve model-visible/logged equivalence, released-generation immutability, atomic publication, required validation, and writable readiness. Do not silently truncate history, skip tool results, or change lifecycle semantics to reach a number.
 
 State any deliberate minor visible difference and verify it through the owning keyless snapshot. For a product-visible GUI change, include the required browser evidence/GIF. Keep functional expectations independent of benchmark internals; benchmark assertions need enough evidence to reach the real endpoint, not a second semantic test suite.
 
