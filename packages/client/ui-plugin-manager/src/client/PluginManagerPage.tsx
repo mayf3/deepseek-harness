@@ -235,7 +235,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
                 {...row.phase === 'failed' ? { 'data-state': 'failed' } : row.enabled ? {} : { 'data-state': 'off' }}
               >
                 <div className={css.rowLine}>
-                  <span className={css.rowIcon} aria-hidden="true"><PackageArtwork src={undefined} row /></span>
+                  <span className={css.rowIcon} aria-hidden="true"><PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row /></span>
                   <div className={css.rowMain}>
                     {configure?.has(row) === true
                       ? (
@@ -511,7 +511,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
         crumbLabel={t('backToPackage', { name: title })}
         crumbText={title}
         onBack={onBack}
-        icon={<PackageArtwork src={undefined} row size={CARD_ARTWORK_SIZE} />}
+        icon={<PackageArtwork key={row.meta?.icon} src={row.meta?.icon} row size={CARD_ARTWORK_SIZE} />}
         actions={<div className={css.detailActions}>{renderSlot('plugins.detail.actions', { subject })}</div>}
       />
       <div className={css.detailMain}>

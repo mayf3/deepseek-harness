@@ -10,7 +10,7 @@
 - text: 共 3 个 · 3 已停用
 - list:
   - listitem:
-    - text: "@fixture/bundle"
+    - text: "@fixture/bundle Registry description for the fixture bundle."
     - code: fixture-row
     - text: 已关闭
   - listitem:

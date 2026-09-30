@@ -28,23 +28,21 @@ A Host-only bundle needs no dependencies, install scripts, or build tool:
 
 ## Display metadata and icon
 
-Plugin Manager and Settings read `meta.title` and `meta.description` from exported locale JSON without activating plugins. Ordinary plugins read only these resources and use generic artwork. Put the English discovery file at `locale/en.json`; other languages use the same fields:
+Plugin Manager cards, bundle details, component rows, and the Settings plugin inventory read display text and an icon from the manifest without activating the plugin. Put the title and description in `locale/en.json` (other languages such as `locale/zh.json` use the same fields), and declare the icon as a top-level `icon` in `package.json`:
 
 ```json
 { "meta": { "title": "My Decoration", "description": "Draws a badge under the composer." } }
 ```
 
-Only bundles can customize icons. Keep existing manifest `icon` paths; they take priority. The optional `./icon` export is used only when that field is omitted. Merge resource exports and publication files while retaining runtime exports:
-
 ```json
 {
   "icon": "./icon.svg",
-  "exports": { "./package.json": "./package.json", "./locale/*.json": "./locale/*.json", "./icon": "./fallback-icon.svg" },
-  "files": ["locale/*.json", "icon.svg", "fallback-icon.svg"]
+  "exports": { "./package.json": "./package.json", "./locale/*.json": "./locale/*.json" },
+  "files": ["locale/*.json", "icon.svg"]
 }
 ```
 
-Locale and fallback icon resources support Node exports remapping. No JavaScript `meta` export is needed. A manifest icon stays relative to and inside its declaring manifest directory, including when that manifest is remapped; an exported icon stays inside the real bundle root. Both accept SVG, PNG, JPEG, or WebP up to 256 KiB. Invalid declared icons retain valid text with a diagnostic, without trying the export. An accessible `package.json` also provides optional bundle `name`/`description` fallback; export it if the exports map otherwise hides it. Export-only icons do not require a manifest export. Ordinary plugin display reads never use manifests: missing titles use module names, missing descriptions are omitted, and artwork stays generic.
+`icon` is a path relative to the manifest directory; SVG, PNG, JPEG, and WebP up to 256 KiB are accepted, while absolute paths, URLs, paths outside the directory, and symlinks leaving it are rejected. When `icon` is omitted, an exported `./icon` resource supplies the image. A subpath plugin such as `my-plugins/search` is not a package and never reads a `package.json`; it exports `./search/locale/*.json` and `./search/icon` instead. Missing fields of a package-root plugin fall back to `package.json` `name` and `description`, and missing images use the panel's default artwork; malformed metadata produces a diagnostic and keeps the valid text.
 
 ## Host plugin export forms
 

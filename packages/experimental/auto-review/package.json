@@ -12,7 +12,6 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
-    "./icon": "./icon.svg",
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"

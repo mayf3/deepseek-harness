@@ -12,10 +12,7 @@ export interface DshPackageManifest {
   version: string
   /** Package summary for discovery and display. */
   description?: string
-  /** Bundle SVG, PNG, JPEG, or WebP path relative to its manifest directory.
-   * At most 256 KiB and confined there after realpath resolution.
-   * Takes priority over ./icon; invalid declarations diagnose without fallback.
-   */
+  /** SVG, PNG, JPEG, or WebP file relative to this manifest's directory, at most 256 KiB and contained there after realpath resolution. */
   icon?: string
   /** Prevent npm publication, for example for local profile projects. */
   private?: boolean
@@ -44,13 +41,13 @@ export interface DshManifest {
 /** Literal text or translations indexed by lowercase language id, with a required English fallback. */
 export type LocalizedText = string | { readonly en: string; readonly [locale: string]: string }
 
-/** Validated locale display fields and diagnostics; bundles may also use exported manifests and icons. */
+/** Validated plugin display fields and diagnostics from exported locales, manifests, or icon files. */
 export interface PluginLocalizedMeta {
   /** Display title; omission preserves the consumer's technical-name fallback. */
   readonly title?: LocalizedText
-  /** Display introduction; only bundles use package-field fallback. */
+  /** Display introduction after locale and package-field fallback. */
   readonly description?: LocalizedText
-  /** Bundle-only base64 image data URL from manifest icon or the ./icon resource; render as an image, not inline markup. */
+  /** Base64 image data URL from a package root's manifest icon or an exported `<specifier>/icon`; render as an image, not inline markup. */
   readonly icon?: string
   /** Unmodified local metadata diagnostic; the plugin remains manageable. */
   readonly error?: string

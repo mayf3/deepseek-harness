@@ -259,26 +259,18 @@ describe('package payload constraints', () => {
     ['./art/icon.svg', ['art/icon.svg']],
     [{ import: './art/icon.svg', default: './art/fallback.svg' }, ['art/icon.svg', 'art/fallback.svg']],
     [['./art/icon.svg', './art/icon.svg'], ['art/icon.svg']],
-  ] as const)('includes exported bundle icon targets in the canonical payload: %j', (icon, expected) => {
-    expect(expectedDshPackageFiles({ dsh: { bundle: { patch: './cordis.patch.yml' } }, exports: { './icon': icon } })).toEqual([
-      ...expected, 'lib/index.js', 'cordis.patch.yml', 'lib/types/**/*.d.ts',
+  ] as const)('includes exported icon targets in the canonical payload: %j', (icon, expected) => {
+    expect(expectedDshPackageFiles({ exports: { './icon': icon } })).toEqual([...expected, 'lib/index.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it.each(['icon.svg', './icon.svg'])('includes and deduplicates manifest icon %s', (icon) => {
+    expect(expectedDshPackageFiles({ icon, exports: { './icon': './icon.svg' } })).toEqual(['icon.svg', 'lib/index.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it('includes manifest, root, and subpath icon targets', () => {
+    expect(expectedDshPackageFiles({ icon: './legacy.svg', exports: { './icon': './fallback.svg', './search/icon': './search.svg' } })).toEqual([
+      'legacy.svg', 'fallback.svg', 'search.svg', 'lib/index.js', 'lib/types/**/*.d.ts',
     ])
-  })
-
-  it.each(['icon.svg', './icon.svg'])('includes and deduplicates legacy bundle icon %s', (icon) => {
-    expect(expectedDshPackageFiles({ icon, dsh: { bundle: { patch: './cordis.patch.yml' } },
-      exports: { './icon': './icon.svg' } })).toEqual(['icon.svg', 'lib/index.js', 'cordis.patch.yml', 'lib/types/**/*.d.ts'])
-  })
-
-  it('includes both legacy and exported image targets when they differ', () => {
-    expect(expectedDshPackageFiles({ icon: './legacy.svg', dsh: { bundle: { patch: './cordis.patch.yml' } },
-      exports: { './icon': './fallback.svg' } })).toEqual([
-      'legacy.svg', 'fallback.svg', 'lib/index.js', 'cordis.patch.yml', 'lib/types/**/*.d.ts',
-    ])
-  })
-
-  it('ignores ordinary plugin icon exports in the canonical payload', () => {
-    expect(expectedDshPackageFiles({ icon: './legacy.svg', exports: { './icon': './icon.svg' } })).toEqual(['lib/index.js', 'lib/types/**/*.d.ts'])
   })
 
   it('accepts the Agent Team icon payload and rejects its omission', () => {

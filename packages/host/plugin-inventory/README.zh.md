@@ -53,7 +53,7 @@ Loader 行与预设行可以携带可选的 `meta`，其中包含标题、描述
 
 网关是一层没有第二个生命周期真源的直接投影：每次 `list()` 调用都读取 `ctx.loader.entries()`，并把每个非组条目映射为公共行。Cordis 内部的 `plugin/status` 事件已经维护了 `Entry.fiber` 与 `Fiber.state`，因此再加缓存只会多出一个需要同步的生命周期真源。agent preset roster 是每次调用经 `ctx.get('agentPresets')` 解析的可选伙伴：预设组合读取由它的 `compositionInventory()` 负责，本包把根 Fiber 状态映射到公共阶段。
 
-展示元信息来自可选的 `pluginPackages` 服务：Loader 行使用其所属树的解析基准，预设行使用网关上下文的基准。服务或对应基准不存在时，`meta` 缺席。元信息只读取导出的 locale JSON，不使用包清单回退或图标，也不会加载或激活插件。
+展示元信息来自可选的 `pluginPackages` 服务：Loader 行使用其所属树的解析基准，预设行使用网关上下文的基准。服务或对应基准不存在时，`meta` 缺席。读取元信息不会加载或激活插件。
 
 ### 阶段映射
 

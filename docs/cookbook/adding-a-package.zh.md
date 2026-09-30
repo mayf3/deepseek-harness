@@ -129,32 +129,23 @@ Append-only, prefix-stable, replacing, or independent behavior, including the ex
 ```json
 {
   "exports": {
+    "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": ["locale/*.json"]
 }
 ```
 
-语言文件放在同一目录，以导出的 `locale/en.json` 作为发现入口。exports 映射可以将 `./locale/*.json` 重定向到其他目录；同一插件的所有语言文件必须共享选中的目录。字段可选，填写时必须是非空字符串。文件或字段缺失时允许回退，JSON 损坏或字段无效时显示单插件诊断。
+语言文件统一放在 `locale/`，并保留 `en.json` 作为发现入口。字段可选，填写时必须是非空字符串。文件或字段缺失时允许回退，JSON 损坏或字段无效时显示单插件诊断。
 
-普通插件只读取这些 locale 资源。各字段先按现有 locale 语言链独立回退；标题仍缺失时使用完整 Cordis 插件名，描述仍缺失时不显示描述。无需 JavaScript `meta` 导出。
+各字段先独立回退，再按页面规则格式化技术名称；回退优先经过现有 locale 语言链：
 
-只有组合包还会读取可访问的 `<组合包名>/package.json` 中的 `name`、`description` 和既有的 `icon`。若包的 exports 映射隐藏了这些字段，应导出 `./package.json`；普通插件的展示读取不会探查它。
+- 标题：locale `meta.title` → 包根插件的 `package.json.name` → 完整 Cordis 插件名。
+- 描述：locale `meta.description` → 包根插件的 `package.json.description` → 不显示描述。
 
-只有组合包可以定制插画。现有的清单 `icon` 路径继续受支持且优先使用。只有省略该字段时，才使用可选的 `./icon` 导出提供图片。将以下条目与已有运行时 exports 和发布文件合并：
+导出 `<包名>/locale/en.json` 供 locale 查询；需要包字段回退或声明图标时，开放 `<包名>/package.json`。`<包名>/search` 这样的子路径插件不是包，从不读取 `package.json`，即使导出了 `./search/package.json`；它用 `./search/locale/*.json` 提供文本，用 `./search/icon` 提供图片。
 
-```json
-{
-  "icon": "./icon.svg",
-  "exports": {
-    "./package.json": "./package.json",
-    "./icon": "./assets/logo.webp"
-  },
-  "files": ["icon.svg", "assets/logo.webp"]
-}
-```
-
-清单图标路径相对于声明清单，即使其导出被重定向也一样，并且经 realpath 解析后必须留在该目录内。绝对路径和 URL 无效。`./icon` 后备资源与 locale 一样使用 Node exports 解析，无需导出清单，但必须留在组合包根目录内。两种路径均支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP。图片必须自包含；SVG 作为图片渲染，不作为内联 HTML。声明无效或选中的文件不可读时，返回诊断并保留有效文本，不尝试另一种图标来源。图片缺失或无法解码时使用默认插画；普通插件行及其详情始终使用通用插画。
+要在组合包卡片、详情和组件行显示图片，包根插件在导出清单顶层设置 `"icon": "./icon.svg"`，或在省略该字段时导出 `./icon`。子路径插件导出自己的图标，例如 `"./search/icon": "./search.svg"`。将每张图片加入 `files`。清单 `icon` 相对于清单所在目录；绝对路径、URL、目录外路径，以及解析到目录外的符号链接均被拒绝。导出的图标像 locale 资源一样经 Node exports 解析，且必须位于所属包内。支持不超过 256 KiB 的 SVG、PNG、JPEG（`.jpg`/`.jpeg`）和 WebP 文件。图片必须自包含；SVG 作为图片渲染，不作为内联 HTML。Host 返回 data URL，不激活插件。声明无效或文件不可读时，显示元信息诊断并保留有效文本，不再尝试导出的图标；图片缺失或无法解码时使用面板的默认插画。
 
 已安装 bundle 的卡片和详情、组件列表与配置详情、设置中的插件清单都展示这些元信息，包括禁用插件和预设内插件。读取时不激活插件。
 

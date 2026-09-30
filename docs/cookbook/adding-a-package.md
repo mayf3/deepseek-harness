@@ -129,32 +129,23 @@ Merge these entries into `package.json`, retaining existing runtime exports and 
 ```json
 {
   "exports": {
+    "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": ["locale/*.json"]
 }
 ```
 
-Keep language files together, with `locale/en.json` as the exported discovery entry. An exports mapping can redirect `./locale/*.json` to another directory; all language files for that plugin must share the selected directory. Fields are optional; present values must be non-empty strings. Missing files or fields permit fallback, while malformed JSON or invalid fields produce a per-plugin diagnostic.
+Keep language files together in `locale/`, with `en.json` as the discovery entry. Fields are optional; present values must be non-empty strings. Missing files or fields permit fallback, while malformed JSON or invalid fields produce a per-plugin diagnostic.
 
-Ordinary plugins read only these locale resources. Fields fall back independently through the existing locale language chain, then use the complete Cordis plugin name for a missing title and no description for a missing description. No JavaScript `meta` export is needed.
+Fields fall back independently before view-specific name formatting, using the existing locale language chain first:
 
-Only bundles additionally read `name`, `description`, and legacy `icon` from an accessible `<bundle name>/package.json`. Export `./package.json` if the package exports map otherwise hides those fields; ordinary plugin display reads never probe it.
+- Title: locale `meta.title` → `package.json.name` for a package-root plugin → complete Cordis plugin name.
+- Description: locale `meta.description` → `package.json.description` for a package-root plugin → no description.
 
-Only bundles can customize artwork. Existing manifest `icon` paths remain supported and take priority. An optional `./icon` export supplies the image only when that field is omitted. Merge these entries with existing runtime exports and publication files:
+Export `<package name>/locale/en.json` for locale lookup; expose `<package name>/package.json` for package-field fallback or an icon declaration. A subpath plugin such as `<package name>/search` is not a package and never reads a `package.json`, even one exported at `./search/package.json`; it uses `./search/locale/*.json` for text and `./search/icon` for its image.
 
-```json
-{
-  "icon": "./icon.svg",
-  "exports": {
-    "./package.json": "./package.json",
-    "./icon": "./assets/logo.webp"
-  },
-  "files": ["icon.svg", "assets/logo.webp"]
-}
-```
-
-Manifest icon paths are relative to the declaring manifest, even when its export is remapped, and must remain inside that directory after realpath resolution. Absolute paths and URLs are invalid. The `./icon` fallback uses Node exports resolution like locale resources, needs no manifest export, and must remain inside the bundle root. Both paths accept SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP up to 256 KiB. Images must be self-contained; SVG is rendered as an image, not inline HTML. Invalid declarations or unreadable selected files produce a diagnostic while retaining valid text, without trying the other icon source. Absent or undecodable images use default artwork; ordinary plugin rows and details always use generic artwork.
+For an image on bundle cards, details, and component rows, a package-root plugin sets top-level `"icon": "./icon.svg"` in its exported manifest, or exports `./icon` when that field is omitted. A subpath plugin exports its own icon, such as `"./search/icon": "./search.svg"`. Include each image in `files`. A manifest `icon` is relative to the manifest's directory; absolute paths, URLs, paths outside that directory, and symlinks resolving outside it are rejected. An exported icon resolves through Node exports like locale resources and must remain inside its package. SVG, PNG, JPEG (`.jpg`/`.jpeg`), and WebP files are supported up to 256 KiB. Images must be self-contained; SVG is rendered as an image, not inline HTML. The Host returns a data URL without activating the plugin. Invalid declarations or unreadable files produce a metadata diagnostic while retaining valid text, without trying the export; missing or undecodable images use the panel's default artwork.
 
 Installed bundle cards and details, component lists and configuration details, and Settings' plugin inventory display this metadata, including disabled and preset plugins. Reads do not activate plugins.
 

@@ -10,7 +10,7 @@
 - text: 3 total · 3 off
 - list:
   - listitem:
-    - text: "@fixture/bundle"
+    - text: "@fixture/bundle Registry description for the fixture bundle."
     - code: fixture-row
     - text: "Off"
   - listitem:

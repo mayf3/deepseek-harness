@@ -491,10 +491,11 @@ describe('web e2e: plugin manager', () => {
     await closeSettings()
   })
 
-  it('prefers manifest icons over exported fallbacks and keeps ordinary plugin artwork generic', async () => {
+  it('prefers manifest icons for packages and reads exported icons for subpath plugins', async () => {
     const panel = await openPluginsPanel()
     onTestFinished(closeSettings)
     const fixtureIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/icon.svg'))).toString('base64')}`
+    const fallbackIcon = `data:image/svg+xml;base64,${(await readFile(join(FIXTURE_PLUGINS, 'fixture-bundle/fallback-icon.svg'))).toString('base64')}`
     const teamIcon = `data:image/svg+xml;base64,${(await readFile(fileURLToPath(new URL('../../../packages/experimental/agent-team-profile/icon.svg', import.meta.url)))).toString('base64')}`
     const images: string[] = []
     const checkImage = async (selector: string, source: string, label: string) => {
@@ -530,9 +531,10 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     await panel.getByRole('button', { name: '查看 @fixture/bundle', exact: true }).click()
     await checkImage('[data-plugin-detail]', fixtureIcon, 'Third-party bundle detail')
-    expect(await panel.locator('[data-plugin-row="fixture-search"] img').count()).toBe(0)
-    expect(await panel.locator('[data-plugin-row="fixture-search"] svg').count()).toBeGreaterThan(0)
-    images.push('Independent search row: generic artwork')
+    await checkImage('[data-plugin-row="fixture-search"]', fallbackIcon, 'Independent search row')
+    expect(await panel.locator('[data-plugin-row="fixture-review"] img').count()).toBe(0)
+    expect(await panel.locator('[data-plugin-row="fixture-review"] svg').count()).toBeGreaterThan(0)
+    images.push('Independent review row: generic artwork')
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'icons.expected.md'), images.join('\n'), MODE)
     await panel.getByRole('button', { name: '返回插件列表' }).click()
     expect(tripwire.pageErrors).toEqual([])

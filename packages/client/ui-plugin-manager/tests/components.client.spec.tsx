@@ -504,7 +504,7 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it('renders bundle icons with decode fallback and keeps ordinary row artwork generic', () => {
+  it('renders manifest icons for arbitrary bundles and rows, with decode fallback and source recovery', () => {
     const icon = 'data:image/svg+xml;base64,PHN2Zy8+'
     const updatedIcon = 'data:image/png;base64,cG5n'
     const bundle = pkg({ meta: { icon }, rows: [row({ meta: { icon } }), row({ entryId: 'plain' as PluginEntryId, rowId: 'plain', moduleName: 'plain' })] })
@@ -522,11 +522,18 @@ describe('PluginManagerPage', () => {
     expect(image().getAttribute('src')).toBe(icon)
     fireEvent.click(screen.getByRole('button', { name: 'View dsh-better-sidebar' }))
     expect(image().getAttribute('src')).toBe(icon)
+    const rowImage = document.querySelector<HTMLImageElement>('[data-plugin-row] img')!
+    expect(rowImage.getAttribute('src')).toBe(icon)
+    expect(rowImage.width).toBe(30)
+    expect(document.querySelector('[data-plugin-row="plain"] img')).toBeNull()
+    expect(document.querySelector('[data-plugin-row="plain"] svg')).not.toBeNull()
+    fireEvent.error(rowImage)
     expect(document.querySelector('[data-plugin-row] img')).toBeNull()
     expect(document.querySelector('[data-plugin-row] svg')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Configure dsh-better-sidebar' }))
-    expect(document.querySelector('[data-plugin-row-detail] img')).toBeNull()
-    expect(document.querySelector('[data-plugin-row-detail] svg')).not.toBeNull()
+    const detailImage = document.querySelector<HTMLImageElement>('[data-plugin-row-detail] img')!
+    expect(detailImage.getAttribute('src')).toBe(icon)
+    expect(detailImage.width).toBe(36)
   })
 
   it('shows metadata diagnostics without blocking management or displaying legacy descriptions', () => {

@@ -77,7 +77,7 @@ describe('optional bundles', () => {
   })
 
   it.each(OPTIONAL_BUNDLES)('%s resolves a title, description, and icon in both shipped languages', (name) => {
-    const meta = readPluginMeta(name, pathToFileURL(`${bundle(name).dir}/package.json`).href, { bundleDirectory: bundle(name).dir })
+    const meta = readPluginMeta(name, pathToFileURL(`${bundle(name).dir}/package.json`).href)
     expect(meta?.error).toBeUndefined()
     for (const field of [meta?.title, meta?.description]) {
       expect(typeof field).toBe('object')

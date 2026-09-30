@@ -133,7 +133,6 @@ describe('web e2e: settings modal and General preferences', () => {
     await globalToggle.click()
     const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
     await pluginRow.waitFor({ timeout: 10_000 })
-    expect(await pluginRow.getByText('Model-facing subagent delegation tool over the ctx.subagents seam', { exact: true }).count()).toBe(0)
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
       .length
