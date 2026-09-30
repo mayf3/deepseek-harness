@@ -199,6 +199,16 @@ const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
 }
 
+/**
+ * Bundles an earlier release shipped and the installation no longer carries;
+ * loading a profile removes them from its bundle list.
+ */
+const RETIRED_BUNDLES: ReadonlySet<string> = new Set([
+  // The Web composition mounts Schedule itself
+  // ([upgrade guide](../../../../docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md)).
+  '@deepseek-ai/dsh-experimental-schedule-bundle',
+])
+
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-base']
 
@@ -573,27 +583,28 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
 
 /**
  * Normalize an exact installation-owned bundle tuple to its shipped template,
- * preserving all other manifest fields. Other bundle lists remain untouched.
+ * and drop {@link RETIRED_BUNDLES} from any other bundle list, preserving all
+ * other manifest fields. The manifest is written only when its bundles change.
  */
-function normalizeShippedProfile(name: string, dir: string, manifest: ProfileManifest): ProfileManifest {
+function normalizeProfileManifest(name: string, dir: string, manifest: ProfileManifest): void {
+  const bundles = manifest.dsh?.profile?.bundles
+  if (bundles === undefined) return
   const installationOwned = INSTALLATION_OWNED_PROFILE_TUPLES[name]
   const template = PROFILE_TEMPLATES[name]
-  const bundles = manifest.dsh?.profile?.bundles
-  if (template === undefined || bundles === undefined) return manifest
-  const isRetiredTuple = installationOwned !== undefined && sameBundles(bundles, installationOwned)
-  if (!isRetiredTuple) return manifest
-  const normalized: ProfileManifest = {
+  const normalized = template !== undefined && installationOwned !== undefined && sameBundles(bundles, installationOwned)
+    ? template.bundles
+    : bundles.filter(bundle => !RETIRED_BUNDLES.has(bundle))
+  if (sameBundles(normalized, bundles)) return
+  writeProfileManifest(dir, {
     ...manifest,
     dsh: {
       ...manifest.dsh,
       profile: {
         ...manifest.dsh?.profile,
-        bundles: [...template.bundles],
+        bundles: [...normalized],
       },
     },
-  }
-  writeProfileManifest(dir, normalized)
-  return normalized
+  })
 }
 
 /**
@@ -689,7 +700,8 @@ export function loadProfileDirectory(
 
 /**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
- * layer and parse the profile's own patch file. Unreadable or incompatible bundles
+ * layer and parse the profile's own patch file. The stored bundle list first
+ * drops retired bundles and a retired installation-owned tuple. Unreadable or incompatible bundles
  * are skipped and listed in `skippedBundles`; profile manifest and user patch errors still throw.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param name - the profile name.
@@ -715,7 +727,7 @@ export function loadProfile(
     initProfile(dir, template.bundles)
   }
   removeLinkProjections(dir)
-  normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  normalizeProfileManifest(name, dir, readProfileManifest(binName, dir))
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 
