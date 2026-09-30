@@ -29,7 +29,7 @@ Tool calls appear in the conversation as cards: a root call tree with its nested
 
 Shared Tool rows and Bash rows retain error and warning colors for failed and stopped summaries, including on hover. Hover darkens only summaries without those states.
 
-Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Read/write/edit show an openable path once `file_path` closes and decodes without errors; write/edit also show `Preparing content NKB` after that path while content streams, never as a standalone summary. N rounds the decoded content's UTF-16 length up in units of 1024, not file bytes. Command rows show the streamed description. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
+Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Read/write/edit show an openable path once `file_path` closes and decodes without errors; write/edit also show `NKB` after that path while content streams, never as a standalone summary. N rounds the decoded content's UTF-16 length up in units of 1024, not file bytes. Command rows show the streamed description. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
 
 ### Registering a business tool view
 

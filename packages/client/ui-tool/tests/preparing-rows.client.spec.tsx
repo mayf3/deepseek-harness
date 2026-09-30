@@ -66,7 +66,7 @@ describe('tool preparation', () => {
     const args = new PartialArguments()
     args.append(`{"${field}":"hello`)
     const view = render(<FileMutationRow {...preparation(name, args)} />)
-    expect(view.queryByText('Preparing content 1KB')).toBeNull()
+    expect(view.queryByText('1KB')).toBeNull()
     expect(view.queryByRole('button')).toBeNull()
   })
 
@@ -81,11 +81,11 @@ describe('tool preparation', () => {
     args.append('.txt"')
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('hello.txt')).toBeTruthy()
-    expect(view.queryByText('Preparing content 1KB')).toBeNull()
+    expect(view.queryByText('1KB')).toBeNull()
     args.append(',"content":"hello')
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('hello.txt')).toBeTruthy()
-    expect(view.getByText('Preparing content 1KB')).toBeTruthy()
+    expect(view.getByText('1KB')).toBeTruthy()
     fireEvent.click(view.getByText('hello.txt'))
     expect(props.openFile).toHaveBeenCalledWith('hello.txt')
     const started: StartedToolCall = {
@@ -97,7 +97,7 @@ describe('tool preparation', () => {
     expect(row).toBe(preparingRow)
     expect(view.getByText('hello.txt')).toBeTruthy()
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
-    expect(view.queryByText('Preparing content 1KB')).toBeNull()
+    expect(view.queryByText('1KB')).toBeNull()
     const result: ToolResultNode = {
       kind: 'tool-result', seq: 3, time: 3, callId: 'call', callTime: 2,
       name: 'write', args: PartialArguments.fromText(started.argsRaw),
@@ -141,13 +141,13 @@ describe('tool preparation', () => {
     args.append(`{"file_path":"hello.txt","old_string":"${'a'.repeat(600)}","new_string":"`)
     const props = preparation('edit', args)
     const view = render(<FileMutationRow {...props} />)
-    expect(view.getByText('Preparing content 1KB')).toBeTruthy()
+    expect(view.getByText('1KB')).toBeTruthy()
     args.append('b'.repeat(424))
     expect(args.refresh()).toBe(false)
     args.append('b')
     expect(args.refresh()).toBe(true)
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
-    expect(view.getByText('Preparing content 2KB')).toBeTruthy()
+    expect(view.getByText('2KB')).toBeTruthy()
   })
 
   it('shows a streamed Bash description without enabling expansion', () => {

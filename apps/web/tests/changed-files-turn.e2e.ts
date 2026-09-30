@@ -162,14 +162,14 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       await row.getByRole('button').waitFor()
       expect(await row.locator('[aria-expanded]').count()).toBe(0)
       expect(await row.locator('pre').count()).toBe(0)
-      expect(await row.getByText(/正在准备内容 \d+KB/).count()).toBe(0)
+      expect(await row.getByText(/^\d+KB$/).count()).toBe(0)
       await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}.expected.md`), await row.ariaSnapshot(), MODE)
       preparation.release.resolve(undefined)
       await Promise.race([
         preparation.contentReady.promise,
         settled.then(() => { throw new Error(`No open ${preparation.name} content prefix was streamed`) }),
       ])
-      await row.getByText('正在准备内容 1KB', { exact: true }).waitFor()
+      await row.getByText('1KB', { exact: true }).waitFor()
       expect(await row.locator('[aria-expanded]').count()).toBe(0)
       expect(await row.locator('pre').count()).toBe(0)
       await compareOrRefreshGolden(join(DIR, `preparing-${preparation.name}-content.expected.md`), await row.ariaSnapshot(), MODE)
