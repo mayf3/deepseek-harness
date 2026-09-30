@@ -602,7 +602,7 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
 
 /**
  * One package's page: the crumb back to the list; its icon with its switch
- * and, for a package the profile installed, uninstall; its title beside its
+ * and, for a package the profile installed or a selection the Host can remove, uninstall; its title beside its
  * version tag, its beta tag, and its problem tag; the package name the title
  * stands for; its one-liner; the Host's problem when it reports one; the
  * configuration the bundle registered for itself; its rows with their switches
@@ -640,7 +640,7 @@ function PackageDetail({
         actions={(
           <div className={css.detailActions}>
             {renderSlot('plugins.detail.actions', { subject })}
-            {pkg.installed
+            {pkg.installed || pkg.removable
               ? (
                 <Button
                   variant="outline"
