@@ -463,6 +463,8 @@ describe('mode-aware wire contribution', () => {
         expect.stringContaining('Provide `description` before `code` in the arguments.'))
       const assembly = await systemPrompt.assemble()
       expect(assembly.tools.find(tool => tool.name === RUN_CODE_NAME)?.parameters).toEqual(parameters)
+      expect(assembly.tools.find(tool => tool.name === RUN_CODE_NAME)?.description)
+        .toContain('arguments: `description`, a short summary of what the program does, and `code`')
 
       // defineTool validates its captured static schema, independently of the runtime parameters getter.
       const rejected = await ctx.tools.execute({

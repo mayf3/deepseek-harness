@@ -53,9 +53,9 @@ interface RunCodeFlavor {
 const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
   description:
     'Execute a TypeScript program against the available tools. Takes two required '
-    + 'arguments: `code`, the BODY of an async function (erasable syntax only; top-level '
-    + '`await` and `return` work), and `description`, a short summary of what the program '
-    + 'does. Call tools as `await tools.name(args)` per the declarations in the system '
+    + 'arguments: `description`, a short summary of what the program does, and `code`, '
+    + 'the BODY of an async function (erasable syntax only; top-level `await` and '
+    + '`return` work). Call tools as `await tools.name(args)` per the declarations in the system '
     + 'prompt. Only what you print or return is program output — curate it. Image-bearing '
     + 'subtool results are attached after the run.',
   codeDescription: 'The program: the body of an async TypeScript function.',
@@ -69,8 +69,8 @@ const TYPESCRIPT_FLAVOR: RunCodeFlavor = {
 const PYTHON_FLAVOR: RunCodeFlavor = {
   description:
     'Execute a Python program against the available tools. Takes two required '
-    + 'arguments: `code`, the BODY of an async function (top-level `await` and `return` '
-    + 'work), and `description`, a short summary of what the program does. Call tools as '
+    + 'arguments: `description`, a short summary of what the program does, and `code`, '
+    + 'the BODY of an async function (top-level `await` and `return` work). Call tools as '
     + '`await tools.name(args)` per the declarations in the system prompt. Use '
     + '`print(...)` and/or `return <value>` for program output — curate it. Image-bearing '
     + 'subtool results are attached after the run.',
@@ -321,8 +321,8 @@ export interface RunCodeBridgeOptions {
 }
 
 /**
- * Build the `run_code` {@link ToolDefinition}: required `code` and
- * `description` parameters, executed through the dispatch bridge described
+ * Build the `run_code` {@link ToolDefinition}: required `description` and
+ * `code` parameters, executed through the dispatch bridge described
  * above. The
  * registry reserves it as presentation infrastructure under non-native modes,
  * outside the filterable global/scoped capability layers.
