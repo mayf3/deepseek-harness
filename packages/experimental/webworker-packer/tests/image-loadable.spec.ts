@@ -314,7 +314,7 @@ const archive = async (): Promise<Uint8Array> =>
     inventory.apply({
       baseUrl,
       loader: tree,
-      // The inventory reads both optional services; this host provides neither.
+      // The inventory reads these optional services; this host provides none of them.
       get: (name: string): undefined => {
         expect(['pluginPackages', 'agentPresets']).toContain(name)
         return undefined
