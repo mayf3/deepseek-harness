@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-With `dsh-typert-protocol`, business packages can expose Host methods to Remote clients: mark a method with `@Remote` (or `@RemoteScope` for scoped receivers), bind the service to a wire namespace, and associate Host objects and scoped Contexts with wire identities through the merge-extensible protocol maps. Generated artifacts, the Host Gateway, and the Client API consume the same invocation descriptors, codecs, and provider contracts, so one declaration set stays in sync across every face. The package registers no Cordis service and runs no TypeScript analysis; it declares types and decorator markers only.
+With `dsh-typert-protocol`, business packages can expose Host methods to Remote clients: mark a method with `@Remote` (or `@RemoteScope` for scoped receivers), bind the service to a wire namespace, and associate Host objects and scoped Contexts with wire identities through the merge-extensible protocol maps. Generated artifacts, the Host Gateway, and the Client API consume the same invocation descriptors, codecs, and provider contracts. Invocation-owned values transfer cleanup to Gateway without adding a reference count. The package registers no Cordis service and runs no TypeScript analysis.
 
 ## Table of Contents
 
@@ -44,9 +44,30 @@ export class GoalService extends TypertRemoteService {
 
 Generation turns the method into a wire endpoint under the service's namespace; Clients call it as a typed method through `ctx.remote` (see the [API Gateway reference](../../../docs/api-gateway.md)). A method opts into cooperative cancellation by declaring `signal: AbortSignal` as its final parameter — the signal is injected, never a JSON parameter or lookup field.
 
+A unary method can return `Uint8Array` directly or within nested objects, arrays, tuples, optional fields, unions, and recursive types. Generation supplies optional result codec `encode()` and `decode()` functions: encoding visits only subtrees whose types can contain bytes, while decoding validates reconstructed values; Client declarations use `Uint8Array<ArrayBuffer>` at every byte position while retaining other field types. Pure JSON results pass through without Host byte detection or Client parsing. Parameters, events, and stream items remain JSON-only; runtime object cycles are unsupported.
+
+A stream method (`@Remote({ mode: 'stream' })`) returns `Iterable`, `AsyncIterable`, or `RemoteStream<Out, In>`. `In` declares the items the Client may send back on the same logical stream; the method reads them through `this.ctx.invocation.uplink<In>()`, and the descriptor carries their codec. `RemoteInvocation` also names the receiving `service`, the calling `peer` (a `PeerScope` the connection layer admitted), and the carrier `signal`; `ctx.invocation` is `undefined` on a Context no Remote call derived: the first `bindTypertRemote()` binding in a tree, which every `TypertRemoteService` constructor makes, registers that accessor on the root. A generated Client stream method returns `RemoteStreamHandle<Out, In>`: the handle with `send`, `end`, and `dispose` beside the downlink iteration. Uplink items are validated one by one at the Host because they arrive from the browser; downlink items are values the Host method produced and pass through.
+
 ### Associating Host objects and Contexts with wire identities
 
-Complex Host objects cannot cross the wire directly. A business package declares the association through the merge-extensible `TypertLookupMap` and `TypertContextMap`. Host and Client Context adapters both map `Context` to a wire identity and that identity back to `Context`; the Host adapter also owns the stable wire declaration. Host composition may override its synchronous or asynchronous resolver. A policy rejection can throw `TypertLookupFailure` to carry an adapter-owned failure value to the caller.
+Complex Host objects cannot cross the wire directly. A business package declares the association through the merge-extensible `TypertLookupMap` and `TypertContextMap`. A Host Context adapter owns the stable wire declaration and resolves wire identities to live Contexts. A Client Context adapter maps in both directions because scoped calls originate from a Client Context and forwarded Host events resolve their explicit wire identity there. Host composition may override its synchronous or asynchronous resolver. A resolver that refuses on policy grounds throws `RemoteError` with its own code, which reaches the caller unchanged.
+
+Client Context resolution is synchronous. `typertOwnedValue(value, release)` transfers a non-throwing, idempotent cleanup to the invocation owner; Gateway calls it after handler and reply settlement. A borrowed Context requires no cleanup wrapper. The shared `TYPERT_OWNED_VALUE` symbol and `isTypertOwnedValue` recognizer work across independently bundled providers and Gateway; the wrapper itself does not retain a resource.
+
+### Reporting and reading a Remote failure
+
+One class carries every Remote failure: `RemoteError`, holding a stable `<domain>/<reason>` code and the details typed for that code. This package declares the universal carrier codes (`gateway/bad-request`, `gateway/cancelled`, `gateway/internal`) and owns `RemoteErrorDetailsMap`, the merge-extensible table every other package extends beside its own throwing code:
+
+```text
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'goal/not-found': { readonly goalId: string }
+  }
+}
+throw new RemoteError('goal/not-found', `goal "${id}" does not exist`, { goalId: id })
+```
+
+An owner throws at the failure point; no package writes an error-class family or an exit-mapping function. A caller discriminates by `code` — never by `instanceof` — and a `code` branch narrows `details` with no cast, because `RemoteFailure` is the code-discriminated union of `RemoteError` instances. Infrastructure that must recognize a failure carried across a module or realm copy of the class calls `remoteErrorOf(value)`, which reads a structural marker instead of the prototype chain.
 
 ### Receiving forwarded Host events on the Client
 
@@ -64,27 +85,29 @@ This section explains how the declarations stay compiler-independent and where e
 
 ### Design concept
 
-The package keeps reflection out of the compiler: decorator initializers retain markers in a module-private `WeakMap` keyed by the Service prototype, with no constructor symbols, prototype properties, parameter metadata, or runtime reflection fields. Full parameter, result, lookup, and schema reflection is the Typert build pipeline's job, delivered through `InvocationDescriptor`.
+The package keeps strict reflection in the compiler: decorator initializers retain minimal markers in a versioned descriptor on the Service prototype. The descriptor uses a stable string property name, so another installed copy of the protocol package can read the same markers. Full parameter, result, lookup, and schema reflection is the Typert build pipeline's job, delivered through `InvocationDescriptor`.
 
 ### Remote markers
 
-`@Remote` and `@RemoteScope` schedule an initializer that records the method name, an optional export name, and the invocation mode; `remoteMethods(service)` returns a detached declaration-order snapshot that the Gateway's source-mode fallback reads. Markers require public, non-static instance methods with string names, and conflicting markers on one method are rejected.
+`@Remote` and `@RemoteScope` schedule an initializer that appends the method name, an optional export name, and the invocation mode to the prototype descriptor; `remoteMethods(service)` validates its version and returns a detached declaration-order snapshot that the Gateway's source-mode fallback reads. Markers require public, non-static instance methods with string names, and conflicting markers on one method are rejected.
 
 ### Protocol maps and descriptors
 
-The merge-extensible protocol maps keep static associations in the type system, while runtime providers register resolution with `ctx.typert`; the map names and shapes live in [`src/types.ts`](src/types.ts). `InvocationDescriptor` is the shared runtime form consumed by the registry, the Gateway, and the Client Remote, covering direct and Context receivers, JSON and lookup parameters, scope projections, cancellation, and result codecs.
+The merge-extensible protocol maps keep static associations in the type system, while runtime providers register resolution with `ctx.typert`; the map names and shapes live in [`src/types.ts`](src/types.ts). `InvocationDescriptor` is the shared runtime form consumed by the registry, the Gateway, and the Client Remote, covering direct and Context receivers, JSON and lookup parameters, scope projections, the uplink codec, cancellation, and result codecs.
 
 ### Wire identity grammar
 
-Every namespace, method, lookup, and Context segment must satisfy `isTypertRemoteSegment()`, so generated names cross the shared RPC carrier unchanged. Strict codecs carry generated schemas; `src-json` codecs identify the weaker source-launch path.
+Every namespace, method, lookup, and Context segment must satisfy `isTypertRemoteSegment()`, so generated names cross the shared RPC carrier unchanged. Strict codecs carry generated schema factories; `src-json` codecs identify the weaker source-launch path.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Decorators, Gateway bindings, `remoteMethods`, segment validation, `TypertLookupFailure` |
-| [`src/types.ts`](src/types.ts) | Protocol maps, `InvocationDescriptor`, codecs, provider contracts, registry interfaces, `TypertClientRemote` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
+| [`src/index.ts`](src/index.ts) | Decorators, Gateway bindings, `remoteMethods`, segment validation |
+| [`src/json-value.ts`](src/json-value.ts) | `isRemoteJsonValue` and `isRemoteUplinkItem`, the lossless JSON checks every carrier shares |
+| [`src/remote-error.ts`](src/remote-error.ts) | `RemoteError` and the structural `remoteErrorOf` recognizer |
+| [`src/types.ts`](src/types.ts) | Protocol maps, `RemoteErrorDetailsMap`, `RemoteResult`, `RemoteStream`, `RemoteStreamHandle`, `PeerScope`, `RemoteInvocation`, `InvocationDescriptor`, codecs, provider contracts, registry interfaces, `TypertClientRemote` |
+| — | No runtime invariant companion is published; decorators retain private immutable declarations and bindings are frozen values with no independent event stream to cross-check. |
 
 </details>
 

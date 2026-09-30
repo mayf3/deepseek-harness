@@ -1,8 +1,8 @@
 /** Fire-and-forget webhook rule registry and Workspace-backed Session runtime. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { deepFreeze, errorChain } from '@deepseek-ai/dsh-llm'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
+import { errorChain } from '@deepseek-ai/dsh-llm'
+import { deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WebhookRuleId } from './brand.ts'
 import { createWebhookSession } from './session.ts'
 import type { VerifiedWebhookDelivery, WebhookRule, WebhookSessionRequest } from './types.ts'
@@ -100,7 +100,7 @@ export class WebhookRuntime extends Service {
 
     // The public generic preserves adapter-specific authoring types. The runtime
     // stores one erased callback after validating the shared provider tag.
-    const erased = rule as unknown as AnyWebhookRule
+    const erased = rule as AnyWebhookRule
     let registration!: RuleRegistration
     const disposeEffect = this.ctx.effect(() => {
       /* v8 ignore next -- no await separates the public liveness check from this initializer. */

@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-skill'
 import { describe, expect, it, vi } from 'vitest'
@@ -15,12 +15,14 @@ function observation(
   const lease = (): SessionObservation => ({
     source: 'live',
     header: {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
+      isSeeded: false,
       ...options.cwd === undefined ? {} : { cwd: options.cwd },
     },
     events,
+    inheritedEventCount: SessionLogOffset(0),
     cursor: -1,
     projections: {
       asOfSeq: -1,
@@ -55,6 +57,7 @@ describe('SessionSkillCatalog', () => {
         name: 'review',
         description: 'Review the current change.',
         whenToUse: 'Before publishing.',
+        path: '/cold/project/.agents/skills/review/SKILL.md',
         invocation: { modelInvocable: true, userInvocable: true },
       },
       {
@@ -71,6 +74,7 @@ describe('SessionSkillCatalog', () => {
         name: 'review',
         description: 'Review the current change.',
         whenToUse: 'Before publishing.',
+        path: '/cold/project/.agents/skills/review/SKILL.md',
         modelInvocable: true,
       }],
     })
@@ -86,7 +90,7 @@ describe('SessionSkillCatalog', () => {
     const sessionId = SessionId('live-skills')
     const session = ctx.sessions.create(sessionId, { meta: { cwd: '/live/project' } })
     const agent = { id: sessionId, session, status: 'idle', ctx } as Agent
-    ctx.agents.register(agent)
+    await ctx.agents.register(agent)
     ctx.provide('sessionQuery', {
       observeSession: () => Promise.resolve(observation(sessionId, { cwd: '/live/project' })),
     } as never)
@@ -95,10 +99,10 @@ describe('SessionSkillCatalog', () => {
       description: 'Composed for this Agent.',
       invocation: { modelInvocable: false, userInvocable: true },
     }]))
-    const standingKeyFor = vi.fn()
+    const acquireScope = vi.fn()
     ctx.provide('agentPresets', {
       serviceFor: () => ({ list: scopedList }),
-      standingKeyFor,
+      acquireScope,
     } as never)
     const catalog = new SessionSkillCatalog(ctx)
 
@@ -110,7 +114,7 @@ describe('SessionSkillCatalog', () => {
       }],
     })
     expect(scopedList).toHaveBeenCalledWith({ cwd: '/live/project', scope: agent })
-    expect(standingKeyFor).not.toHaveBeenCalled()
+    expect(acquireScope).not.toHaveBeenCalled()
   })
 
   it('uses the recorded preset standing scope for a cold Session', async () => {
@@ -123,14 +127,14 @@ describe('SessionSkillCatalog', () => {
         agentPreset: 'minimal',
       })),
     } as never)
-    const standingKeyFor = vi.fn(() => Promise.resolve(scope))
-    ctx.provide('agentPresets', { standingKeyFor } as never)
+    const acquireScope = vi.fn(() => Promise.resolve({ key: scope, [Symbol.asyncDispose]: async () => {} }))
+    ctx.provide('agentPresets', { acquireScope } as never)
     const list = vi.fn(() => Promise.resolve([]))
     ctx.provide('skills', { list } as never)
     const catalog = new SessionSkillCatalog(ctx)
 
     await expect(catalog.list({ sessionId }, new AbortController().signal)).resolves.toEqual({ skills: [] })
-    expect(standingKeyFor).toHaveBeenCalledWith('minimal')
+    expect(acquireScope).toHaveBeenCalledWith('minimal')
     expect(list).toHaveBeenCalledWith({ cwd: '/cold/project', scope })
     expect(ctx.agents.list()).toEqual([])
   })
@@ -145,7 +149,7 @@ describe('SessionSkillCatalog', () => {
       })),
     } as never)
     ctx.provide('agentPresets', {
-      standingKeyFor: () => Promise.reject(new Error('unknown preset')),
+      acquireScope: () => Promise.reject(new Error('unknown preset')),
     } as never)
     const list = vi.fn(() => Promise.resolve([]))
     ctx.provide('skills', { list } as never)
@@ -161,9 +165,9 @@ describe('SessionSkillCatalog', () => {
         'session "missing-skills" not found',
         'SESSION_QUERY_SESSION_NOT_FOUND',
       ),
-      code: 'session-not-found',
+      code: 'session/not-found',
     },
-    { error: new Error('storage offline'), code: 'internal' },
+    { error: new Error('storage offline'), code: 'gateway/internal' },
   ] as const)('classifies failed Session inspection as $code', async ({ error, code }) => {
     const ctx = await context()
     ctx.provide('sessionQuery', { observeSession: () => Promise.reject(error) } as never)
@@ -172,7 +176,7 @@ describe('SessionSkillCatalog', () => {
     await expect(catalog.list(
       { sessionId: SessionId('missing-skills') },
       new AbortController().signal,
-    )).rejects.toMatchObject({ failure: { code } })
+    )).rejects.toMatchObject({ code })
   })
 
   it('reports an absent skill registry instead of an empty catalog', async () => {
@@ -184,7 +188,7 @@ describe('SessionSkillCatalog', () => {
     const catalog = new SessionSkillCatalog(ctx)
 
     const failed = catalog.list({ sessionId }, new AbortController().signal)
-    await expect(failed).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(failed).rejects.toMatchObject({ code: 'gateway/internal' })
     await expect(failed).rejects.toThrow('skill registry is absent')
   })
 
@@ -199,10 +203,10 @@ describe('SessionSkillCatalog', () => {
     const catalog = new SessionSkillCatalog(ctx)
 
     const unprojected = catalog.list({ sessionId }, new AbortController().signal)
-    await expect(unprojected).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(unprojected).rejects.toMatchObject({ code: 'gateway/internal' })
     await expect(unprojected).rejects.toThrow('projected Session observation')
     const cwdless = catalog.list({ sessionId }, new AbortController().signal)
-    await expect(cwdless).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(cwdless).rejects.toMatchObject({ code: 'gateway/internal' })
     await expect(cwdless).rejects.toThrow('has no project cwd')
   })
 
@@ -219,7 +223,7 @@ describe('SessionSkillCatalog', () => {
 
     await expect(catalog.list({ sessionId }, new AbortController().signal))
       .rejects.toMatchObject({
-        failure: { code: 'internal', message: 'skill listing failed: Error: catalog offline' },
+        code: 'gateway/internal', message: 'skill listing failed: Error: catalog offline',
       })
   })
 })

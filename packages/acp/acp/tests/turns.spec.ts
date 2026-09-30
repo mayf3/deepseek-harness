@@ -1,4 +1,5 @@
 import { createUserMessage, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -9,6 +10,12 @@ import {
   textResponse,
   type BridgeHarness,
 } from './harness.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'test': { kind: 'test' } & ContextFormed
+  }
+}
 
 async function newSession(harness: BridgeHarness): Promise<string> {
   await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
@@ -188,7 +195,7 @@ describe('ACP prompt lifecycle', () => {
     harness.ctx.on('agent/inbox/inserted', ({ agent: subject, message }) => {
       if (subject === agent && message.source.kind === 'user' && !injected) {
         injected = true
-        agent.inject(createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'plugin', plugin: 'test' } }))
+        agent.inject(createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'test' } }))
       }
     })
 
@@ -203,12 +210,12 @@ describe('ACP prompt lifecycle', () => {
     const agent = harness.ctx.agents.get(SessionId(sessionId))!
     let autonomousStarted!: () => void
     const started = new Promise<void>((resolve) => { autonomousStarted = resolve })
-    harness.ctx.on('session/event', (session, event) => {
-      if (session === agent.session && event.type === 'assistant/chunk') autonomousStarted()
+    harness.ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent && frame.type === 'chunk') autonomousStarted()
     })
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'autonomous work' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }))
     await started
 
@@ -216,7 +223,7 @@ describe('ACP prompt lifecycle', () => {
     const prompt = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
       .finally(() => { settled = true })
     await vi.waitFor(() => {
-      expect(agent.session.events.filter(event => event.type === 'agent/inbox/spliced'
+      expect(agent.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.length > 0)).toHaveLength(2)
     })
     expect(settled).toBe(false)
@@ -230,7 +237,7 @@ describe('ACP prompt lifecycle', () => {
       kind: 'enter',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'rewritten prompt' }],
-        source: { kind: 'plugin', plugin: 'test' },
+        source: { kind: 'test' },
       })],
     }))
     const sessionId = await newSession(harness)
@@ -316,7 +323,7 @@ describe('ACP prompt lifecycle', () => {
 
     await expect(first).resolves.toEqual({ stopReason: 'cancelled' })
     expect(harness.adapter.requests).toEqual([])
-    const events = harness.ctx.agents.get(SessionId(sessionId))?.session.events ?? []
+    const events = harness.ctx.agents.get(SessionId(sessionId))?.session.snapshotEvents() ?? []
     expect(events.some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
   })
 
@@ -332,7 +339,7 @@ describe('ACP prompt lifecycle', () => {
     const agent = harness.ctx.agents.get(SessionId(sessionId))!
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'unrelated work' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }))
     await vi.waitFor(() => { expect(harness!.adapter.requests).toHaveLength(1) })
 
@@ -375,7 +382,7 @@ describe('ACP prompt lifecycle', () => {
 
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'unrelated work' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }))
     await agent.whenIdle()
     releaseValidation.resolve(undefined)
@@ -443,7 +450,7 @@ describe('ACP prompt lifecycle', () => {
     await harness.client.cancel({ sessionId })
     await expect(prompt).resolves.toEqual({ stopReason: 'cancelled' })
     await agent.whenIdle()
-    expect(agent.session.events.findLast(event => event.type === 'turn/end')?.data.reason)
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })
 
@@ -465,16 +472,16 @@ describe('ACP prompt lifecycle', () => {
     const agent = harness.ctx.agents.get(SessionId(sessionId))!
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'autonomous work' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'test' },
     }))
     await vi.waitFor(() => {
-      expect(agent.session.events.some(event => event.type === 'turn/start')).toBe(true)
+      expect(agent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(true)
     })
 
     await harness.client.cancel({ sessionId })
     await agent.whenIdle()
 
-    expect(agent.session.events.findLast(event => event.type === 'turn/end')?.data.reason)
+    expect(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end')?.data.reason)
       .toEqual({ kind: 'aborted', reason: { kind: 'user' } })
   })
 

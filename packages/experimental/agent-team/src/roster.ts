@@ -2,14 +2,16 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { ContinuableStart } from '@deepseek-ai/dsh-subagent'
 import { errorMessage, TeamError } from './error.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamRuntimeLifecycle } from './lifecycle.ts'
+import { readPersistedSession } from './persisted.ts'
 import type { TeamState } from './projection.ts'
 import { messageAccepted } from './session-message.ts'
 import { TeamId } from './types.ts'
@@ -131,7 +133,7 @@ export class TeamRoster {
       id: root.id,
       name: 'lead',
       role: 'lead',
-      status: root.status,
+      status: availability(root),
       ...root.options.model === undefined ? {} : { model: root.options.model },
       diagnostics: [],
     }]
@@ -146,7 +148,7 @@ export class TeamRoster {
           ? 'failed'
           : member.phase === 'provisioning'
             ? 'provisioning'
-            : live?.status ?? 'inactive',
+            : availability(live),
         description: member.description,
         provider: member.provider,
         context: member.context,
@@ -199,7 +201,7 @@ export class TeamRoster {
    * @param targetName - durable teammate name.
    * @returns the target status sampled before cancellation.
    */
-  interrupt(caller: Agent, targetName: string): { previousStatus: 'running' | 'idle' | 'inactive' } {
+  interrupt(caller: Agent, targetName: string): { previousStatus: 'running' | 'inactive' } {
     const membership = this.membership(caller)
     if (membership.role !== 'lead') throw new TeamError('only the Team Lead can interrupt teammates', 'TEAM_LEAD_REQUIRED')
     const state = this.journal.state(membership.root)
@@ -207,7 +209,7 @@ export class TeamRoster {
     if (target.id === membership.root.id) throw new TeamError('the Team Lead cannot interrupt itself', 'TEAM_INVALID_TARGET')
     const live = this.ctx.agents.get(target.id)
     if (live === undefined) return { previousStatus: 'inactive' }
-    const previousStatus = live.status
+    const previousStatus = availability(live)
     this.ctx.subagents.interrupt(target.id, { kind: 'ancestor', agent: caller })
     return { previousStatus }
   }
@@ -254,7 +256,7 @@ export class TeamRoster {
     const root = membership.root
     const name = this.memberName(request.name)
     const description = requiredText(request.description, 'description', 200)
-    const childId = SessionId(randomUUID())
+    const childId = brandString<SessionId>(randomUUID())
     const member: TeamMemberSnapshot = {
       id: childId,
       name,
@@ -272,7 +274,7 @@ export class TeamRoster {
       if (state.members.length >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
-      await this.journal.appendAndFlush(root, 'team/member', { version: 1, teamId: TeamId(root.id), member })
+      await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
     })
 
     let started: ContinuableStart
@@ -344,8 +346,8 @@ export class TeamRoster {
       signal.throwIfAborted()
       const session = this.ctx.sessions.get(childId)
       if (session === undefined) {
-        const stored = await this.ctx.sessionPersistence.inspect(childId, signal)
-        const suffix = stored.events.slice(stored.meta.seedLength ?? 0)
+        const stored = await readPersistedSession(this.ctx.sessionPersistence, childId, signal)
+        const suffix = stored.events.slice(stored.inheritedEventCount)
         if (messageAccepted(suffix, message => message.id === messageId)) return
         throw new TeamError(
           `teammate "${childId}" initial prompt was not durably accepted`,
@@ -373,7 +375,8 @@ export class TeamRoster {
       try {
         signal.throwIfAborted()
         await this.ctx.sessions.flush(session)
-        const suffix = session.events.slice(session.header.seedLength ?? 0)
+        // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+        const suffix = session.snapshotEvents(session.inheritedEventCount)
         if (messageAccepted(suffix, message => message.id === messageId)) return
         if (this.ctx.sessions.get(childId) !== session) continue
         await progress.promise
@@ -396,11 +399,11 @@ export class TeamRoster {
       let phase: 'active' | 'failed' = 'failed'
       let failure = 'provisioning did not leave a resumable child Session'
       try {
-        const loaded = await this.ctx.sessionPersistence.inspect(member.id, signal)
-        const suffix = loaded.events.slice(loaded.meta.seedLength ?? 0)
+        const loaded = await readPersistedSession(this.ctx.sessionPersistence, member.id, signal)
+        const suffix = loaded.events.slice(loaded.inheritedEventCount)
         const descriptor = foldSubagentDescriptor(suffix)
         const acceptedInitialPrompt = messageAccepted(suffix, message => message.source.kind === 'user')
-        if (loaded.meta.parentSession === root.id
+        if (loaded.header.parentSession === root.id
           && descriptor?.mode === 'continuable'
           && descriptor.provider === member.provider
           && acceptedInitialPrompt) {
@@ -422,7 +425,7 @@ export class TeamRoster {
           ...phase === 'failed' ? { error: failure } : {},
         }
         await this.journal.appendAndFlush(root, 'team/member', {
-          version: 1,
+          version: 2,
           teamId: TeamId(root.id),
           member: settled,
         })
@@ -437,7 +440,7 @@ export class TeamRoster {
       id: member.id,
       name: member.name,
       role: 'teammate',
-      status: live?.status ?? 'inactive',
+      status: availability(live),
       description: member.description,
       provider: member.provider,
       context: member.context,
@@ -470,7 +473,7 @@ export class TeamRoster {
       }
       if (current.phase !== 'provisioning') return current.phase
       await this.journal.appendAndFlush(root, 'team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         member: terminal,
       })
@@ -480,6 +483,12 @@ export class TeamRoster {
 
   /** Whether a Session's own suffix identifies a provider-owned subagent child. */
   private subagentDescriptor(agent: Agent): boolean {
-    return foldSubagentDescriptor(agent.session.events.slice(agent.session.header.seedLength ?? 0)) !== undefined
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
+    return foldSubagentDescriptor(agent.session.snapshotEvents(agent.session.inheritedEventCount)) !== undefined
   }
+}
+
+/** Turn availability is independent of whether the Agent is loaded. */
+function availability(agent: Agent | undefined): 'running' | 'inactive' {
+  return agent?.status === 'running' ? 'running' : 'inactive'
 }

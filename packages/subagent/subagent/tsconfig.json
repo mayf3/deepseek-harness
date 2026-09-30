@@ -15,6 +15,12 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
       "path": "../../core/agent"
     },
     {
@@ -33,7 +39,7 @@
       "path": "../../interaction/user-approval"
     },
     {
-      "path": "../../preset/agent-presets"
+      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../../sandbox/sandbox"
@@ -48,10 +54,10 @@
       "path": "../../session/session-projection"
     },
     {
-      "path": "../../session/session-projection-cache"
+      "path": "../../session-query/session-query"
     },
     {
-      "path": "../../session-query/session-query"
+      "path": "../../workspace/workspace"
     },
     {
       "path": "../../jobs/jobs"
@@ -60,7 +66,16 @@
       "path": "../../typert/protocol"
     },
     {
+      "path": "../../util/time"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../interaction/permission-presets"
+    },
+    {
+      "path": "../../util/chunked-list"
     }
   ]
 }

@@ -3,21 +3,27 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Schema from '@deepseek-ai/schemastery'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import type { JsonValue, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import { Context } from '@deepseek-ai/cordis'
+import { bindSnapshotSelector, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import type {
+  CredentialInfo, RemoteResult, SettingsNamespaceView,
+} from '@deepseek-ai/dsh-api-remotes/client'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
-import { pathOps } from '../src/client/ProviderEditor.tsx'
+import { ProviderEditor, pathOps } from '../src/client/ProviderEditor.tsx'
 import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
 } from '../src/client/DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
+import { createModelsOperations } from '../src/client/operations.ts'
+import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
 afterEach(cleanup)
@@ -41,6 +47,7 @@ function capacityInputs(label: string): HTMLInputElement[] {
 const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKeyEnv: Schema.string().role('credential-ref'),
+    api: Schema.union(['openai-completions', 'openai-responses', 'anthropic-messages']),
     baseURL: Schema.string(),
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
@@ -99,7 +106,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       },
       base: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
       user: { baseURL: 'https://base' },
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 0,
     },
@@ -109,7 +116,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
         profiles: Schema.dict(Schema.object({ note: Schema.string() })),
       }).toJSON())) as JsonValue,
       value: {},
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 0,
     },
@@ -118,7 +125,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
       value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
       user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 0,
     },
@@ -126,19 +133,50 @@ function wireNamespaces(): SettingsNamespaceView[] {
       ns: 'subagent-model-selection',
       schema: JSON.parse(JSON.stringify(Schema.object({ enabled: Schema.boolean().default(false) }).toJSON())) as JsonValue,
       value: { enabled: false },
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 4,
     },
+    {
+      ns: 'llm-deepseek-account',
+      schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
+      value: {
+        baseURL: 'https://base',
+        defaultContextWindow: 1_000_000,
+        maxTokens: 256_000,
+        models: DEFAULT_DEEPSEEK_MODELS,
+      },
+      base: { defaultContextWindow: 1_000_000, maxTokens: 256_000, models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+      autoGenerate: true, applies: 'live',
+      secrets: [],
+      revision: 0,
+    },
   ]
+}
+
+/** The account provider's settings namespace, under a composition's entry id. */
+function accountNamespace(ns = 'llm-deepseek-account'): SettingsNamespaceView {
+  return { ...wireNamespaces().find(view => view.ns === 'llm-deepseek-account')!, ns }
 }
 
 /** Credentials answers over the Remote carrier, which has no envelope. */
 function remoteOk<T>(value: T) {
   return { ok: true as const, value }
 }
-function remoteFail(message: string, code = 'credential-rejected') {
-  return { ok: false as const, error: { code, message, details: {} } }
+/** The codes this page's scripted Host answers refuse with. */
+type RefusalCode = 'credential/rejected' | 'gateway/internal' | 'settings/conflict' | 'settings/rejected'
+
+/** One refusal per code, each carrying the details its own code declares. */
+const REFUSALS: { [Code in RefusalCode]: (message: string) => RemoteError<Code> } = {
+  'credential/rejected': message => new RemoteError('credential/rejected', message, { ref: 'DEEPSEEK_API_KEY' }),
+  'gateway/internal': message => new RemoteError('gateway/internal', message, {}),
+  'settings/conflict': message =>
+    new RemoteError('settings/conflict', message, { ns: 'llm-pi-ai', expected: 4, actual: 5 }),
+  'settings/rejected': message => new RemoteError('settings/rejected', message, { ns: 'llm-pi-ai' }),
+}
+function remoteFail(message: string, code: RefusalCode = 'credential/rejected') {
+  return { ok: false as const, error: REFUSALS[code](message) }
 }
 
 function scriptedFace(overrides: {
@@ -174,13 +212,16 @@ function scriptedFace(overrides: {
       mutate,
     },
     credentials: {
-      describe: vi.fn((refs: string[]) => Promise.resolve(remoteOk(
-        Object.fromEntries(refs.map(ref => [ref, {
-          configured: ref === 'OPENAI_API_KEY',
-          ...ref === 'OPENAI_API_KEY' ? { source: 'file' } : {},
-          writable: true,
-        }])),
-      ))),
+      // Typed as the Remote answer rather than the success branch alone: a
+      // case that scripts a refusal replaces this mock.
+      describe: vi.fn((refs: string[]): Promise<RemoteResult<Record<string, CredentialInfo>>> =>
+        Promise.resolve(remoteOk(
+          Object.fromEntries(refs.map(ref => [ref, {
+            configured: ref === 'OPENAI_API_KEY',
+            ...ref === 'OPENAI_API_KEY' ? { source: 'file' } : {},
+            writable: true,
+          }])),
+        ))),
       set,
       unset,
     },
@@ -188,7 +229,37 @@ function scriptedFace(overrides: {
   return { face, update, mutate, set, unset }
 }
 
-type WireFace = ConstructorParameters<typeof ModelsSettingsStore>[0]
+type PageContext = ConstructorParameters<typeof ModelsSettingsStore>[0]
+
+/**
+ * The page plugin's context, scripted down to the namespaces the page reaches.
+ * One context per face, as in production: an editor effect keyed by the context
+ * would otherwise re-probe on every render.
+ */
+const contexts = new WeakMap<object, PageContext>()
+function ctxWith(face: object): PageContext {
+  const existing = contexts.get(face)
+  if (existing !== undefined) return existing
+  const ctx = Object.assign(new Context(), { remote: { ...face,
+    session: { initializeDefaultModel: async () => ({ ok: true, value: undefined }) },
+  } })
+  contexts.set(face, ctx)
+  return ctx
+}
+
+/**
+ * The cards' injected Host operations over the same script, bound once per face
+ * as the plugin body binds them: an editor effect keyed by this face would
+ * otherwise re-probe on every render.
+ */
+const operations = new WeakMap<object, ModelsOperations>()
+function operationsWith(face: object): ModelsOperations {
+  const existing = operations.get(face)
+  if (existing !== undefined) return existing
+  const bound = createModelsOperations(ctxWith(face))
+  operations.set(face, bound)
+  return bound
+}
 
 /** One recorded child-slot dispatch: seat name, owner share, kind options. */
 type RenderSlotCall = [name: string, owner: Record<string, unknown>, opts?: { entryKey?: string }]
@@ -214,20 +285,21 @@ function cardSeatCalls(
 
 async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
   const { face, update, mutate, set, unset } = scripted
-  const mirror = new SettingsDescribeMirror(face as never)
-  const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, mirror)
+  const ctx = ctxWith(face)
+  const mirror = new SettingsDescribeMirror(ctx)
+  const controller = new ModelsSettingsStore(ctx, settingsSchema, mirror)
   await controller.load()
   const renderSlot = stubRenderSlot()
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
-    api: face as never,
+    operations: operationsWith(face),
     schema: settingsSchema,
     t,
     renderSlot: renderSlot as unknown as ModelsSectionProps['renderSlot'],
   }
   const view = render(<ModelsSection {...injected} />)
-  return { view, face, update, mutate, set, unset, controller, mirror, renderSlot }
+  return { view, ctx, face, update, mutate, set, unset, controller, mirror, renderSlot }
 }
 
 async function mountSection(overrides: Parameters<typeof scriptedFace>[0] = {}) {
@@ -259,10 +331,66 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
+  it('hides the add action when no settings namespace can open an editor', async () => {
+    const scripted = scriptedFace()
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({ writable: true, hasDocument: false, namespaces: [] }))
+    await mountFace(scripted)
+    expect(screen.queryByRole('button', { name: en.add })).toBeNull()
+  })
+
+  it('offers only providers whose settings namespace can open an editor', async () => {
+    const scripted = scriptedFace()
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().filter(view => view.ns !== 'llm-pi-ai'),
+    }))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // Without the pi-ai namespace nothing can be hand-declared, so the card
+    // is the catalog form alone: no mode switch, no custom panel.
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'plain' })).toBeTruthy()
+  })
+
+  it('shows a catalog diagnostic while keeping the provider editable', async () => {
+    const scripted = scriptedFace()
+    const failure = 'llm-pi-ai: provider "openai" model "111" needs an api'
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], error: failure },
+    ]))
+    await mountFace(scripted)
+    expect(screen.getByRole('alert').textContent).toBe(failure)
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
+    expect(await screen.findByLabelText(en.keyInput)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
+  })
+
   it('renders nothing before the slot injects its dependencies', () => {
     const uninjected = {} as ModelsSectionProps
     render(<ModelsSection {...uninjected} />)
     expect(document.body.textContent).toBe('')
+  })
+
+  it('shows a configuration diagnostic inside the first-run setup card', async () => {
+    const scripted = scriptedFace()
+    const failure = 'The provider configuration needs repair'
+    scripted.face.llm.listProviders.mockResolvedValue(remoteOk([
+      { id: 'deepseek-official', name: 'DeepSeek' },
+    ]))
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], error: failure },
+    ]))
+    scripted.face.credentials.describe.mockResolvedValue(remoteOk({
+      DEEPSEEK_API_KEY: { configured: false, writable: true },
+    }))
+    await mountFace(scripted)
+
+    const card = screen.getByRole('listitem')
+    expect(within(card).getByRole('alert').textContent).toBe(failure)
+    expect(within(card).getByLabelText(en.keyInput)).toBeTruthy()
+    expect(within(card).queryByRole('button', { name: deepSeekCopy(en.editProvider) })).toBeNull()
   })
 
   it('dispatches the provider-card seat per rendered row, keyed by the owning namespace', async () => {
@@ -351,12 +479,12 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
       Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: true }])),
     )))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      api={face as never}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -375,13 +503,13 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
       Object.fromEntries(refs.map(ref => [ref, { configured: true, writable: true }])),
     )))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
     await controller.load()
     cleanup()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      api={face as never}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -463,7 +591,7 @@ describe('ModelsSection', () => {
       namespace={wireNamespaces()[0]!}
       schema={settingsSchema}
       settingsPath={[]}
-      api={face as never}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       credentialOnly
@@ -515,7 +643,7 @@ describe('ModelsSection', () => {
     const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
     // The deepseek placeholder is pinned to the public endpoint, not the
     // effective value (which may reflect a launch-environment override).
-    expect(baseURL.placeholder).toBe('https://api.deepseek.com')
+    expect(baseURL.placeholder).toBe('https://api.deepseek.com/anthropic')
     fireEvent.change(baseURL, { target: { value: 'https://next2' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -545,6 +673,7 @@ describe('ModelsSection', () => {
     fireEvent.change(names[2] as HTMLInputElement, { target: { value: 'Private Preview' } })
     // Only row 3 is open, so its capacity is addressed by its own label.
     fireEvent.change(screen.getByLabelText(`${en.contextWindow} 3`), { target: { value: '131072' } })
+    fireEvent.click(within(screen.getByRole('group', { name: `${en.modelInputTypes} 3` })).getByRole('checkbox', { name: en.modelInputImage }))
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -555,11 +684,56 @@ describe('ModelsSection', () => {
         path: ['models'],
         value: [
           ...DEFAULT_DEEPSEEK_MODELS,
-          { id: 'private-preview', name: 'Private Preview', contextWindow: 131_072 },
+          { id: 'private-preview', name: 'Private Preview', contextWindow: 131_072, inputModalities: ['text', 'image'] },
         ],
       }],
       0,
     ])
+  })
+
+  it('edits the DeepSeek endpoint and credential without a protocol selection', async () => {
+    const namespace: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      ns: 'llm-deepseek',
+      value: { apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+    }
+    const { face, mutate, set } = scriptedFace({
+      mutate: vi.fn(() => Promise.resolve(remoteOk(namespace))),
+    })
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={namespace}
+      schema={settingsSchema}
+      settingsPath={[]}
+      operations={operationsWith(face)}
+      t={t}
+      readOnly={false}
+      onClose={vi.fn()}
+    />)
+    fireEvent.click(screen.getByText(en.customized))
+    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder)
+      .toBe('https://api.deepseek.com/anthropic')
+    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    expect(screen.getByText(en.deepSeekEndpointHint)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-messages-test' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://messages.example/anthropic' } })
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Messages Flash' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('DEEPSEEK_API_KEY', 'sk-messages-test') })
+    expect(mutate.mock.calls).toEqual([[
+      'llm-deepseek',
+      [
+        { op: 'set', path: ['baseURL'], value: 'https://messages.example/anthropic' },
+        { op: 'set', path: ['models'], value: [
+          { ...DEFAULT_DEEPSEEK_MODELS[0], name: 'Messages Flash' },
+          DEFAULT_DEEPSEEK_MODELS[1],
+        ] },
+      ],
+      0,
+    ]])
   })
 
   it('rejects duplicate DeepSeek model ids before writing', async () => {
@@ -705,7 +879,7 @@ describe('ModelsSection', () => {
       value: { ...stored, defaultContextWindow: 1_000_000 },
       ...base === undefined ? {} : { base },
       user: stored,
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 0,
     }
@@ -716,7 +890,7 @@ describe('ModelsSection', () => {
       namespace={overridden}
       schema={settingsSchema}
       settingsPath={[]}
-      api={face as never}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       onClose={() => {}}
@@ -935,7 +1109,7 @@ describe('ModelsSection', () => {
       ns: 'llm-deepseek',
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: {},
-      applies: 'live',
+      autoGenerate: true, applies: 'live',
       secrets: [],
       revision: 0,
     }
@@ -946,18 +1120,28 @@ describe('ModelsSection', () => {
       namespace={bare}
       schema={settingsSchema}
       settingsPath={[]}
-      api={face as never}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       onClose={() => {}}
     />)
     fireEvent.click(screen.getByText(en.customized))
     const baseURL = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
-    expect(baseURL.placeholder).toBe('https://api.deepseek.com')
+    expect(baseURL.placeholder).toBe('https://api.deepseek.com/anthropic')
     fireEvent.change(baseURL, { target: { value: 'https://x' } })
     expect(baseURL.value).toBe('https://x')
     fireEvent.change(baseURL, { target: { value: '' } })
     expect(baseURL.value).toBe('')
+  })
+
+  it('saves credentials without changing the default model', async () => {
+    const { ctx, set } = await mountDeepSeekCard()
+    const initialize = vi.spyOn(ctx.remote.session, 'initializeDefaultModel')
+    fireEvent.change(await screen.findByLabelText(en.keyInput), { target: { value: 'test-key' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(screen.queryByText(en.apply)).toBeNull() })
+    expect(set).toHaveBeenCalledOnce()
+    expect(initialize).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid draft before writing', async () => {
@@ -1089,7 +1273,7 @@ describe('ModelsSection', () => {
 
   it('surfaces a rejected settings write and never stores the key after it', async () => {
     const { set } = await mountSection({
-      mutate: vi.fn(() => Promise.resolve(remoteFail('llm-pi-ai: unknown pi-ai provider "bogus"', 'settings-rejected'))),
+      mutate: vi.fn(() => Promise.resolve(remoteFail('llm-pi-ai: unknown pi-ai provider "bogus"', 'settings/rejected'))),
     })
     fireEvent.click(screen.getByText(en.add))
     await screen.findByLabelText(en.provider)
@@ -1099,38 +1283,28 @@ describe('ModelsSection', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('renders the card without the stored-key hint when the credential probe rejects', async () => {
-    // The probe is a placeholder hint, not a precondition: an escaping
-    // rejection would surface in the browser as an unhandled rejection.
+  it('renders the card without the stored-key hint when the credential probe is refused', async () => {
     const { face } = scriptedFace()
-    face.credentials.describe = vi.fn(() => Promise.reject(new Error('connection lost')))
-    const unhandled = vi.fn()
-    process.on('unhandledRejection', unhandled)
-    try {
-      const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
-      await controller.load()
-      render(<ModelsSection
-        controller={controller}
-        useSnapshot={bindSnapshotSelector(controller.store)}
-        api={face as never}
-        schema={settingsSchema}
-        t={t}
-        renderSlot={() => null}
-      />)
-      const key = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
-      expect(key.placeholder).toBe(en.keyPlaceholder)
-      await new Promise(resolve => setTimeout(resolve, 10))
-      expect(unhandled).not.toHaveBeenCalled()
-    } finally {
-      process.off('unhandledRejection', unhandled)
-    }
+    face.credentials.describe = vi.fn(() => Promise.resolve(remoteFail('no credential provider')))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
+    await controller.load()
+    render(<ModelsSection
+      controller={controller}
+      useSnapshot={bindSnapshotSelector(controller.store)}
+      operations={operationsWith(face)}
+      schema={settingsSchema}
+      t={t}
+      renderSlot={() => null}
+    />)
+    const key = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
+    expect(key.placeholder).toBe(en.keyPlaceholder)
   })
 
   it('tells the user to reopen when another writer moved the namespace first', async () => {
     // The stale-draft overwrite: two tabs open the same card, the other saves,
     // and this one must be refused rather than replay its opening snapshot.
     const { set } = await mountDeepSeekCard({
-      mutate: vi.fn(() => Promise.resolve(remoteFail('changed since it was read', 'settings-conflict'))),
+      mutate: vi.fn(() => Promise.resolve(remoteFail('changed since it was read', 'settings/conflict'))),
     })
     fireEvent.click(screen.getByText(en.customized))
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.baseUrl), { target: { value: 'https://mine' } })
@@ -1139,15 +1313,14 @@ describe('ModelsSection', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('keeps the card usable when the write rejects instead of answering', async () => {
-    // A transport failure (disconnect, or the 403 a non-loopback browser now
-    // gets on the whole configuration plane) rejects rather than returning a
-    // failed envelope: without a catch the card would stay busy forever.
-    await mountDeepSeekCard({ mutate: vi.fn(() => Promise.reject(new Error('connection lost'))) })
+  it('keeps the card usable after a refused write', async () => {
+    await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(remoteFail('the host refused', 'settings/rejected'))),
+    })
     fireEvent.click(screen.getByText(en.customized))
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.baseUrl), { target: { value: 'https://next' } })
     fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText('connection lost')
+    await screen.findByText('the host refused')
     // Not stuck in `applying…`: the finally cleared busy, so Apply is live again.
     expect(screen.getByText(en.apply)).toBeTruthy()
   })
@@ -1178,7 +1351,7 @@ describe('ModelsSection', () => {
 
   it('keeps a failed credential describe silent and the input usable', async () => {
     const { face, set } = await mountSection()
-    face.credentials.describe.mockImplementation(() => Promise.resolve(remoteFail('down', 'internal')) as never)
+    face.credentials.describe.mockImplementation(() => Promise.resolve(remoteFail('down', 'gateway/internal')))
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     const editorKey = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
     expect(editorKey.placeholder).toBe(en.keyPlaceholderNative)
@@ -1245,14 +1418,14 @@ describe('ModelsSection', () => {
 
   it('renders the load failure with a retry control', async () => {
     const face = scriptedFace()
-    face.face.llm.listProviders = vi.fn(() => Promise.resolve(remoteFail('directory down', 'internal'))) as never
+    face.face.llm.listProviders = vi.fn(() => Promise.resolve(remoteFail('directory down', 'gateway/internal'))) as never
     const controller = new ModelsSettingsStore(
-      face.face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face.face as never))
+      ctxWith(face.face), settingsSchema, new SettingsDescribeMirror(ctxWith(face.face)))
     await controller.load()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      api={face.face as never}
+      operations={operationsWith(face.face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1269,13 +1442,13 @@ describe('ModelsSection', () => {
       hasDocument: false,
       namespaces: wireNamespaces(),
     })))
-    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
     await controller.load()
     cleanup()
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      api={face as never}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1297,6 +1470,253 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.cancel))
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
     expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('opens the add card on the catalog mode with both modes offered', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const modes = screen.getByRole('tablist', { name: en.addMode })
+    expect(within(modes).getByRole('tab', { name: en.addCatalog }).getAttribute('aria-selected')).toBe('true')
+    expect(within(modes).getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByText(en.addCatalogHint)).toBeTruthy()
+    expect(screen.queryByText(en.addCustomHint)).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
+    // The custom panel is mounted but hidden, so its fields are not reachable.
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
+  })
+
+  it('switches between the modes without losing either draft', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-catalog' } })
+
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    expect(screen.getByText(en.addCustomHint)).toBeTruthy()
+    expect(screen.queryByText(en.addCatalogHint)).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: en.customRoute }), { target: { value: 'acme' } })
+
+    // Both panels stay mounted from here on, so the shown one is queried by name.
+    fireEvent.click(screen.getByRole('tab', { name: en.addCatalog }))
+    const catalog = screen.getByRole('tabpanel', { name: en.addCatalog })
+    expect(within(catalog).getByLabelText<HTMLInputElement>(en.keyInput).value).toBe('sk-catalog')
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: en.customRoute }).value).toBe('acme')
+  })
+
+  it('opens on the custom mode when every catalog provider is already configured', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] },
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const catalog = screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog })
+    expect(catalog.disabled).toBe(true)
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('shows the custom form alone when no directory row can be adopted', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('disables the add action when neither mode can proceed', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]))
+    // A pi-ai schema naming no protocol leaves nothing to declare either.
+    const protocolless = JSON.parse(JSON.stringify(
+      Schema.object({ providers: Schema.dict(Schema.object({})) }).toJSON(),
+    )) as JsonValue
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().map(view => view.ns === 'llm-pi-ai' ? { ...view, schema: protocolless } : view),
+    }))
+    await mountFace(scripted)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
+  })
+
+  it('shows the custom panel when a refresh drops every configurable row mid-card', async () => {
+    const { face, controller } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
+    // The directory empties while the card is open: the only mode left is the
+    // custom one, whose panel was never visited.
+    face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
+    await act(async () => { await controller.load() })
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('picks a catalog target when the catalog becomes addable after the card opened', async () => {
+    const scripted = scriptedFace()
+    const exhausted = [
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] },
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk(exhausted))
+    const { controller } = await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(true)
+    // A dormant route appears (another client deleted its profile, say).
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      ...exhausted,
+      { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'] },
+    ]))
+    await act(async () => { await controller.load() })
+    const catalog = screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog })
+    expect(catalog.disabled).toBe(false)
+    fireEvent.click(catalog)
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: en.provider }).value).toBe('anthropic')
+    expect(within(screen.getByRole('tabpanel', { name: en.addCatalog })).getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('drops the custom panel when the pi-ai namespace disappears mid-card', async () => {
+    const { face, controller, mirror } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().filter(view => view.ns !== 'llm-pi-ai'),
+    }))
+    // A namespace change reaches the page through the mirror's own refresh.
+    await act(async () => {
+      await mirror.load()
+      await controller.load()
+    })
+    // Nothing can be declared any more, so the form is gone rather than left
+    // to create a route the Host would refuse; the catalog form stands alone.
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
+  })
+
+  it('forgets the catalog target when the custom form closes, so a later refresh opens no row editor', async () => {
+    const { face, controller, mirror } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: en.provider }).value).toBe('anthropic')
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    fireEvent.click(within(screen.getByRole('tabpanel', { name: en.addCustom })).getByText(en.cancel))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    // The draft's provider gets configured elsewhere: its row must arrive closed.
+    const withAnthropic = (layer: unknown): JsonValue => ({
+      providers: { ...(layer as { providers: object }).providers, anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' } },
+    })
+    face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().map(view => view.ns === 'llm-pi-ai'
+        ? { ...view, value: withAnthropic(view.value), user: withAnthropic(view.user) }
+        : view),
+    }))
+    await act(async () => {
+      await mirror.load()
+      await controller.load()
+    })
+    expect(screen.getByRole('button', { name: providerCopy(en.editProvider, { provider: 'anthropic', displayName: 'anthropic' }) })).toBeTruthy()
+    expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
+  })
+
+  it('locks the mode switch while the catalog form has a write in flight', async () => {
+    let settle: (() => void) | undefined
+    const pending = new Promise<void>((resolve) => { settle = resolve })
+    const providerNamespace = wireNamespaces().find(view => view.ns === 'llm-pi-ai')!
+    const mutate = vi.fn(() => pending.then(() => remoteOk(providerNamespace)))
+    await mountSection({ mutate })
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-slow' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCustom }).disabled).toBe(true) })
+    expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(true)
+    await act(async () => { settle!(); await pending })
+    // The apply closes the card once it lands; nothing was switched underneath it.
+    await waitFor(() => { expect(screen.queryByRole('tablist')).toBeNull() })
+    expect(mutate).toHaveBeenCalledOnce()
+  })
+
+  it('locks the mode switch while the custom form is asking the endpoint for models', async () => {
+    const scripted = scriptedFace()
+    let settle: (() => void) | undefined
+    const pending = new Promise<void>((resolve) => { settle = resolve })
+    scripted.face.llm.discoverModels.mockImplementation(() => pending.then(() => remoteOk([])))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    const custom = within(screen.getByRole('tabpanel', { name: en.addCustom }))
+    fireEvent.change(custom.getByRole('textbox', { name: en.baseUrl }), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(custom.getByRole('button', { name: en.fetchModels }))
+    await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(true) })
+    await act(async () => { settle!(); await pending })
+    await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('tab', { name: en.addCatalog }).disabled).toBe(false) })
+  })
+
+  it('pairs each tab with its panel through ids', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const catalogTab = screen.getByRole('tab', { name: en.addCatalog })
+    const catalogPanel = screen.getByRole('tabpanel', { name: en.addCatalog })
+    expect(catalogTab.getAttribute('aria-controls')).toBe(catalogPanel.id)
+    expect(catalogPanel.getAttribute('aria-labelledby')).toBe(catalogTab.id)
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    const customTab = screen.getByRole('tab', { name: en.addCustom })
+    const customPanel = screen.getByRole('tabpanel', { name: en.addCustom })
+    expect(customTab.getAttribute('aria-controls')).toBe(customPanel.id)
+    expect(customPanel.getAttribute('aria-labelledby')).toBe(customTab.id)
+  })
+
+  it('titles a single-mode card with its mode instead of leaving an orphan tabpanel', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('tabpanel')).toBeNull()
+    expect(screen.getByText(en.addCustom)).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+  })
+
+  it('explains a locked mode through its hover title', async () => {
+    const scripted = scriptedFace()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+    ]))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByRole('tab', { name: en.addCatalog }).getAttribute('title')).toBe(en.addCatalogExhausted)
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('title')).toBeNull()
+  })
+
+  it('explains a mode with no protocol to declare through its hover title', async () => {
+    const scripted = scriptedFace()
+    const protocolless = JSON.parse(JSON.stringify(
+      Schema.object({ providers: Schema.dict(Schema.object({})) }).toJSON(),
+    )) as JsonValue
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: false,
+      namespaces: wireNamespaces().map(view => view.ns === 'llm-pi-ai' ? { ...view, schema: protocolless } : view),
+    }))
+    await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('title')).toBe(en.addCustomUnavailable)
+    expect(screen.getByRole('tab', { name: en.addCatalog }).getAttribute('title')).toBeNull()
+  })
+
+  it('collapses the add card from the custom mode on cancel', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addCustom }))
+    fireEvent.click(within(screen.getByRole('tabpanel', { name: en.addCustom })).getByText(en.cancel))
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
   })
 
   it('cancels the add card back to the add button', async () => {
@@ -1333,11 +1753,11 @@ describe('ModelsSection', () => {
 
   it('loads on first render of an idle controller', async () => {
     const { face } = scriptedFace()
-    const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, new SettingsDescribeMirror(face as never))
+    const controller = new ModelsSettingsStore(ctxWith(face), settingsSchema, new SettingsDescribeMirror(ctxWith(face)))
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      api={face as never}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1350,7 +1770,7 @@ describe('ModelsSection', () => {
     // would widen the write for no benefit.
     const { face, mutate, controller } = await mountSection()
     await removeProviderProfile(
-      face as unknown as Parameters<typeof removeProviderProfile>[0],
+      operationsWith(face),
       controller,
       { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'] },
     )
@@ -1363,11 +1783,11 @@ describe('ModelsSection', () => {
 
   it('keeps the snapshot untouched and reports the message when a removal write is refused', async () => {
     const { face, controller } = await mountSection({
-      mutate: vi.fn(() => Promise.resolve(remoteFail('read-only', 'settings-rejected'))),
+      mutate: vi.fn(() => Promise.resolve(remoteFail('read-only', 'settings/rejected'))),
     })
     const before = controller.store.getSnapshot().rows
     const failure = await removeProviderProfile(
-      face as unknown as Parameters<typeof removeProviderProfile>[0],
+      operationsWith(face),
       controller,
       { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
     )
@@ -1377,7 +1797,7 @@ describe('ModelsSection', () => {
 
   it('keeps a failed identified deletion recoverable in its confirmation dialog', async () => {
     const mutate = vi.fn()
-      .mockResolvedValueOnce(remoteFail('the host refused', 'settings-rejected'))
+      .mockResolvedValueOnce(remoteFail('the host refused', 'settings/rejected'))
       .mockResolvedValueOnce(remoteOk(wireNamespaces()[2]!))
     const { unset } = await mountSection({ mutate })
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.removeProvider) }))
@@ -1418,7 +1838,7 @@ describe('ModelsSection', () => {
       unset: vi.fn(() => Promise.resolve(remoteFail('credential is read-only'))),
     })
     const failure = await removeProviderProfile(
-      face as unknown as Parameters<typeof removeProviderProfile>[0],
+      operationsWith(face),
       controller,
       {
         settingsNs: 'llm-pi-ai',
@@ -1430,17 +1850,6 @@ describe('ModelsSection', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('reports a transport rejection instead of failing the removal silently', async () => {
-    const { face, controller } = await mountSection({
-      mutate: vi.fn(() => Promise.reject(new Error('connection lost'))),
-    })
-    const failure = await removeProviderProfile(
-      face as unknown as Parameters<typeof removeProviderProfile>[0],
-      controller,
-      { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
-    )
-    expect(failure).toBe('connection lost')
-  })
 })
 
 describe('apiKeyFailure', () => {
@@ -1492,4 +1901,120 @@ describe('apiKeyFailure', () => {
     expect(apiKeyFailure('"')).toBeUndefined()
     expect(apiKeyFailure('"a')).toBeUndefined()
   })
+})
+
+it.each([en, zh])('edits the account model catalog without credential or endpoint fields', async (copy) => {
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(accountNamespace())))
+  const scripted = scriptedFace({ mutate })
+  const ops = operationsWith(scripted.face)
+  const describe = vi.spyOn(ops, 'describeCredential')
+  const namespace = accountNamespace()
+  const onClose = vi.fn()
+  render(<ProviderEditor provider="deepseek-account" displayName={copy.deepSeekAccount}
+    namespace={namespace} settingsPath={[]} schema={settingsSchema}
+    operations={ops} t={key => copy[key]} readOnly={false} onClose={onClose} />)
+  expect(screen.queryByLabelText(copy.keyInput)).toBeNull()
+  expect(screen.queryByLabelText(copy.baseUrl)).toBeNull()
+  expect(describe).not.toHaveBeenCalled()
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  expect(screen.queryByText(content => content.includes(copy.advancedHint))).toBeNull()
+  await expect(`${document.body.textContent}\n`)
+    .toMatchFileSnapshot(`./expected/deepseek-account-${copy === en ? 'en' : 'zh'}.txt`)
+  const set = vi.spyOn(ops, 'storeCredential')
+  fireEvent.change(screen.getAllByLabelText(new RegExp(copy.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(copy.apply))
+  await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+  expect(mutate.mock.calls[0]).toEqual([
+    'llm-deepseek-account',
+    [{
+      op: 'set',
+      path: ['models'],
+      value: [
+        {
+          id: 'deepseek-v4-mini',
+          name: 'DeepSeek-V4-Flash',
+          description: 'Preserved hidden detail',
+          contextWindow: 1_000_000,
+        },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+      ],
+    }],
+    0,
+  ])
+  expect(set).not.toHaveBeenCalled()
+})
+
+it('keeps the DeepSeek editor for an account route under a renamed settings entry', async () => {
+  const namespace = accountNamespace('team-account-entry')
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const ops = operationsWith(scriptedFace({ mutate }).face)
+  const set = vi.spyOn(ops, 'storeCredential')
+  const onClose = vi.fn()
+  render(<ProviderEditor provider="deepseek-account" displayName={en.deepSeekAccount}
+    namespace={namespace} settingsPath={[]} schema={settingsSchema}
+    operations={ops} t={t} readOnly={false} onClose={onClose} />)
+  expect(screen.queryByText(content => content.includes(en.advancedHint))).toBeNull()
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  fireEvent.change(screen.getAllByLabelText(new RegExp(en.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(en.apply))
+  await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
+  expect(mutate).toHaveBeenCalledWith('team-account-entry', expect.any(Array), 0)
+  expect(set).not.toHaveBeenCalled()
+})
+
+it('opens the account row from the section and saves to its own namespace', async () => {
+  const namespace = accountNamespace()
+  const mutate = vi.fn(() => Promise.resolve(remoteOk(namespace)))
+  const { controller, set } = await mountSection({ mutate })
+  const row = controller.store.getSnapshot().rows[0]!
+  await act(async () => { controller.store.update((state) => {
+    state.rows = [{
+      ...row,
+      accountAvailable: true,
+      entry: {
+        provider: 'deepseek-account', displayName: en.deepSeekAccount, settingsNs: namespace.ns, settingsPath: [], active: true,
+      },
+    }, ...state.rows]
+  }) })
+  fireEvent.click(screen.getByRole('button', {
+    name: providerCopy(en.editProvider, { provider: 'deepseek-account', displayName: en.deepSeekAccount }),
+  }))
+  expect(screen.getByDisplayValue('deepseek-v4-flash')).toBeTruthy()
+  fireEvent.change(screen.getAllByLabelText(new RegExp(en.modelId))[0]!, { target: { value: 'deepseek-v4-mini' } })
+  fireEvent.click(screen.getByText(en.apply))
+  await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+  expect(mutate.mock.calls[0]).toEqual([
+    'llm-deepseek-account',
+    [{
+      op: 'set',
+      path: ['models'],
+      value: [
+        {
+          id: 'deepseek-v4-mini',
+          name: 'DeepSeek-V4-Flash',
+          description: 'Preserved hidden detail',
+          contextWindow: 1_000_000,
+        },
+        { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+      ],
+    }],
+    0,
+  ])
+  expect(set).not.toHaveBeenCalled()
+})
+
+it('renders the localized account row and supports catalogs without capacity defaults', async () => {
+  const scripted = scriptedFace({})
+  const { controller, view } = await mountFace(scripted)
+  const row = controller.store.getSnapshot().rows[0]!
+  await act(async () => { controller.store.update((state) => {
+    state.rows = [{ ...row, accountAvailable: true, entry: { ...row.entry, provider: 'deepseek-account' } }]
+  }) })
+  expect(screen.getByText(en.deepSeekAccount)).toBeTruthy()
+  view.unmount()
+  const namespace = accountNamespace()
+  render(<ProviderEditor provider="deepseek-account" displayName={en.deepSeekAccount}
+    namespace={{ ...namespace, value: { models: [] }, base: { models: [] } }} settingsPath={[]} schema={settingsSchema}
+    operations={operationsWith(scripted.face)} t={t} readOnly={false} onClose={() => {}} />)
+  expect(screen.queryByLabelText(en.keyInput)).toBeNull()
 })

@@ -235,17 +235,17 @@ describe('model discovery registry', () => {
       .resolves.toEqual([])
   })
 
-  it('normalizes what an interrogation returns without inventing capacities', async () => {
+  it('preserves discovered input types without inventing missing metadata', async () => {
     const ctx = await setup()
     ctx.llm.registerModelDiscovery('llm-example', () => Promise.resolve([
-      { id: 'keep', name: 'Keep', contextWindow: 1024, maxTokens: 256 },
+      { id: 'keep', name: 'Keep', contextWindow: 1024, maxTokens: 256, inputModalities: ['text', 'image'] },
       { id: '' },
       { id: 'keep' },
       { id: 'bare' },
     ] as never))
 
     expect(await ctx.llm.discoverModels('llm-example', { baseURL: 'https://gateway.example/v1' })).toEqual([
-      { id: 'keep', name: 'Keep', contextWindow: 1024, maxTokens: 256 },
+      { id: 'keep', name: 'Keep', contextWindow: 1024, maxTokens: 256, inputModalities: ['text', 'image'] },
       { id: 'bare' },
     ])
   })
@@ -283,22 +283,18 @@ describe('model discovery registry', () => {
       { baseURL: 'https://gateway.example/v1' },
       signal,
     )).rejects.toMatchObject({
-      failure: {
-        code: 'model-discovery-failed',
-        message: 'endpoint offline',
-        details: { settingsNs: 'llm-example', baseURL: 'https://gateway.example/v1' },
-      },
+      code: 'llm/model-discovery-rejected',
+      message: 'endpoint offline',
+      details: { settingsNs: 'llm-example', baseURL: 'https://gateway.example/v1' },
     })
     await expect(ctx.llm.remoteDiscoverModels(
       'llm-example',
       { provider: 'known-route' },
       signal,
     )).rejects.toMatchObject({
-      failure: {
-        code: 'model-discovery-failed',
-        message: 'provider refused',
-        details: { settingsNs: 'llm-example' },
-      },
+      code: 'llm/model-discovery-rejected',
+      message: 'provider refused',
+      details: { settingsNs: 'llm-example' },
     })
   })
 

@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-借助 `dsh-typert-protocol`，业务包可以向 Remote 客户端暴露 Host 方法：用 `@Remote`（作用域接收者用 `@RemoteScope`）标记方法，把服务绑定到 wire 命名空间，并通过可合并扩展的协议映射把 Host 对象与作用域 Context 关联到 wire identity。生成产物、Host Gateway 与 Client API 消费同一套调用描述符、编解码器与提供方约定，因此一套声明在每个 face 上保持一致。本包不注册任何 Cordis 服务，也不运行 TypeScript 分析；它只声明类型与装饰器标记。
+借助 `dsh-typert-protocol`，业务包可以向 Remote 客户端暴露 Host 方法：用 `@Remote`（作用域接收者用 `@RemoteScope`）标记方法，把服务绑定到 wire 命名空间，并通过可合并扩展的协议映射把 Host 对象与作用域 Context 关联到 wire identity。生成产物、Host Gateway 与 Client API 消费同一套调用描述符、编解码器与提供方约定。调用持有的值把清理责任交给 Gateway，不另增引用计数。本包不注册任何 Cordis 服务，也不运行 TypeScript 分析。
 
 ## 目录
 
@@ -44,13 +44,34 @@ export class GoalService extends TypertRemoteService {
 
 生成会把方法变为服务命名空间下的 wire 端点；Client 通过 `ctx.remote` 以类型化方法调用它（见 [API Gateway 参考](../../../docs/api-gateway.zh.md)）。方法把 `signal: AbortSignal` 声明为最后一个参数即可选择协作式取消——该信号是注入的，绝不会成为 JSON 参数或查找字段。
 
+一元方法可以直接返回 `Uint8Array`，也可以将其放在嵌套对象、数组、元组、可选字段、联合类型和递归类型中。生成器提供可选的结果 codec `encode()` 和 `decode()`：编码仅访问类型可能包含字节的子树，解码则校验还原后的值；Client 声明在每个字节位置使用 `Uint8Array<ArrayBuffer>`，同时保留其他字段类型。纯 JSON 结果不经 Host 字节识别或 Client 解析直接传递。参数、事件与流条目仍仅支持 JSON；不支持运行时对象循环。
+
+流方法（`@Remote({ mode: 'stream' })`）返回 `Iterable`、`AsyncIterable` 或 `RemoteStream<Out, In>`。`In` 声明 Client 可以在同一条逻辑流上回送的项；方法通过 `this.ctx.invocation.uplink<In>()` 读取它们，描述符携带其 codec。`RemoteInvocation` 还给出接收服务 `service`、发起调用的 `peer`（连接层接纳的一个 `PeerScope`）与载体 `signal`；非 Remote 调用派生的 Context 上 `ctx.invocation` 为 `undefined`：树中第一个 `bindTypertRemote()` 绑定（每个 `TypertRemoteService` 构造函数都会建立一个）在根上注册该 accessor。生成的 Client 流方法返回 `RemoteStreamHandle<Out, In>`：在下行迭代之外提供 `send`、`end` 与 `dispose` 的句柄。上行项在 Host 逐项校验，因为它们来自浏览器；下行项是 Host 方法产出的值，原样透传。
+
 ### 把 Host 对象与 Context 关联到 wire identity
 
-复杂的 Host 对象不能直接跨 wire 传输。业务包通过可合并扩展的 `TypertLookupMap` 与 `TypertContextMap` 声明关联。Host 与 Client Context adapter 都把 `Context` 映射为 wire identity，也把该 identity 映射回 `Context`；Host adapter 还拥有稳定 wire 声明。Host 组合可以覆盖其同步或异步 resolver。策略拒绝可以抛出 `TypertLookupFailure`，把适配器拥有的失败值带给调用方。
+复杂的 Host 对象不能直接跨 wire 传输。业务包通过可合并扩展的 `TypertLookupMap` 与 `TypertContextMap` 声明关联。Host Context 适配器拥有稳定 wire 声明，并把 wire identity 解析为活跃 Context。Client Context 适配器需要双向映射，因为作用域调用从 Client Context 发起，而转发的 Host 事件要在 Client 侧解析其显式 wire identity。Host 组合可以覆盖其同步或异步解析器。因策略原因拒绝解析的解析器会抛出带有自身错误码的 `RemoteError`，该码原样到达调用方。
+
+Client Context 解析保持同步。`typertOwnedValue(value, release)` 把不抛异常、幂等的清理交给调用 owner；Gateway 在处理器和回复均结束后调用它。借用的 Context 不需要清理包装层。共享的 `TYPERT_OWNED_VALUE` symbol 与 `isTypertOwnedValue` 识别函数可跨独立打包的提供方与 Gateway 使用；包装层自身不会 retain 资源。
+
+### 报告与读取 Remote 失败
+
+所有 Remote 失败都由一个类承载：`RemoteError`，携带稳定的 `<domain>/<reason>` 码，以及按该码定型的 details。本包声明通用载体码（`gateway/bad-request`、`gateway/cancelled`、`gateway/internal`），并拥有 `RemoteErrorDetailsMap`——可合并扩展的码表，其他每个包都在自己的抛出点旁扩展它：
+
+```text
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'goal/not-found': { readonly goalId: string }
+  }
+}
+throw new RemoteError('goal/not-found', `goal "${id}" does not exist`, { goalId: id })
+```
+
+拥有方在失败点直接抛出；没有任何包再写错误类家族或出口映射函数。调用方按 `code` 判别——绝不用 `instanceof`——且 `code` 分支无需 cast 即收窄 `details`，因为 `RemoteFailure` 就是 `RemoteError` 实例按码判别的 union。需要识别跨模块或跨 realm 类副本传来的失败时，基础设施调用 `remoteErrorOf(value)`，它读结构标记而不是原型链。
 
 ### 在 Client 侧接收转发的 Host 事件
 
-Host 装配以转发给消费端的 Cordis 事件扩展 `TypertRemoteEventSelection`，从而收窄 `ctx.remote.$on` 的键集。`TypertForwardableEvent` 接受无作用域且返回 `void` 的通知，以及最后一个 `next()` 回调返回事件结果类型的异步作用域 waterfall。`TypertClientEventListener` 从同一条 `Events` 成员派生 Client listener，并保留 signal、可选和只读字段、数组、回调与结果类型。`TypertClientRemote` 只公开 `$mount()` 与 `$on()`；事件传输仍由 Gateway 私有持有。
+Host 装配以转发给消费方的 Cordis 事件扩展 `TypertRemoteEventSelection`，从而收窄 `ctx.remote.$on` 的键集。`TypertForwardableEvent` 接受无作用域且返回 `void` 的通知，以及最后一个 `next()` 回调返回事件结果类型的异步作用域 waterfall（瀑布式事件）。`TypertClientEventListener` 从同一条 `Events` 成员派生 Client listener，并保留 signal、可选和只读字段、数组、回调与结果类型。`TypertClientRemote` 只公开 `$mount()` 与 `$on()`；事件传输仍由 Gateway 私有持有。
 
 -----
 
@@ -64,27 +85,29 @@ Host 装配以转发给消费端的 Cordis 事件扩展 `TypertRemoteEventSelect
 
 ### 设计理念
 
-本包把反射留在编译器之外：装饰器初始化器在模块私有的、以服务原型为键的 `WeakMap` 中保留标记，不添加构造函数符号、原型属性、参数元数据或运行时反射字段。完整的参数、结果、查找与 schema 反射是 Typert 构建流水线的职责，通过 `InvocationDescriptor` 交付。
+本包把严格反射留在编译器中：装饰器初始化器把最小标记保存在 Service 原型上的带版本描述符中。描述符使用稳定的字符串属性名，因此协议包的另一个已安装副本也能读取同一组标记。完整的参数、结果、查找与 schema 反射是 Typert 构建流水线的职责，通过 `InvocationDescriptor` 交付。
 
 ### Remote 标记
 
-`@Remote` 与 `@RemoteScope` 调度一个初始化器，记录方法名、可选导出名与调用模式；`remoteMethods(service)` 返回与内部状态分离、按声明顺序排列的快照，供 Gateway 的源码模式回退读取。标记要求公开、非静态、具名字符串的实例方法，同一方法上的冲突标记会被拒绝。
+`@Remote` 与 `@RemoteScope` 调度一个初始化器，把方法名、可选导出名与调用模式追加到原型描述符；`remoteMethods(service)` 校验其版本，并返回与已存描述符分离、按声明顺序排列的快照，供 Gateway 的源码模式回退读取。标记要求名称为字符串的公开、非静态实例方法，同一方法上的冲突标记会被拒绝。
 
 ### 协议映射与描述符
 
-可合并扩展的协议映射在类型系统中保留静态关联，运行时提供方则向 `ctx.typert` 注册解析；映射的名称与形状见 [`src/types.ts`](src/types.ts)。`InvocationDescriptor` 是注册表、Gateway 与 Client Remote 共同消费的共享运行时形式，涵盖直接与 Context 接收者、JSON 与查找参数、作用域投影、取消与结果编解码器。
+可合并扩展的协议映射在类型系统中保留静态关联，运行时提供方则向 `ctx.typert` 注册解析；映射的名称与形状见 [`src/types.ts`](src/types.ts)。`InvocationDescriptor` 是注册表、Gateway 与 Client Remote 共同消费的共享运行时形式，涵盖直接与 Context 接收者、JSON 与查找参数、作用域投影、上行编解码器、取消与结果编解码器。
 
 ### Wire 标识文法
 
-每个命名空间、方法、查找与 Context 段都必须满足 `isTypertRemoteSegment()`，生成的名字才能原样跨共享 RPC 载体传输。严格编解码器携带生成的 schema；`src-json` 编解码器标识约束更弱的源码启动路径。
+每个命名空间、方法、查找与 Context 段都必须满足 `isTypertRemoteSegment()`，生成的名字才能原样跨共享 RPC 载体传输。严格编解码器携带生成的 schema factory；`src-json` 编解码器标识约束更弱的源码启动路径。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 装饰器、Gateway 绑定、`remoteMethods`、段校验、`TypertLookupFailure` |
-| [`src/types.ts`](src/types.ts) | 协议映射、`InvocationDescriptor`、编解码器、提供方约定、注册表接口、`TypertClientRemote` |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件 |
+| [`src/index.ts`](src/index.ts) | 装饰器、Gateway 绑定、`remoteMethods`、段校验 |
+| [`src/json-value.ts`](src/json-value.ts) | 各载体共享的无损 JSON 校验 `isRemoteJsonValue` 与 `isRemoteUplinkItem` |
+| [`src/remote-error.ts`](src/remote-error.ts) | `RemoteError` 与结构式识别函数 `remoteErrorOf` |
+| [`src/types.ts`](src/types.ts) | 协议映射、`RemoteErrorDetailsMap`、`RemoteResult`、`RemoteStream`、`RemoteStreamHandle`、`PeerScope`、`RemoteInvocation`、`InvocationDescriptor`、编解码器、提供方约定、注册表接口、`TypertClientRemote` |
+| — | 不发布运行时不变量伴生入口；decorator 只保留私有不可变声明，binding 也是冻结值，没有可供交叉核对的独立事件流。 |
 
 </details>
 

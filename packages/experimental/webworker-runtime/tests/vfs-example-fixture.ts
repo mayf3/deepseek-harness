@@ -1,10 +1,21 @@
 /** Deterministic source for the filesystem tree bundled into the WebWorker preview. */
 
 import { fileURLToPath } from 'node:url'
-import { SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import {
-  eventLines, projectKey, toHeaderLine,
+  SESSION_FORMAT_VERSION,
+  SessionId,
+  SessionLogOffset,
+  SessionSeq,
+  type SessionEvent,
+  type SessionHeader,
+  type SessionLogOffset as SessionLogOffsetType,
+  type SessionSeq as SessionSeqType,
+} from '@deepseek-ai/dsh-session'
+import {
+  eventLines, generationLogFilename, projectKey, toHeaderLine,
 } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
+import { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
+import { scheduleDomain } from '@deepseek-ai/dsh-schedule'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 
 /** Root copied by the preview image's repository adapter. */
@@ -25,6 +36,12 @@ export const VFS_EXAMPLE_OLDEST_MESSAGE = 'History checkpoint 01: verify determi
 
 /** Settled tail marker used by browser acceptance and the demonstration GIF. */
 export const VFS_EXAMPLE_TAIL_MESSAGE = 'Preview tour complete'
+
+/** Durable task ids for the Host Schedule rows seeded into the preview's `DSH_HOME`. */
+export const VFS_EXAMPLE_SCHEDULE_IDS = {
+  daily: 'preview-daily-digest',
+  once: 'preview-release-window',
+} as const
 
 const WORKSPACE = '/dsh/workspace'
 const CREATED_AT = 1_787_472_000_000
@@ -71,7 +88,7 @@ interface EventDraft {
   readonly type: string
   readonly data: unknown
   readonly surfaceOp?: 'append'
-  readonly sourceEventSeqs?: number[]
+  readonly ignorable?: true
 }
 
 class EventLog {
@@ -83,8 +100,8 @@ class EventLog {
     this.nextTime = Math.max(time, (this.events.at(-1)?.time ?? time - 1) + 1)
   }
 
-  add(draft: EventDraft): number {
-    const seq = this.events.length
+  add(draft: EventDraft): SessionSeqType {
+    const seq = SessionSeq(this.events.length)
     this.events.push({ ...draft, seq, time: this.nextTime++ } as unknown as SessionEvent)
     return seq
   }
@@ -103,6 +120,38 @@ function userMessage(id: string, text: string): EventDraft {
   }
 }
 
+function assistantStream(content: readonly unknown[]): unknown[] {
+  const stream: unknown[] = []
+  let toolCalls = false
+  for (const [index, value] of content.entries()) {
+    const block = value as Record<string, unknown>
+    stream.push({ type: 'chunk', time: 0, chunk: { type: 'block-start', index, blockType: block.type } })
+    if (block.type === 'text') {
+      stream.push({ type: 'text-chunks', time0: 0, index, dt: [], texts: [block.text] })
+    } else if (block.type === 'reasoning') {
+      stream.push({ type: 'reasoning-chunks', time0: 0, index, dt: [], texts: [block.text] })
+    } else if (block.type === 'tool-call') {
+      toolCalls = true
+      stream.push({
+        type: 'tool-call-chunks',
+        time0: 0,
+        index,
+        dt: [],
+        id: block.id,
+        name: block.name,
+        args: [block.arguments],
+      })
+    }
+    stream.push({ type: 'chunk', time: 0, chunk: { type: 'block-end', index, block } })
+  }
+  stream.push({
+    type: 'chunk',
+    time: 0,
+    chunk: { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' } },
+  })
+  return stream
+}
+
 function assistantMessage(id: string, turn: number, step: number, content: unknown[]): EventDraft {
   return {
     type: 'assistant/message',
@@ -115,8 +164,8 @@ function assistantMessage(id: string, turn: number, step: number, content: unkno
         content,
         source: { kind: 'model', provider: 'preview-fixture', model: 'deterministic' },
       },
+      stream: assistantStream(content),
     },
-    sourceEventSeqs: [],
     surfaceOp: 'append',
   }
 }
@@ -264,10 +313,13 @@ function addClosedTextTurn(log: EventLog, turn: number): void {
   log.add({ type: 'turn/end', data: { turn, reason: { kind: 'completed' } } })
 }
 
-function mainLog(): { readonly events: SessionEvent[]; readonly forkSeedLength: number } {
+function mainLog(): {
+  readonly events: SessionEvent[]
+  readonly forkSeedLength: SessionLogOffsetType
+} {
   const log = new EventLog(CREATED_AT)
   for (let turn = 1; turn <= HISTORICAL_TURNS; turn++) addClosedTextTurn(log, turn)
-  const forkSeedLength = log.events.length
+  const forkSeedLength = SessionLogOffset(log.events.length)
   const turn = HISTORICAL_TURNS + 1
   const calls = galleryCalls()
 
@@ -291,14 +343,11 @@ function mainLog(): { readonly events: SessionEvent[]; readonly forkSeedLength: 
         step: 1,
         message: {
           id: `${call.id}-result`,
-          role: 'user',
-          content: [{
-            type: 'tool-result',
-            toolCallId: call.id,
-            content: [{ type: 'text', text: call.result }],
-            isError: call.error !== undefined,
-          }],
+          role: 'tool',
+          toolCallId: call.id,
           source: { kind: 'tool', callId: call.id },
+          content: [{ type: 'text', text: call.result }],
+          isError: call.error !== undefined,
         },
         ...call.meta === undefined ? {} : { meta: call.meta },
         ...call.error === undefined ? {} : { error: call.error },
@@ -319,7 +368,7 @@ function mainLog(): { readonly events: SessionEvent[]; readonly forkSeedLength: 
 
 function oneShotLog(seed: readonly SessionEvent[]): SessionEvent[] {
   const log = new EventLog(CREATED_AT + 100_000, seed)
-  log.add({ type: 'session/end-seed', data: {} })
+  log.add({ type: 'session/end-seed', data: { inherited: true } })
   const turn = HISTORICAL_TURNS + 1
   log.add({ type: 'turn/start', data: { turn } })
   log.add(userMessage('preview-review-user', 'Review whether the preview fixture is isolated from future WebFS data.'))
@@ -362,39 +411,111 @@ function continuableLog(): SessionEvent[] {
 function header(
   id: SessionHeader['id'],
   createdAt: number,
-  child?: { readonly parentSession: SessionHeader['id']; readonly mode: 'one-shot' | 'continuable'; readonly seedLength?: number },
-): SessionHeader {
+  child?: {
+    readonly parentSession: SessionHeader['id']
+    readonly mode: 'one-shot' | 'continuable'
+    readonly seedLength?: SessionLogOffsetType
+  },
+): { readonly meta: SessionHeader; readonly inheritedEventCount: SessionLogOffsetType } {
+  const inheritedEventCount = child?.seedLength ?? SessionLogOffset(0)
   return {
-    version: 0,
-    id,
-    createdAt,
-    cwd: WORKSPACE,
-    delegationDepth: child === undefined ? 0 : 1,
-    agentPreset: 'standard',
-    ...child === undefined ? {} : {
-      parentSession: child.parentSession,
-      origin: 'subagent' as const,
-      ...child.seedLength === undefined ? {} : { seedLength: child.seedLength },
+    meta: {
+      version: SESSION_FORMAT_VERSION,
+      id,
+      createdAt,
+      cwd: WORKSPACE,
+      isSeeded: child?.seedLength !== undefined,
+      delegationDepth: child === undefined ? 0 : 1,
+      agentPreset: 'standard',
+      ...child === undefined ? {} : {
+        parentSession: child.parentSession,
+        origin: 'subagent' as const,
+      },
+    },
+    inheritedEventCount,
+  }
+}
+
+function renderLog(
+  storage: { readonly meta: SessionHeader; readonly inheritedEventCount: SessionLogOffsetType },
+  events: readonly SessionEvent[],
+): string {
+  return `${JSON.stringify(toHeaderLine(storage.meta, storage.inheritedEventCount))}\n${eventLines(events)}\n`
+}
+
+/**
+ * Host Schedule task rows the preview's `DSH_HOME` carries, keyed by durable
+ * task id.
+ *
+ * The schedule domain opens this whole-unit document at Host startup and
+ * rejects the complete unit on any malformed row, so the fixture spec decodes
+ * every stored task through the production schema. Targets sit in 2099:
+ * the Session row mark, the header clock entry, and the tasks page render them
+ * as scheduled, while the timer clamp (`MAX_TIMER_DELAY_MS`) keeps a preview
+ * session from dispatching them. The daily row carries a saved delivery so the
+ * detail's records tab renders retained content.
+ * @returns Task rows for the schedule domain's `tasks` table.
+ */
+function scheduleTasks(): Readonly<Record<string, unknown>> {
+  const sessionId = VFS_EXAMPLE_SESSION_IDS.main
+  const dailyPrompt = 'Summarize the preview workspace changes and their verification status.'
+  const dailyReceipt = {
+    scheduledAt: '2098-12-31T01:00:00.000Z',
+    deliveredAt: '2098-12-31T01:00:01.000Z',
+    messageId: 'preview-daily-digest-receipt',
+  }
+  return {
+    [VFS_EXAMPLE_SCHEDULE_IDS.daily]: {
+      sessionId,
+      record: {
+        id: VFS_EXAMPLE_SCHEDULE_IDS.daily,
+        kind: 'daily',
+        title: 'Daily preview digest',
+        prompt: dailyPrompt,
+        time: '09:00:00.000',
+        timeZone: 'Asia/Shanghai',
+        scheduledAt: '2099-01-01T01:00:00.000Z',
+      },
+      status: 'active',
+      deliveryHistory: {
+        earlierRecordsUnavailable: false,
+        records: [{ ...dailyReceipt, prompt: dailyPrompt }],
+      },
+      lastDelivery: dailyReceipt,
+    },
+    [VFS_EXAMPLE_SCHEDULE_IDS.once]: {
+      sessionId,
+      record: {
+        id: VFS_EXAMPLE_SCHEDULE_IDS.once,
+        kind: 'at',
+        title: 'Preview release window',
+        prompt: 'Remind the preview owner that the release window opens.',
+        scheduledAt: '2099-01-02T00:00:00.000Z',
+      },
+      status: 'active',
     },
   }
 }
 
-function renderLog(meta: SessionHeader, events: readonly SessionEvent[]): string {
-  return `${JSON.stringify(toHeaderLine(meta))}\n${eventLines(events, true)}\n`
-}
-
-/** Build every committed fixture file as repository-relative UTF-8 text. */
+/** Build current-generation fixture files as fixture-relative UTF-8 text; committed predecessors remain untouched. */
 export function buildVfsExampleFiles(): ReadonlyMap<string, string> {
   const main = mainLog()
   const project = projectKey(WORKSPACE)
-  const sessionPath = (id: string): string => `home/sessions/${project}/${id}/session.jsonl`
+  const sessionPath = (id: string): string =>
+    `home/sessions/${project}/${id}/${generationLogFilename(SESSION_FORMAT_VERSION, 'none')}`
   const projectionCache = `${JSON.stringify({
-    unit: { name: 'session_projcache', version: 3 },
+    unit: { name: 'session_projcache', version: projectionCacheDomainSpec.version },
     global: null,
     tables: {
       sessions: {
         [VFS_EXAMPLE_SESSION_IDS.main]: {
-          identity: { createdAt: CREATED_AT, cwd: WORKSPACE },
+          identity: {
+            formatVersion: SESSION_FORMAT_VERSION,
+            createdAt: CREATED_AT,
+            cwd: WORKSPACE,
+            isSeeded: false,
+            inheritedEventCount: 0,
+          },
           rows: {
             title: { ver: 1, seq: main.events.at(-1)?.seq ?? -1, val: VFS_EXAMPLE_TITLE },
           },
@@ -427,5 +548,10 @@ export function buildVfsExampleFiles(): ReadonlyMap<string, string> {
       }),
       continuableLog(),
     )],
+    ['home/storages/schedule.json', `${JSON.stringify({
+      unit: { name: scheduleDomain.name, version: scheduleDomain.version },
+      global: null,
+      tables: { tasks: scheduleTasks() },
+    }, null, 2)}\n`],
   ])
 }
