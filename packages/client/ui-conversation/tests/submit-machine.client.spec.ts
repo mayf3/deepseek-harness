@@ -362,9 +362,10 @@ describe('decorations: scanTextRefs', () => {
     ])
   })
 
-  it('matches slash syntax while the catalog is unavailable and narrows when it arrives', () => {
-    expect(scanTextRefs('/goal x', new Map())).toEqual([{ start: 0, end: 5, trigger: '/' }])
+  it('matches slash names only after their catalog is available', () => {
+    expect(scanTextRefs('/goal x', new Map())).toEqual([])
     expect(scanTextRefs('/goal x', new Map([['/', []]]))).toEqual([])
+    expect(scanTextRefs('/goal x', new Map([['/', ['goal']]]))).toEqual([{ start: 0, end: 5, trigger: '/' }])
   })
 
   it('recognizes directory paths independently of the dynamic lexicon', () => {

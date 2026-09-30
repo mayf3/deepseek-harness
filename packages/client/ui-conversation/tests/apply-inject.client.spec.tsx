@@ -20,6 +20,7 @@ import {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createConversationStore } from '../src/client/stores.ts'
+import type { SessionInputShell } from '../src/client/input/facade.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -551,7 +552,8 @@ describe('Conversation inject API', () => {
       references: [{ source: 'reference', ref: '@one.ts', label: 'one.ts', appearance: 'file' as const,
         clipboardText: '@one.ts', offset: 6, length: 7 }],
     }
-    b.inputApi(ROOT).actions.setDraft(draft)
+    const shell = b.inputApi(ROOT).actions as SessionInputShell
+    shell.setDraft(draft)
     const other = 'structured-target' as SessionId
     await b.runtime.sessions.add({ id: other, session: {} })
     b.connectWorkspace.mockResolvedValueOnce(other)

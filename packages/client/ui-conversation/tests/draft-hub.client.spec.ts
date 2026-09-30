@@ -115,7 +115,7 @@ class TriggerProvider extends Service {
   }
 }
 
-it('does not resolve input triggers until the first draft initialization', async () => {
+it('leaves trigger subscription to lifecycle activation rather than construction or draft writes', async () => {
   const b = await storedSession(saved)
   const source = catalog(['saved'])
   const triggers = controller(() => source.source)
@@ -134,7 +134,9 @@ it('does not resolve input triggers until the first draft initialization', async
 
   expect(resolve).not.toHaveBeenCalled()
   shell.setDraft(saved)
-  expect(resolve).toHaveBeenCalled()
+  expect(source.subscribers).toBe(0)
+  expect(shell.draftSnapshot).toEqual(saved)
+  shell.refreshLexiconSubscription()
   expect(source.subscribers).toBe(1)
   expect(shell.draftSnapshot).toEqual(saved)
 })
@@ -169,13 +171,19 @@ it('reuses one shell during synchronous catalog retention and restores its initi
   await provider.await()
 
   const first = b.hub.shellFor(b.binding)
-  expect(observed).toBe(true)
+  const initial = first.draftSnapshot
+  expect(initial).toEqual(saved)
+  expect(first.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
+  await vi.waitFor(() => {
+    expect(observed).toBe(true)
+    expect(source.subscribers).toBe(1)
+  })
   expect(reentered).toHaveLength(1)
   expect(retained).toHaveLength(1)
   expect(retained[0]?.binding).toBe(b.binding)
   expect(new Set([first, ...reentered, b.hub.shellFor(b.binding)]).size).toBe(1)
   expect(source.subscribers).toBe(1)
-  expect(first.draftSnapshot).toEqual(saved)
+  expect(first.draftSnapshot).toBe(initial)
   expect(reentered[0]?.draftSnapshot).toBe(first.draftSnapshot)
   expect(first.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
   expect(localStorage.getItem(b.key)).toBe(b.raw)
@@ -184,7 +192,7 @@ it('reuses one shell during synchronous catalog retention and restores its initi
 it('restores legacy text before a view and reuses the live draft on later shell lookups', async () => {
   const b = await fixture('/saved legacy\n🙂 中文')
   expect(b.shell.draftSnapshot).toEqual({ text: '/saved legacy\n🙂 中文', references: [] })
-  expect(textReferences(b.shell)).toEqual(['/saved'])
+  expect(textReferences(b.shell)).toEqual([])
   expect(localStorage.getItem(b.key)).toBe(b.raw)
   b.shell.setDraft('edited before mounting a view')
   expect(b.hub.shellFor(b.binding)).toBe(b.shell)
@@ -196,6 +204,7 @@ it('restores legacy text before a view and reuses the live draft on later shell 
 it('imports reference chips on the first Hub shell and preserves them without an explicit clear', async () => {
   const b = await fixture(saved)
   expect(b.shell.draftSnapshot).toEqual(saved)
+  expect(textReferences(b.shell)).toEqual([])
   expect(b.shell.editor.getEditorState().read(() => $nodesOfType(ReferenceChipNode).length)).toBe(1)
   expect(b.hub.requestDraftInitialization(b.binding, { prompt: 'new text' })).toBe('preserved')
   expect(b.shell.draftSnapshot).toEqual(saved)
@@ -209,7 +218,7 @@ it('subscribes when a provider arrives and disconnects each withdrawn provider',
     start: 0, end: '/saved'.length, draftRev: b.shell.snapshot.draftRev,
   })).toBe(true)
   const current = b.shell.draftSnapshot
-  expect(textReferences(b.shell)).toEqual(['/current'])
+  expect(textReferences(b.shell)).toEqual([])
   const first = catalog([])
   const firstProvider = b.ctx.plugin(TriggerProvider, { controller: controller(() => first.source) })
   await firstProvider.await()
@@ -221,7 +230,10 @@ it('subscribes when a provider arrives and disconnects each withdrawn provider',
   first.set(['current'])
   await vi.waitFor(() => { expect(textReferences(b.shell)).toEqual(['/current']) })
   await firstProvider.dispose()
-  expect(first.subscribers).toBe(0)
+  await vi.waitFor(() => {
+    expect(first.subscribers).toBe(0)
+    expect(textReferences(b.shell)).toEqual([])
+  })
   expect(first.releases).toBe(first.subscriptions)
   expect(b.sessions.binding(b.id)).toBe(b.binding)
   expect(b.hub.shellFor(b.binding)).toBe(b.shell)
@@ -238,7 +250,10 @@ it('subscribes when a provider arrives and disconnects each withdrawn provider',
   second.set(['current'])
   await vi.waitFor(() => { expect(textReferences(b.shell)).toEqual(['/current']) })
   await secondProvider.dispose()
-  expect(second.subscribers).toBe(0)
+  await vi.waitFor(() => {
+    expect(second.subscribers).toBe(0)
+    expect(textReferences(b.shell)).toEqual([])
+  })
   expect(second.releases).toBe(second.subscriptions)
   expect(b.shell.draftSnapshot).toBe(current)
   expect(b.sessions.binding(b.id)).toBe(b.binding)

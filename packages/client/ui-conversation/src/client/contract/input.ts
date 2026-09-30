@@ -11,7 +11,7 @@ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/cli
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ArbitrateKey, ArbitrateOutcome, DraftInput, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
+import type { ArbitrateKey, ArbitrateOutcome, Occurrence, ReferenceInsert, TokenSpan } from './draft-editor.ts'
 import type { InputSubmitMode, MessageSubmission } from './composer-submission.ts'
 
 /** Attachment payload passed to a claimed command submission. */
@@ -175,8 +175,8 @@ export interface InputTarget {
 
 /** Per-session input facade owned by the conversation wiring layer. */
 export interface SessionInput extends InputTarget {
-  /** Replace the whole draft (persisted-draft seed and programmatic writes). */
-  setDraft(text: DraftInput): void
+  /** Replace the whole draft with plain text, removing inline reference chips. */
+  setDraft(text: string): void
   /** Append ordered browser-owned attachment ids; busy admission phases refuse. */
   addAttachments(ids: readonly DraftAttachmentId[]): boolean
   /** Remove one browser-owned attachment id; busy admission phases refuse. @returns whether the id was removed. */
@@ -221,9 +221,9 @@ export interface SessionInputResolver {
   requestDraftInitialization(binding: SessionBinding, options: DraftInitializationOptions): DraftInitializationResult
 }
 
-/** Initial content for a target Session; attachments remain under their existing owner. */
+/** Initial text for a target Session; attachments remain under their existing owner. */
 export interface DraftInitializationOptions {
-  readonly prompt?: DraftInput
+  readonly prompt?: string
   readonly clearPreviousDraft?: boolean
 }
 
@@ -246,8 +246,8 @@ export interface InputActions {
    * @returns false when the draft changed or submission locked the editor.
    */
   insertText(text: string, span: TokenSpan): boolean
-  /** Replace the whole draft (persisted-draft seed and programmatic writes). */
-  setDraft(text: DraftInput): void
+  /** Replace the whole draft with plain text, removing inline reference chips. */
+  setDraft(text: string): void
   /** Write the current semantic document through the mounted persistence callback. */
   persistDraft(): void
   /** Append ordered browser-owned attachment ids; busy admission phases refuse. */

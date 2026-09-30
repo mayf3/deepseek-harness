@@ -761,18 +761,7 @@ describe('UiWorkspaceService', () => {
       { name: 'plain text', options: { prompt: '草稿 🧭\nsecond line', clearPreviousDraft: true } },
       { name: 'empty text', options: { prompt: '' } },
       { name: 'clear without prompt', options: { clearPreviousDraft: true } },
-      {
-        name: 'structured references',
-        options: {
-          prompt: {
-            text: '🧭 @notes.md',
-            references: [{
-              offset: 3, length: 9, source: 'reference', ref: '@notes.md', label: 'notes.md',
-              appearance: 'file', clipboardText: '@notes.md',
-            }],
-          },
-        },
-      },
+      { name: 'reference-like text', options: { prompt: '🧭 @notes.md' } },
     ])('prepares $name on the retained target before replacing the current selection', async ({ options }) => {
       const backing = persistSelection({})
       const b = bench({ workspaces: workspaceState([workspace('a')]) })
@@ -835,32 +824,23 @@ describe('UiWorkspaceService', () => {
       expect(b.notify).not.toHaveBeenCalled()
     })
 
-    it('captures options and nested references before asynchronous Session creation', async () => {
+    it('captures prompt text and clear intent before asynchronous Session creation', async () => {
       const b = bench({ workspaces: workspaceState([workspace('a')]) })
       const created = Promise.withResolvers<SessionId>()
       b.sessions.create.mockReturnValueOnce(created.promise)
       const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
       const options = {
-        prompt: {
-          text: '🧭 @notes.md',
-          references: [{
-            offset: 3, length: 9, source: 'reference', ref: '@notes.md', label: 'notes.md',
-            appearance: 'file' as const, clipboardText: '@notes.md',
-          }],
-        },
+        prompt: '🧭 @notes.md',
         clearPreviousDraft: true,
       }
-      const expected = structuredClone(options)
+      const expected = { ...options }
       b.uiWorkspace.startSession(wid('a'), options)
       const completion = lastOpening(opening)
       expect(b.sessions.create).toHaveBeenCalledOnce()
       expect(b.requestDraftInitialization).not.toHaveBeenCalled()
 
       options.clearPreviousDraft = false
-      options.prompt.text = 'caller changed the text'
-      options.prompt.references[0]!.label = 'caller changed the reference'
-      options.prompt.references.length = 0
-      options.prompt = { text: 'caller replaced the prompt', references: [] }
+      options.prompt = 'caller replaced the prompt'
       created.resolve(sid('captured'))
       await completion
 

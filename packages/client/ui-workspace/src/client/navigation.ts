@@ -227,7 +227,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
-    const draftOptions = options === undefined ? undefined : structuredClone(options)
+    const draftOptions = options === undefined ? undefined : { ...options }
     const initializeDraft = draftOptions !== undefined
       && (draftOptions.prompt !== undefined || draftOptions.clearPreviousDraft === true)
     const workspace = this.workspaces.list.getSnapshot()

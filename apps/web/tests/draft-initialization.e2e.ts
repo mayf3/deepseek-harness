@@ -33,7 +33,7 @@ interface DraftSnapshot {
 const EMPTY: DraftSnapshot = { text: '', references: [] }
 
 interface DraftOptions {
-  prompt?: string | DraftSnapshot
+  prompt?: string
   clearPreviousDraft?: boolean
 }
 
@@ -123,6 +123,25 @@ function storedDraft(page: Page, sessionId: SessionId): Promise<unknown> {
   }, sessionId)
 }
 
+async function writeStoredDrafts(page: Page, drafts: readonly { sessionId: SessionId; draft: string | DraftSnapshot }[]): Promise<void> {
+  await page.evaluate((drafts) => {
+    for (const { sessionId, draft } of drafts) {
+      const key = `dsh.conversation.${sessionId}`
+      const raw = localStorage.getItem(key)
+      const saved: unknown = raw === null ? { view: null, viewRequest: null } : JSON.parse(raw)
+      if (typeof saved !== 'object' || saved === null || Array.isArray(saved)) {
+        throw new Error(`Unexpected conversation record for ${sessionId}`)
+      }
+      localStorage.setItem(key, JSON.stringify({ ...saved, draft }))
+    }
+  }, drafts)
+}
+
+async function restoreStoredDrafts(page: Page, drafts: readonly { sessionId: SessionId; draft: string | DraftSnapshot }[]): Promise<void> {
+  await writeStoredDrafts(page, drafts)
+  await page.reload({ waitUntil: 'load' })
+}
+
 function editorSelection(page: Page) {
   return composer(page).evaluate((element) => {
     const selection = element.ownerDocument.getSelection()
@@ -162,7 +181,7 @@ async function assertDraft(page: Page, sessionId: SessionId, expected: DraftSnap
     [...element.children].map(paragraph => paragraph.textContent).join('\n')), SETTLE).toBe(displayed)
 }
 
-async function initialize(page: Page, prompt: string | DraftSnapshot, workspaceId?: string, clearPreviousDraft = false) {
+async function initialize(page: Page, prompt: string, workspaceId?: string, clearPreviousDraft = false) {
   await startSession(page, workspaceId, { prompt, clearPreviousDraft })
 }
 
@@ -300,10 +319,16 @@ it('restores repeated file, folder and Session capsules across edits, Workspace 
     await mkdir(join(workspace.path, '目录'))
     await writeFile(join(workspace.path, FILE_NAME), FILE_BODY)
   }
-  const secondDraft = structuredDraft(firstId, '工作区乙')
-  await initialize(page, secondDraft, second.id)
+  await initialize(page, '', second.id)
   await expect.poll(() => second.sessionIds.length, SETTLE).toBe(1)
   const secondId = second.sessionIds[0]!
+  await assertDraft(page, secondId, EMPTY)
+  const firstDraft = structuredDraft(secondId, '工作区甲')
+  const secondDraft = structuredDraft(firstId, '工作区乙')
+  await restoreStoredDrafts(page, [
+    { sessionId: firstId, draft: firstDraft },
+    { sessionId: secondId, draft: secondDraft },
+  ])
   await assertDraft(page, secondId, secondDraft)
   expect(await composer(page).evaluate(element => ({
     paragraphs: [...element.children].map(paragraph => paragraph.textContent),
@@ -354,8 +379,7 @@ it('restores repeated file, folder and Session capsules across edits, Workspace 
       ],
     }
   `)
-  const firstDraft = structuredDraft(secondId, '工作区甲')
-  await initialize(page, firstDraft, first.id)
+  await openWorkspaceSession(page, first, firstId)
   await assertDraft(page, firstId, firstDraft)
 
   const drafts = [
@@ -404,11 +428,7 @@ it('restores repeated file, folder and Session capsules across edits, Workspace 
 it('reads a legacy string from the existing conversation key and saves ordinary edits as a structured draft', async () => {
   const { scaffold, page, console, firstId } = await launchDraftFixture()
   const legacy = '旧字符串草稿 🧭\n普通 @notes，不是胶囊'
-  // Seed the old storage representation before the reloaded client creates its stores.
-  await page.addInitScript(({ id, text }) => {
-    localStorage.setItem(`dsh.conversation.${id}`, JSON.stringify({ draft: text, view: null, viewRequest: null }))
-  }, { id: firstId, text: legacy })
-  await page.reload({ waitUntil: 'load' })
+  await restoreStoredDrafts(page, [{ sessionId: firstId, draft: legacy }])
   await expect.poll(() => selectedSession(page), SETTLE).toBe(firstId)
   await composer(page).waitFor()
   await expect.poll(() => composer(page).evaluate(element =>
@@ -427,7 +447,7 @@ it('rematches the current draft after a delayed real skills catalog without repl
   const releaseCatalog = Promise.withResolvers<undefined>()
   let captured: { status: number; body: string; request: string | null } | undefined
   let catalogRequests = 0
-  const { scaffold, page, console, first, firstId } = await launchDraftFixture(async (page, scaffold) => {
+  const { scaffold, page, console, firstId } = await launchDraftFixture(async (_page, scaffold) => {
     for (const name of ['draft-late-original', 'draft-late-current']) {
       const directory = join(scaffold.workspaceCwd, '.agents', 'skills', name)
       await mkdir(directory, { recursive: true })
@@ -437,27 +457,6 @@ it('rematches the current draft after a delayed real skills catalog without repl
       ].join('\n'))
     }
     await writeFile(join(scaffold.workspaceCwd, FILE_NAME), FILE_BODY)
-    let intercepted = false
-    await page.route(url => url.pathname === '/api/skills/list', async (route) => {
-      catalogRequests++
-      if (intercepted) {
-        await route.continue()
-        return
-      }
-      intercepted = true
-      const response = await route.fetch()
-      try {
-        captured = { status: response.status(), body: await response.text(), request: route.request().postData() }
-        await releaseCatalog.promise
-        await route.fulfill({ response })
-      } finally {
-        await response.dispose()
-      }
-    })
-    onTestFinished(async () => {
-      releaseCatalog.resolve(undefined)
-      await page.unrouteAll({ behavior: 'wait' })
-    })
   })
   const file = `@"${FILE_NAME}"`
   const originalPrefix = '/draft-late-original\n'
@@ -469,8 +468,33 @@ it('rematches the current draft after a delayed real skills catalog without repl
       label: FILE_NAME, appearance: 'file', clipboardText: file,
     }],
   }
-  await initialize(page, initial, first.id)
+  await writeStoredDrafts(page, [{ sessionId: firstId, draft: initial }])
+  // Only the new document's catalog may wait on this gate; the preceding page has no held routes.
+  await page.goto('about:blank', { waitUntil: 'load' })
+  let intercepted = false
+  await page.route(url => url.pathname === '/api/skills/list', async (route) => {
+    catalogRequests++
+    if (intercepted) {
+      await route.continue()
+      return
+    }
+    intercepted = true
+    const response = await route.fetch()
+    try {
+      captured = { status: response.status(), body: await response.text(), request: route.request().postData() }
+      await releaseCatalog.promise
+      await route.fulfill({ response })
+    } finally {
+      await response.dispose()
+    }
+  })
+  onTestFinished(async () => {
+    releaseCatalog.resolve(undefined)
+    await page.unrouteAll({ behavior: 'wait' })
+  })
+  await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
   await assertDraft(page, firstId, initial)
+  expect(await composer(page).locator('[data-composer-text-ref]').count()).toBe(0)
   await composer(page).click()
   await page.keyboard.press('ControlOrMeta+Home')
   await page.keyboard.press('End')
@@ -499,7 +523,7 @@ it('rematches the current draft after a delayed real skills catalog without repl
   expect(selection.text).toBe('cd')
   expect(catalogRequests).toBe(1)
   await expect.poll(() => composer(page).locator('[data-composer-text-ref]').allTextContents(), SETTLE)
-    .toEqual(['/draft-late-current', '/draft-late-missing'])
+    .toEqual([])
 
   const delivered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/skills/list')
   releaseCatalog.resolve(undefined)
@@ -526,7 +550,7 @@ it('carries all reference capsules through the real Workspace picker and leaves 
     await writeFile(join(workspace.path, FILE_NAME), FILE_BODY)
   }
   const draft = structuredDraft(firstId, '切换工作区携带')
-  await initialize(page, draft, first.id)
+  await restoreStoredDrafts(page, [{ sessionId: firstId, draft }])
   await assertDraft(page, firstId, draft)
   await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
   await page.getByRole('menuitem', { name: second.title, exact: true }).click()
@@ -553,13 +577,18 @@ it('applies a parameter transition matrix to one reusable target without changin
   const { scaffold, page, console, first, firstId, second } = await launchDraftFixture()
   const source = structuredDraft(firstId, '源草稿保持不变')
   const structured = structuredDraft(firstId, '目标结构草稿')
-  const replacement = structuredDraft(firstId, '目标替换草稿')
+  const restored = structuredDraft(firstId, '目标恢复草稿')
+  const replacement = { text: '目标替换文字 🧭', references: [] }
   const plain = { text: '已有目标文字 🧭', references: [] }
-  await initialize(page, source, first.id)
-  await assertDraft(page, firstId, source)
-  await initialize(page, structured, second.id, true)
+  const literalReferences = { text: structured.text, references: [] }
+  await initialize(page, '', second.id, true)
   await expect.poll(() => second.sessionIds.length, SETTLE).toBe(1)
   const secondId = second.sessionIds[0]!
+  await assertDraft(page, secondId, EMPTY)
+  await restoreStoredDrafts(page, [
+    { sessionId: firstId, draft: source },
+    { sessionId: secondId, draft: structured },
+  ])
   await assertDraft(page, secondId, structured)
 
   const transitions: {
@@ -567,19 +596,24 @@ it('applies a parameter transition matrix to one reusable target without changin
     target: 'explicit' | 'current'
     options: DraftOptions
     expected: DraftSnapshot
+    restore?: DraftSnapshot
     reload?: boolean
   }[] = [
     { name: 'nonempty text preserves existing capsules', target: 'current', options: { prompt: 'ignored', clearPreviousDraft: false }, expected: structured },
     { name: 'empty text preserves existing capsules', target: 'explicit', options: { prompt: '', clearPreviousDraft: false }, expected: structured },
     { name: 'text replaces a nonempty structured draft', target: 'current', options: { prompt: plain.text, clearPreviousDraft: true }, expected: plain, reload: true },
-    { name: 'structured input preserves existing text', target: 'explicit', options: { prompt: structured, clearPreviousDraft: false }, expected: plain },
+    { name: 'nonempty text preserves existing text', target: 'explicit', options: { prompt: structured.text, clearPreviousDraft: false }, expected: plain },
     { name: 'empty text explicitly clears existing text', target: 'current', options: { prompt: '', clearPreviousDraft: true }, expected: EMPTY },
-    { name: 'structured input fills a reused empty target', target: 'explicit', options: { prompt: structured, clearPreviousDraft: false }, expected: structured },
-    { name: 'structured input explicitly replaces capsules', target: 'current', options: { prompt: replacement, clearPreviousDraft: true }, expected: replacement, reload: true },
-    { name: 'absent prompt and false clear preserve capsules', target: 'explicit', options: { clearPreviousDraft: false }, expected: replacement },
+    { name: 'reference-like text fills an empty target without creating capsules', target: 'explicit', options: { prompt: structured.text, clearPreviousDraft: false }, expected: literalReferences },
+    { name: 'nonempty text explicitly replaces existing text', target: 'current', options: { prompt: replacement.text, clearPreviousDraft: true }, expected: replacement, reload: true },
+    { name: 'absent prompt and false clear preserve restored capsules', target: 'explicit', options: { clearPreviousDraft: false }, expected: restored, restore: restored },
     { name: 'empty text explicitly clears capsules', target: 'current', options: { prompt: '', clearPreviousDraft: true }, expected: EMPTY, reload: true },
   ]
   for (const transition of transitions) {
+    if (transition.restore !== undefined) {
+      await restoreStoredDrafts(page, [{ sessionId: secondId, draft: transition.restore }])
+      await assertDraft(page, secondId, transition.restore)
+    }
     if (transition.target === 'explicit') {
       await openWorkspaceSession(page, first, firstId)
       await assertDraft(page, firstId, source)
@@ -609,8 +643,8 @@ it.each(['older-first', 'newer-first'] as const)(
     const third = await scaffold.ctx.workspaceRegistry.create(thirdPath, 'Draft latest')
     await page.getByText(third.title, { exact: true }).first().waitFor()
     const source = structuredDraft(firstId, '交错请求的源草稿')
-    const latest = structuredDraft(firstId, '只有最后目标收到草稿')
-    await initialize(page, source, first.id)
+    const latest = { text: '只有最后目标收到文字草稿 🧭', references: [] }
+    await restoreStoredDrafts(page, [{ sessionId: firstId, draft: source }])
     await assertDraft(page, firstId, source)
 
     interface HeldCreation {
@@ -658,7 +692,7 @@ it.each(['older-first', 'newer-first'] as const)(
     const secondId = second.sessionIds[0]!
     expect(older.response?.body).toContain(secondId)
     await assertDraft(page, firstId, source)
-    await startSession(page, third.id, { prompt: latest, clearPreviousDraft: true })
+    await startSession(page, third.id, { prompt: latest.text, clearPreviousDraft: true })
     await expect.poll(() => newer.response?.status, SETTLE).toBe(200)
     await expect.poll(() => third.sessionIds.length, SETTLE).toBe(1)
     const thirdId = third.sessionIds[0]!

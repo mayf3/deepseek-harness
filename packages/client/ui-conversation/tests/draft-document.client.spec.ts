@@ -53,6 +53,7 @@ function makeShell(overrides: Partial<SessionInputDeps> = {}): SessionInputShell
     ...overrides,
   })
   onTestFinished(() => { shell.dispose() })
+  shell.refreshLexiconSubscription()
   return shell
 }
 
@@ -90,7 +91,7 @@ function expectInitializationBlocked(shell: SessionInputShell): void {
   const unbind = shell.bindDraftPersistence(write)
   try {
     expect(shell.requestDraftInitialization({ clearPreviousDraft: true })).toBe('blocked')
-    expect(shell.requestDraftInitialization({ prompt: documentOf('replacement ', folder), clearPreviousDraft: true })).toBe('blocked')
+    expect(shell.requestDraftInitialization({ prompt: 'replacement @src/', clearPreviousDraft: true })).toBe('blocked')
     expect(shell.draftSnapshot).toBe(draft)
     expect(shell.snapshot.attachmentIds).toBe(attachmentIds)
     expect(chips(shell)).toEqual(references)
@@ -308,12 +309,12 @@ describe('draft documents in the input shell', () => {
     expect(second).toHaveBeenCalledTimes(2)
   })
 
-  it('applies initial structured prompts without waiting for a view', () => {
+  it('applies initial text without waiting for a view or inferring reference chips', () => {
     const shell = makeShell()
-    const prompt = documentOf('read ', file)
+    const prompt = `read ${file.clipboardText}`
     expect(shell.requestDraftInitialization({ prompt })).toBe('applied')
-    expect(shell.draftSnapshot).toEqual(prompt)
-    expect(chips(shell)).toHaveLength(1)
+    expect(shell.draftSnapshot).toEqual({ text: prompt, references: [] })
+    expect(chips(shell)).toEqual([])
   })
 
   it('preserves existing text or attachments unless target text is explicitly cleared', () => {
@@ -468,7 +469,7 @@ describe('draft documents in the input shell', () => {
       start: 0, end: '/older'.length, draftRev: shell.snapshot.draftRev,
     })).toBe(true)
     const draft = shell.draftSnapshot
-    expect(textReferences(shell)).toEqual(['/current'])
+    expect(textReferences(shell)).toEqual([])
     lexicon.set(new Map([['/', ['older']]]))
     await vi.waitFor(() => { expect(textReferences(shell)).toEqual([]) })
     expect(shell.draftSnapshot).toBe(draft)
@@ -479,7 +480,11 @@ describe('draft documents in the input shell', () => {
     expect(chips(shell)).toHaveLength(1)
     shell.editor.dispatchCommand(UNDO_COMMAND, undefined)
     await vi.waitFor(() => { expect(shell.draftSnapshot).toEqual(previous) })
-    expect(textReferences(shell)).toEqual(['/older'])
+    // History retains the decoration state saved before the catalog was available.
+    expect(textReferences(shell)).toEqual([])
+    lexicon.set(new Map([['/', ['older', 'current', 'edited']]]))
+    await vi.waitFor(() => { expect(textReferences(shell)).toEqual(['/older']) })
+    expect(shell.draftSnapshot).toEqual(previous)
     shell.editor.dispatchCommand(REDO_COMMAND, undefined)
     await vi.waitFor(() => { expect(shell.draftSnapshot).toEqual(current) })
     expect(textReferences(shell)).toEqual(['/current'])
@@ -590,22 +595,22 @@ describe('draft documents in the input shell', () => {
 })
 
 describe('plain-text reference catalogs', () => {
-  it('recognizes slash syntax only while its catalog is unavailable', () => {
+  it('leaves named tokens plain until their own catalog includes them', () => {
     const unavailable = new Map<'/' | '@', readonly string[]>()
     expect(scanTextRefs('', unavailable)).toEqual([])
-    expect(scanTextRefs('/plan /plan.md /plan/path /plan。 x/plan @person', unavailable)).toEqual([
-      { start: 0, end: 5, trigger: '/' },
-    ])
+    expect(scanTextRefs('/plan /plan.md /plan/path /plan。 x/plan @person', unavailable)).toEqual([])
     expect(scanTextRefs('/plan @person', new Map([['/', []]]))).toEqual([])
     expect(scanTextRefs('/plan @person', new Map([['@', ['person']]]))).toEqual([
-      { start: 0, end: 5, trigger: '/' },
       { start: 6, end: 13, trigger: '@' },
+    ])
+    expect(scanTextRefs('/plan @person', new Map([['/', ['plan']]]))).toEqual([
+      { start: 0, end: 5, trigger: '/' },
     ])
   })
 
   it('orders folder and catalog references without overlapping ranges', () => {
     const text = '@src/ /plan @other/ @src/'
-    expect(scanTextRefs(text, new Map([['@', ['src']]]))).toEqual([
+    expect(scanTextRefs(text, new Map([['@', ['src']], ['/', ['plan']]]))).toEqual([
       { start: 0, end: 4, trigger: '@' },
       { start: 6, end: 11, trigger: '/' },
       { start: 12, end: 19, trigger: '@' },

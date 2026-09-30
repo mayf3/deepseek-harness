@@ -96,7 +96,7 @@ function projectionContentChanged(prev: EditorProjection, next: EditorProjection
 
 const EMPTY_QUEUE: InboxState['next-turn'] = []
 
-/** Unavailable catalogs leave syntax-only text decoration enabled. */
+/** Unavailable catalogs contain no named text references. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 
 /** Editor and attachment snapshot owned by one detached default send. */
@@ -216,8 +216,6 @@ export class SessionInputShell implements SessionInput {
    * @param text - plain text or the complete semantic document.
    */
   setDraft(text: DraftInput): void {
-    // Catalog resolution can reenter InputHub, which caches this shell before importing its draft.
-    this.refreshLexiconSubscription()
     const draft = resolveDraftInput(text)
     if (draft.references.length === 0) this.draftEditor.setDraft(draft.text)
     else this.draftEditor.restoreDraft(draft.text, draft.references)
