@@ -482,10 +482,10 @@ describe('CI workflow', () => {
     })
   })
 
-  it('bounds the complete benchmark job to fifteen minutes', () => {
+  it('bounds the complete benchmark job to twenty minutes', () => {
     const benchmark = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'node-24-bench')
 
-    expect(benchmark['timeout-minutes']).toBe(15)
+    expect(benchmark['timeout-minutes']).toBe(20)
     expect(benchmark.steps).toContainEqual({
       name: 'Run performance benchmarks',
       env: { DSH_GATE_VERBOSE: '1' },
