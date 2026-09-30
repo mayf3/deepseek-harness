@@ -1,6 +1,6 @@
 # Agent Note：人工任务终止——用「未认领的终态报告」而非第二条取消路径
 
-状态：已实现
+Status: implemented
 
 Update：本文引入的 `reported` 选项已随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md) 消失。注册表不再保留播报位；`dsh-tool-jobs` 只在台账里认领自己的 `job_kill` 与等待，因此人类的 `job.kill` 天然让通知保持待送达。原因合并、`job.kill` Remote 与两击式控件保持不变。
 

@@ -4,7 +4,7 @@
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-human-job-kill.md
 /agent-note-human-job-kill-an-unclaimed-terminal-report-instead-of-a-second-cancellation-path:
   en: d47dedfab1caa170
-  zh: 00bb8cd62ed79d54
+  zh: 8fe94a1f233ec646
 /agent-note-human-job-kill-an-unclaimed-terminal-report-instead-of-a-second-cancellation-path/problem:
   en: 3690502ccc80b5a3
   zh: cfd3c378e3921864

@@ -4,7 +4,7 @@
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-01-workflow-run-in-background.md
 /agent-note-workflow-runs-gain-run-in-background-over-the-job-registry:
   en: f009de4a29acc7d0
-  zh: d207b3722564338d
+  zh: ef4f290ebc6beb25
 /agent-note-workflow-runs-gain-run-in-background-over-the-job-registry/problem:
   en: 4ef955f5184800a3
   zh: 8e4e74557efac4ca

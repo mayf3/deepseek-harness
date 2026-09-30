@@ -1,6 +1,6 @@
 # Agent Note：插件详情页作为扩展点
 
-状态：已实现
+Status: implemented
 
 [English](2026-09-17-plugin-detail-page-extension-slots.md) | 中文
 

@@ -1,6 +1,6 @@
 # Agent Note：设置页作为伴生包
 
-状态：已实现
+Status: implemented
 
 [English](2026-09-17-settings-pages-as-companion-packages.md) | 中文
 

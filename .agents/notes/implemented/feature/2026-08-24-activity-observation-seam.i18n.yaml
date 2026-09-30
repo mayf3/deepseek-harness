@@ -4,7 +4,7 @@
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-activity-observation-seam.md
 /agent-note-the-activity-observation-seam-ctx-activities-and-live-output-streaming-to-the-web-client:
   en: 7fe6230c2327e0b5
-  zh: 13a07f7926f6861c
+  zh: 05f6fc8b1316ecfa
 /agent-note-the-activity-observation-seam-ctx-activities-and-live-output-streaming-to-the-web-client/problem:
   en: 8b50b64ed5a852bd
   zh: 21d651e0109dc641

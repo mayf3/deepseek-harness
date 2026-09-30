@@ -1,6 +1,6 @@
 # Agent Note：activity 观察 seam（`ctx.activities`）与 Web 客户端实时输出流
 
-状态：implemented
+Status: implemented
 
 Superseded：本文描述的独立 seam 已折入 `ctx.jobs`，成为逐 job 的观测 record——见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)；下文关于持久化与实时通道的分析仍然成立。
 

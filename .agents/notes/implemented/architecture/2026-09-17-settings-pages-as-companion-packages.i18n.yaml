@@ -4,7 +4,7 @@
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-settings-pages-as-companion-packages.md
 /agent-note-settings-pages-as-companion-packages:
   en: ada5eadeb6e921e4
-  zh: 1cc804b1720c2c98
+  zh: 943b71e0b55f1e0e
 /agent-note-settings-pages-as-companion-packages/problem:
   en: 8c23fffd3cef6ea8
   zh: 6072e1e4197afd7c

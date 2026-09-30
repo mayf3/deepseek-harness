@@ -4,7 +4,7 @@
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-plugin-detail-page-extension-slots.md
 /agent-note-plugin-detail-pages-as-an-extension-point:
   en: 71b432dfc4475c08
-  zh: a9f9a7e272c32093
+  zh: 07e3b0f4fa9623cb
 /agent-note-plugin-detail-pages-as-an-extension-point/problem:
   en: 39f7e246e6ab3beb
   zh: dba3ba5206d81d8d

@@ -1,6 +1,6 @@
 # Agent Note：唯一的 shell execute()——前台是投影，超时是对 job 的有界等待
 
-状态：已实现
+Status: implemented
 
 Update：[jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)拥有每条已登记命令现在填充的输出环、游标与拉取源。
 
