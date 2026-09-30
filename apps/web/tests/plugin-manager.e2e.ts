@@ -358,7 +358,7 @@ describe('web e2e: plugin manager', () => {
     expect(await toggle.isDisabled()).toBe(false)
     await panel.getByText(/cannot resolve profile bundle/).waitFor({ timeout: 10_000 })
     expect((await scaffold.ctx.pluginManager.listBundles()).find(row => row.name === '@fixture/missing-bundle'))
-      .toMatchObject({ enabled: true, error: { code: 'operation-error' }, rows: [] })
+      .toMatchObject({ enabled: true, installed: false, removable: true, error: { code: 'operation-error' }, rows: [] })
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'missing-bundle.expected.md'),
       await captureStableAria(page, '[data-plugin-panel]', scaffold.workspaceCwd, {
         replacements: [[scaffold.harnessHome, '{{home}}']],

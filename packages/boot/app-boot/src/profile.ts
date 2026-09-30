@@ -199,6 +199,16 @@ const INSTALLATION_OWNED_PROFILE_TUPLES: Record<string, readonly string[]> = {
   headless: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'],
 }
 
+/**
+ * Bundles an earlier release shipped and the installation no longer carries;
+ * {@link loadProfileDirectory} removes them from the profile's bundle list.
+ */
+const RETIRED_BUNDLES: ReadonlySet<string> = new Set([
+  // The Web composition mounts Schedule itself
+  // ([upgrade guide](../../../../docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md)).
+  '@deepseek-ai/dsh-experimental-schedule-bundle',
+])
+
 /** The bundle list a `dsh plugin` init uses for a name with no shipped template. */
 export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-base']
 
@@ -571,6 +581,20 @@ function sameBundles(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+/** Return `manifest` with `dsh.profile.bundles` replaced, preserving all other fields. */
+function withBundles(manifest: ProfileManifest, bundles: readonly string[]): ProfileManifest {
+  return {
+    ...manifest,
+    dsh: {
+      ...manifest.dsh,
+      profile: {
+        ...manifest.dsh?.profile,
+        bundles: [...bundles],
+      },
+    },
+  }
+}
+
 /**
  * Normalize an exact installation-owned bundle tuple to its shipped template,
  * preserving all other manifest fields. Other bundle lists remain untouched.
@@ -582,16 +606,20 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
   if (template === undefined || bundles === undefined) return manifest
   const isRetiredTuple = installationOwned !== undefined && sameBundles(bundles, installationOwned)
   if (!isRetiredTuple) return manifest
-  const normalized: ProfileManifest = {
-    ...manifest,
-    dsh: {
-      ...manifest.dsh,
-      profile: {
-        ...manifest.dsh?.profile,
-        bundles: [...template.bundles],
-      },
-    },
-  }
+  const normalized = withBundles(manifest, template.bundles)
+  writeProfileManifest(dir, normalized)
+  return normalized
+}
+
+/**
+ * Remove {@link RETIRED_BUNDLES} from a profile's bundle list, writing the
+ * manifest back only when it listed one.
+ */
+function dropRetiredBundles(dir: string, manifest: ProfileManifest): ProfileManifest {
+  const bundles = manifest.dsh?.profile?.bundles ?? []
+  const kept = bundles.filter(bundle => !RETIRED_BUNDLES.has(bundle))
+  if (kept.length === bundles.length) return manifest
+  const normalized = withBundles(manifest, kept)
   writeProfileManifest(dir, normalized)
   return normalized
 }
@@ -643,7 +671,8 @@ export function resolveBundleDir(
  * Load an already initialized profile directory without resolving it through
  * the shared Harness home. This is used by application-owned profiles whose
  * package project and lifecycle belong to that application.
- * Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are skipped
+ * Retired bundles are removed from the stored bundle list first, rewriting the
+ * manifest when it listed one. Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are skipped
  * without changing the manifest and listed in `skippedBundles`; nothing is printed.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
@@ -657,7 +686,7 @@ export function loadProfileDirectory(
   installAnchor: string,
   options: { userLayer?: boolean } = {},
 ): Profile {
-  const manifest = readProfileManifest(binName, dir)
+  const manifest = dropRetiredBundles(dir, readProfileManifest(binName, dir))
   const bundles = manifest.dsh?.profile?.bundles ?? []
   const layers: ProfileLayer[] = []
   const skippedBundles: SkippedBundle[] = []

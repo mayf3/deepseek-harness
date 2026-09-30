@@ -289,12 +289,15 @@ export class PluginManager extends TypertRemoteService {
     for (const name of names) {
       const installed = dependencies.includes(name)
       const optional = OPTIONAL_BUNDLES.includes(name)
-      const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, name)
+      const enabled = selected.includes(name)
+      const shipped = Object.hasOwn(installation.dependencies ?? {}, name)
       // Bundle resolution reads the installation first, so a profile dependency the installation manifest also names,
       // like one it forbids removing, is not the loaded copy.
+      const owned = installed && !shipped
+      // A selection neither the profile nor the installation holds, such as a retired bundle, is removed by deselecting it.
+      const removable = owned || (enabled && !installed && !shipped)
       const sourceOf = (packageName?: string): { source?: string } =>
-        removable ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir, packageName) } : {}
-      const enabled = selected.includes(name)
+        owned ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir, packageName) } : {}
       const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
       try {
         const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
@@ -599,14 +602,15 @@ export class PluginManager extends TypertRemoteService {
     return { status: 'cancelled' }
   }
 
-  /** Unload and remove a profile-owned bundle dependency through dsh plugin's pnpm path.
-   * @param name Installed dependency name.
+  /** Unload and remove a profile-owned bundle dependency through dsh plugin's pnpm path; a selected name no
+   * dependency holds is only deselected.
+   * @param name Installed dependency or selected bundle name.
    * @returns Removal diagnostics and the remaining profile state.
    */
   @Remote
   removeBundle(name: string): Promise<ChangeResult> {
     return this.change(async (result) => {
-      await this.configure(async () => {
+      const installed = await this.configure(async () => {
         const bundle = (await this.listBundles()).find(item => item.name === name)
         if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
         if (this.ownerContext.get('hmr') === undefined && (this.profile.startedBundles.includes(name)
@@ -623,7 +627,9 @@ export class PluginManager extends TypertRemoteService {
           && contributions.some(row => row.id === entry.options.id && row.name === entry.options.name))) {
           throw new ManagementFailure('bundle-in-use')
         }
+        return bundle.installed
       })
+      if (!installed) return
       result.packageResult = await this.runPnpm(['remove', name])
       if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) {
         throw new Error(result.packageResult.output)
