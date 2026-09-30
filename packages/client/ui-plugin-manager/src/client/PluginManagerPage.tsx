@@ -1171,6 +1171,7 @@ function InstallDialog({
     : null
   // Another registry is worth offering only for a failure the Host laid at the one it asked.
   const changeable = phase === 'failed' && !approvable && install.failure?.failedAt === 'registry'
+  const subject = install.subject
   return (
     <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
       <div className={css.wizard} data-install-phase={phase}>
@@ -1227,6 +1228,16 @@ function InstallDialog({
             : null}
           {phase === 'done' && install.restartRequired
             ? <p className={css.resultWarn} role="status">{t('installDoneRestart')}</p>
+            : null}
+          {phase === 'done' && subject?.kind === 'registry' && subject.version !== undefined
+            && install.installedVersion !== null && install.installedVersion !== subject.version
+            ? (
+              <p className={css.resultWarn} role="status">
+                {t('installDoneOlderVersion', {
+                  installed: install.installedVersion, version: subject.version, exact: `${subject.name ?? subject.spec}@${subject.version}`,
+                })}
+              </p>
+            )
             : null}
           {phase === 'done' && install.approvedBuilds.length > 0
             ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>

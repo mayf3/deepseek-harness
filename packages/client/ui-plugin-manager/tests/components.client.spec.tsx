@@ -63,7 +63,7 @@ const MIRROR_OPTION = `${en.registryNpmmirror} registry.npmmirror.com`
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', registries: null, registry: { kind: 'offered', registry: null }, registryOpen: false, registryError: false, attempts: null,
   phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
-  installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
+  installed: null, installedVersion: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
 const READY: PluginManagerState = {
@@ -1415,6 +1415,23 @@ describe('PluginManagerPage', () => {
     // The installed screen says which scripts were allowed.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', subject, installed: 'dsh-x', approvedBuilds: ['native'] } })
     expect(screen.getByText(en.installDoneApproved.replace('{names}', 'native'))).toBeTruthy()
+  })
+
+  it('names the exact spec when pnpm installed an older version than the one inspected', () => {
+    const subject = { spec: 'dsh-x', status: 'accepted', kind: 'registry', name: 'dsh-x', version: '1.4.2', bundle: true, registry: null } as const
+    const older = en.installDoneOlderVersion
+      .replace('{installed}', '1.4.1').replaceAll('{version}', '1.4.2').replace('{exact}', 'dsh-x@1.4.2')
+    const done = { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'done', installed: 'dsh-x' } as const
+    const { set } = renderTab({ install: { ...done, subject, installedVersion: '1.4.1' } })
+    expect(screen.getByText(older)).toBeTruthy()
+    // Without a name the exact spec falls back to the typed one.
+    const { name: _name, ...unnamed } = subject
+    set({ install: { ...done, subject: unnamed, installedVersion: '1.4.1' } })
+    expect(screen.getByText(older)).toBeTruthy()
+    set({ install: { ...done, subject, installedVersion: '1.4.2' } })
+    expect(screen.queryByText(older)).toBeNull()
+    set({ install: { ...done, subject: { ...subject, kind: 'path' }, installedVersion: '1.4.1' } })
+    expect(screen.queryByText(older)).toBeNull()
   })
 
   it('words a failed install by its kind, else in the Host\'s words, and retries it', () => {

@@ -483,6 +483,7 @@ export class PluginManager extends TypertRemoteService {
       const files = await this.readRestoredFiles()
       const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
       let name: string
+      let version: string | undefined
       try {
         result.registries = []
         const connection = checkGithubConnection(parsedForRegistry(spec), this.profile.dir, {
@@ -552,6 +553,7 @@ export class PluginManager extends TypertRemoteService {
         const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir))
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches('dsh', file)
+        version = manifest.version
       } catch (error) {
         // pnpm has exited by now, so the files it rewrote go back as they were.
         await this.restoreFiles(files)
@@ -560,6 +562,7 @@ export class PluginManager extends TypertRemoteService {
       control.phase = 'applying'
       announce('applying')
       result.bundle = name
+      if (version !== undefined) result.version = version
       result.target = name
       result.stage = 'enable'
       return this.configure(async () => {

@@ -206,6 +206,8 @@ export interface InstallState {
   readonly detailsOpen: boolean
   /** The bundle the finished run added, left off until enabled from the installed screen. */
   readonly installed: string | null
+  /** The version the finished run installed, when its manifest declares one; null otherwise. */
+  readonly installedVersion: string | null
   /** Whether the finished run's bundle waits for the next start to load. */
   readonly restartRequired: boolean
   /**
@@ -448,7 +450,7 @@ export function sortPackages(packages: readonly PackageView[]): PackageView[] {
 const IDLE_INSTALL: InstallState = {
   open: false, spec: '', registries: null, registry: OFFICIAL_REGISTRY, registryOpen: false, registryError: false, attempts: null,
   phase: 'idle', inputError: null, subject: null, runs: [], detailsOpen: false,
-  installed: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
+  installed: null, installedVersion: null, restartRequired: false, failure: null, approvedBuilds: [], enabling: false,
 }
 
 /** The dialog back at its spec: the run and its outcome forgotten, the spec and the registries kept. */
@@ -860,7 +862,7 @@ export class PluginManagerController {
     this.inspectAbort = controller
     this.patchInstall({
       phase: 'checking', inputError: null, subject: null, runs: [], detailsOpen: false, attempts: null, registryOpen: false,
-      installed: null, restartRequired: false, failure: null, approvedBuilds: [],
+      installed: null, installedVersion: null, restartRequired: false, failure: null, approvedBuilds: [],
     })
     const read = this.registryRead
     if (read !== undefined && choice === read.choice && read.done !== undefined) {
@@ -898,7 +900,7 @@ export class PluginManagerController {
     const requestId = randomUUID() as PluginInstallRequestId
     const request: InstallRequest = { requestId, acknowledged: false, replyLost: false, recovering: false }
     this.request = request
-    this.patchInstall({ phase: 'starting', requestId, subject, runs: [], attempts: null, failure: null, installed: null, approvedBuilds: [] })
+    this.patchInstall({ phase: 'starting', requestId, subject, runs: [], attempts: null, failure: null, installed: null, installedVersion: null, approvedBuilds: [] })
     // The Host announces `plugin-manager/changed` while the run is still on
     // the wire, and every such event reads again; those reads must not cancel
     // the run's settlement.
@@ -959,6 +961,7 @@ export class PluginManagerController {
       this.patchInstall({
         phase: 'done', runs: settledRuns(runs, 0), failure: null,
         installed: result.bundle ?? null,
+        installedVersion: result.version ?? null,
         restartRequired: result.application === 'restart-required',
         approvedBuilds: result.approvedBuilds ?? [],
         ...asked,
