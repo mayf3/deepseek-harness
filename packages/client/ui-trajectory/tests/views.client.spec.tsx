@@ -217,6 +217,7 @@ function standaloneProps(
     captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
     insertText: () => false,
     setDraft: () => {},
+    persistDraft: () => {},
     addAttachments: () => false,
     removeAttachment: () => {},
     pruneAttachments: () => {},
@@ -345,6 +346,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
     insertText: () => false,
     setDraft: vi.fn(),
+    persistDraft: vi.fn(),
     addAttachments: vi.fn(() => false),
     removeAttachment: vi.fn(),
     pruneAttachments: vi.fn(),
@@ -417,7 +419,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
         useStore={bindSnapshotSelector(conversation)}
         actions={conversation.actions}
         renderSlot={renderSlot}
-        bindDraftMirror={() => () => {}}
+        bindDraftPersistence={() => () => {}}
         openView={conversation.actions.openView}
         useInspectCall={selector => selector(undefined)}
       />
