@@ -4,7 +4,6 @@ import Invariants from '@deepseek-ai/dsh-invariants'
 import { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { harness, declare, contribution, agentOn } from './harness.ts'
-import { livePresetMounts } from '../src/index.ts'
 import * as invariant from '../src/invariant.ts'
 
 it('rejects model use by an unjoined Agent but permits Host and cold-scope reads', async () => {
@@ -34,7 +33,7 @@ it('detects a late global service without confusing independent runtimes', async
   } }
   await declare(first, { id: 'standard', plugins: [{ name: 'cordis:late' }] })
   await declare(second, contribution('standard'))
-  expect(livePresetMounts(first.fiber)).toHaveLength(1)
-  expect(livePresetMounts(second.fiber)).toHaveLength(1)
+  expect(first.agentPresets.inspectCompositions()).toHaveLength(1)
+  expect(second.agentPresets.inspectCompositions()).toHaveLength(1)
   expect(() =>{  publish() }).toThrow('published process-global')
 })

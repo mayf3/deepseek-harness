@@ -863,6 +863,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   AsyncDisposable: 'TypeScript explicit resource management interface',
   AgentPresetDocument: 'preset composition view is owned by packages/preset/agent-preset-registry/README.md',
   AgentPresetComposition: 'flattened composition rows are owned by packages/preset/agent-preset-registry/README.md',
+  AgentPresetInspection: 'retained revision modules and isolation diagnostics are owned by packages/preset/agent-preset-registry/README.md',
   PresetMetadata: 'preset display text is owned by packages/preset/agent-preset-registry/README.md',
   BashEnvContributor: 'service-local extension type is owned by packages/shell/tool-bash/src/index.ts',
   BashEnvVariableInfo: 'service-local metadata type is owned by packages/shell/tool-bash/src/index.ts',
