@@ -16,8 +16,8 @@ export type {
   ConversationContextReader, ConversationLocation,
   ConversationLocationData, ConversationLocationDataScope, ConversationLocationDataSource,
   ConversationLocationDataStore,
-  ConversationMatch, ConversationMatchResult, ConversationNodeContext,
-  ConversationNodeDefinition, ConversationPreviousContext, ConversationPublication,
+  ConversationMatch, ConversationMatchHandler, ConversationMatchResult, ConversationNodeContext,
+  ConversationNodeDefinition, ConversationNodeDefinitionInput, ConversationPreviousContext, ConversationPublication,
   ConversationStartMatch,
   ConversationStepDataMap, ConversationTimelineSnapshot, ConversationTurnDataMap,
   ConversationViewBuilder, ConversationViewDefinition, ConversationViewNode,
@@ -31,7 +31,7 @@ export type {
   AssistantBlock, AssistantMessageNode, AssistantProviderMetadataView, AssistantRequestConfig,
   AssistantTiming, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
   ModelRetryNode, PartialAssistant, PreparingToolCall, RunningToolCall, StartedToolCall, SteeringMessageNode, TodoItem,
-  ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
+  ToolCallBlock, ToolArgs, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
   UserMessageNode,
 } from './contract/records.ts'
 export type {

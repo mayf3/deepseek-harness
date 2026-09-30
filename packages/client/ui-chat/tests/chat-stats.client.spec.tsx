@@ -8,6 +8,7 @@ import type {
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { StatsPills, deriveStats, formatDuration, type StatsPillsProps } from '../src/client/chat/StatsPills.tsx'
 import { formatTokens } from '../src/client/chat/token-format.ts'
 import { en, zh } from '../src/client/locale.ts'
@@ -68,6 +69,7 @@ describe('deriveStats', () => {
   it('ignores tool results with no call time', () => {
     const tool: ToolResultNode = {
       kind: 'tool-result', seq: 5, time: 5_000, callId: 'c', call: null, callTime: null, content: [],
+      name: '', args: PartialArguments.EMPTY,
       isError: false, subCalls: [],
     }
     const stats = deriveStats([tool, assistant(1, 1)])
@@ -86,6 +88,7 @@ describe('deriveStats', () => {
     }
     const tool: ToolResultNode = {
       kind: 'tool-result', seq: 5, time: 7_000, callId: 'c', call: null, callTime: 4_000, content: [],
+      name: '', args: PartialArguments.EMPTY,
       isError: false, subCalls: [],
     }
     const stats = deriveStats([timed, untimed, tool])

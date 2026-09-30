@@ -42,6 +42,7 @@ import { zh as conversationZh } from '@deepseek-ai/dsh-client-ui-conversation/sr
 import * as localePlugin from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-trajectory'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import type { TrajectoryTurnModel } from '../src/client/layout.ts'
 import { TrajectoryTimeline as LocalizedTrajectoryTimeline } from '../src/client/TrajectoryTimeline.tsx'
 import {
@@ -91,6 +92,7 @@ const NODES: LegacyConversationSlice['nodes'] = [
   },
   {
     kind: 'tool-result', seq: 3, time: 3_000, callId: 'c1', call: null, callTime: 2_200,
+    name: '', args: PartialArguments.EMPTY,
     content: [], isError: false, subCalls: [],
   },
   {
@@ -1372,6 +1374,7 @@ describe('TrajectoryView state', () => {
       blocks: [{ kind: 'tool-call', callId: 'boundary-call', name: 'bash', argsRaw: '{}' }],
     }, {
       kind: 'tool-result', seq: 3, time: 3, callId: 'boundary-call',
+      name: 'bash', args: PartialArguments.fromText('{}'),
       call: { name: 'bash', argsRaw: '{}' }, callTime: 2,
       content: [], isError: false, subCalls: [],
     }, ...Array.from({ length: 39 }, (_, index) => ({
@@ -1426,12 +1429,13 @@ describe('TrajectoryView state', () => {
       seq: 3,
       time: 3,
       callId: 'hidden-root',
+      name: 'run_code', args: PartialArguments.fromText('{}'),
       call: { name: 'run_code', argsRaw: '{}' },
       callTime: 2,
       content: [],
       isError: false,
       subCalls: [{
-        phase: 'start' as const, callId: 'hidden-child', parentCallId: 'hidden-root', name: 'bash', argsRaw: '{}',
+        phase: 'start' as const, args: PartialArguments.fromText('{}'), callId: 'hidden-child', parentCallId: 'hidden-root', name: 'bash', argsRaw: '{}',
         turn: 1, step: 1, time: 3, subCalls: [],
       }],
     }, 'hidden-child'],
@@ -1440,6 +1444,7 @@ describe('TrajectoryView state', () => {
       { kind: 'user', seq: 1, time: 1, content: [], source: null },
       {
         kind: 'tool-result', seq: 2, time: 2, callId: 'unrelated', call: null, callTime: null,
+        name: '', args: PartialArguments.EMPTY,
         content: [], isError: false, subCalls: [],
       },
       target,
