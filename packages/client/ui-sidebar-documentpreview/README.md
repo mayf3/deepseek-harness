@@ -153,5 +153,3 @@ No direct effect; what the user reads here never enters a model request.
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Renderer metadata, document loading, and view state belong to the local registry and declared Slot stores, with no independent runtime source to compare against; registration disposal and tab lifetimes are covered by behavior tests.

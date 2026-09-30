@@ -1,6 +1,6 @@
 # Agent Note: 架构一致性——依赖规则与适配器套件
 
-Status: rejected — premise gone: plugins depend on dsh-agent-loop by design; dsh-llm/invariant and the hygiene dependency gates own conformance
+Status: rejected — premise gone: plugins depend on dsh-agent-loop by design; the hygiene dependency gates own dependency conformance
 
 [English](2026-06-11-architectural-conformance.md) | 中文
 

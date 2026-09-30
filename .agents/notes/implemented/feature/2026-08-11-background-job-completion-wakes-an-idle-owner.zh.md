@@ -40,7 +40,7 @@ Update：本文依赖的 `reported` 位与 `onJobDone` 已随 [jobs seam 收敛]
 
 `cancelForTeardown` 现在会把记录标记为 `reported`，与 `kill()` 在取消之后所做的完全一致。当通知只是一次无害的注入时，这处不对称看不出来；而会唤醒的报告方会把它变成每个 teardown 层级一次模型请求，作用在宿主正要销毁的 agent 上。
 
-`reported` 本来就是正确的那个 bit——「kill、read 或 wait 已报告或承诺报告终止状态」——而 teardown 是一次没有调用方的 kill。用它可以让该结算的每一个观察者都保持完整：`onJobDone` 仍会触发，因此运行时不变量与强制失败路径依旧被覆盖，只有通知报告方会安静下来。
+`reported` 本来就是正确的那个 bit——「kill、read 或 wait 已报告或承诺报告终止状态」——而 teardown 是一次没有调用方的 kill。用它可以让该结算的每一个观察者都保持完整：`onJobDone` 仍会触发，因此强制失败路径依旧被覆盖，只有通知报告方会安静下来。
 
 ### 完成是最后才宣布的
 
@@ -56,7 +56,7 @@ Update：本文依赖的 `reported` 位与 `onJobDone` 已随 [jobs seam 收敛]
 
 **在计数之上再加墙钟窗口**。对交互式 agent 而言，慢的那种情形恰恰是想要的——一小时的构建结束、agent 接着干下去，这就是特性本身——而 `dsh run` 无论如何都在任务轮次空闲后退出。只有当出现无人值守的长生命周期部署时才值得重新考虑。
 
-**在 owner 排空期间整体压制 `onJobDone`**，与服务级的 `listenersClosed` 对称。它读起来更干净，但会移走一个不只服务于通知的信号：强制失败记录与运行时不变量都会观察 teardown 结算。`reported` 位恰好只否决报告方，别的什么也不否决。
+**在 owner 排空期间整体压制 `onJobDone`**，与服务级的 `listenersClosed` 对称。它读起来更干净，但会移走一个不只服务于通知的信号：强制失败记录会观察 teardown 结算。`reported` 位恰好只否决报告方，别的什么也不否决。
 
 ## 影响
 

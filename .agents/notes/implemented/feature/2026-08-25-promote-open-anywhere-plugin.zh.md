@@ -32,7 +32,7 @@ Status: implemented
 
 **在 SSH 会话中提供 VS Code 的远端 CLI。** 已安装的可执行文件不能证明编辑器连接可用：继承的 IPC socket 属于一个仍在运行的 VS Code 连接，Harness 继续运行时它也可能消失。浏览器侧的 SSH 目标配置与本地编辑器唤起不属于这个主机应用功能。
 
-**将插件的 `lib/` 原样 vendor 进 `packages/`。** 最快，但手写 JavaScript 会整体不过 typecheck、覆盖率、i18n、JSDoc 和 invariant 门禁；为其保留豁免会造出仓库刻意不设的包类别。
+**将插件的 `lib/` 原样 vendor 进 `packages/`。** 最快，但手写 JavaScript 会整体不过 typecheck、覆盖率、i18n 和 JSDoc 门禁；为其保留豁免会造出仓库刻意不设的包类别。
 
 **用 Typert Remote 而非裸 webServer 路由。** apps/open 调用符合 Remote RPC 形态，但 icon 路由提供二进制 PNG，JSON RPC 词汇承载不了；把 icon 拆去裸路由而 apps/open 走 Remote 会让一个功能有两种传输。裸路由也匹配原插件的客户端，且 `webhook-github` 已确立带校验裸路由的先例。
 

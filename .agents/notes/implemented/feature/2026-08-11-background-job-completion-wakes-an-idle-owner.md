@@ -40,7 +40,7 @@ The cap exists because this chain is self-exciting in a way subagent settlement 
 
 `cancelForTeardown` now marks the record `reported`, exactly as `kill()` does after cancelling. The asymmetry was invisible while the notice was a harmless inject; a waking reporter turns it into one model request per teardown layer, on agents the host is destroying.
 
-`reported` was already the right bit — "a kill, read, or wait has reported or committed to report the terminal state" — and teardown is a kill without a caller. Using it keeps every observer of the settlement intact: `onJobDone` still fires, so runtime invariants and the force-fail path stay covered, and only notice reporters go quiet.
+`reported` was already the right bit — "a kill, read, or wait has reported or committed to report the terminal state" — and teardown is a kill without a caller. Using it keeps every observer of the settlement intact: `onJobDone` still fires, so the force-fail path stays covered, and only notice reporters go quiet.
 
 ### Completion is announced last
 
@@ -56,7 +56,7 @@ The cap exists because this chain is self-exciting in a way subagent settlement 
 
 **A wall-clock window** on top of the counter. For an interactive agent the slow case is the wanted one — an hour-long build finishing and the agent resuming is the feature — and `dsh run` exits once its task turn goes idle regardless. Worth revisiting only if an unattended long-lived deployment appears.
 
-**Suppressing `onJobDone` entirely during owner drain,** symmetric with the service-wide `listenersClosed`. It reads cleaner and removes a signal that is not only for notices: the force-fail record and the runtime invariant both observe teardown settlements. The `reported` bit denies exactly the reporters and nothing else.
+**Suppressing `onJobDone` entirely during owner drain,** symmetric with the service-wide `listenersClosed`. It reads cleaner and removes a signal that is not only for notices: the force-fail record observes teardown settlements. The `reported` bit denies exactly the reporters and nothing else.
 
 ## Consequences
 

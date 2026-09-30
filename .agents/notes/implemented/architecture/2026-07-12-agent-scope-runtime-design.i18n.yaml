@@ -33,8 +33,8 @@
   en: 28636ae6d55935d7
   zh: 33a989f049de2f3e
 /agent-note-agent-scope-runtime-design-and-correctness/scope-routing-one-opaque-key-selects-one-layer/fused-dispatch-helpers-prevent-subject-drift:
-  en: 638e3711206e3c41
-  zh: 61d370123d30c1ed
+  en: 79a8edc4bc5e52b4
+  zh: 45d76f37d1f2fe70
 /agent-note-agent-scope-runtime-design-and-correctness/agent-creation-one-transaction-owns-the-complete-operation:
   en: ef58215c8554180b
   zh: 44571074148d2467
@@ -60,8 +60,8 @@
   en: d0a57b0ac227d84c
   zh: e9ae6ced0e65fe49
 /agent-note-agent-scope-runtime-design-and-correctness/session-append-materialize-validate-commit-notify/pre-commit-listeners-can-veto-post-commit-observers-cannot:
-  en: 15255d3d0b62fac0
-  zh: c1995d5aa3c78f0a
+  en: 35cb9a69d0c80a5a
+  zh: d99d93c1d407dc81
 /agent-note-agent-scope-runtime-design-and-correctness/trust-boundaries-copy-only-when-ownership-actually-changes:
   en: 22b381902fe903f3
   zh: 8a2efe9a8b458bba
@@ -114,14 +114,11 @@
   en: 840564e766d2f05c
   zh: 059243afea7eb9c0
 /agent-note-agent-scope-runtime-design-and-correctness/correctness-enforcement/types-make-the-ordinary-path-hard-to-misuse:
-  en: 9183eb29dddfd97f
-  zh: e6ce13295e6c3e65
-/agent-note-agent-scope-runtime-design-and-correctness/correctness-enforcement/runtime-invariants-cover-cross-service-facts:
-  en: fabafbebc0ab4f95
-  zh: 06d94a98ed5aa40c
+  en: fb4d5abf86a2f6a4
+  zh: 190b710a27ae0d9c
 /agent-note-agent-scope-runtime-design-and-correctness/correctness-enforcement/generated-artifacts-keep-public-contracts-aligned:
-  en: d0ddc5f38289225d
-  zh: 781d910228d5e334
+  en: 77d470221115af97
+  zh: 1924afe62df16430
 /agent-note-agent-scope-runtime-design-and-correctness/alternatives-considered:
   en: 5eef7873a795c8f0
   zh: 3e8ba109a6e29ba5

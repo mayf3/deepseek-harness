@@ -22,7 +22,7 @@ The [single-bundle decision](2026-09-18-agent-teams-single-bundle.md) supersedes
 
 Profile startup resolves selected bundles before computing the [immutable runtime resolution](2026-09-09-profile-resolution-generations.md). The runtime resolution retains installation-first precedence, traverses each explicit bundle root completely in profile order, and keeps pnpm-managed profile packages authoritative. The runtime interception enforces the result in memory without materializing fallback links. A private profile layer can therefore carry experimental plugin rows without adding those plugins to a release app, requiring profile users to install transitive packages directly, weakening packaged-runtime module identity, or changing another profile's resolution.
 
-Experimental status changes compatibility and support expectations, not publication for these four packages. They retain the repository's ordinary documentation, invariant, lifecycle, security, unit, real-composition, and snapshot requirements. Promotion still requires review of the public contracts, limitations, test evidence, runtime dependents, and a named owner accepting stable-package obligations.
+Experimental status changes compatibility and support expectations, not publication for these four packages. They retain the repository's ordinary documentation, lifecycle, security, unit, real-composition, and snapshot requirements. Promotion still requires review of the public contracts, limitations, test evidence, runtime dependents, and a named owner accepting stable-package obligations.
 
 ## Alternatives considered
 

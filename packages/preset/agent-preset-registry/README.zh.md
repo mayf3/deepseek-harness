@@ -103,5 +103,3 @@ Web 内置定义来自 `dsh-web-app` bundle。定义使用普通插件行；注�
 无。
 
 </details>
-
-**运行时不变量：** companion 检查挂载后泄漏到全局的服务，以及模型请求前尚未绑定 preset 的 Agent。

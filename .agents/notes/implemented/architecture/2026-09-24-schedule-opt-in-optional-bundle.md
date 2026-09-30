@@ -32,4 +32,4 @@ Enabling the bundle inserts `time-context` (a per-step clock reading with the sa
 - An enabled installation adds four tool schemas to every live root Agent and one durable clock message per eligible step; the reading is model-visible and durable, so it replays, compacts, and appears in exported Session logs like any other user message.
 - The Plugins page lists the three rows under the bundle with the titles their packages' `locale/*.json` declare, their state, and, while the bundle is on, a switch per row; switching one of them off leaves Schedule without that part.
 - A profile patch or `--patch` overlay that targets one of the three ids matches no row while the bundle is not selected, and the loader warns `patch: entry <id> not found` for it; selecting the bundle replaces switching the rows on by id.
-- The switch is configuration-only: `src/index.ts` is an empty module, the patch carries the runtime content, and the package owns no mutable runtime state, so it publishes no invariant companion.
+- The switch is configuration-only: `src/index.ts` is an empty module, the patch carries the runtime content, and the package owns no mutable runtime state.

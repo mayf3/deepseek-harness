@@ -12,7 +12,7 @@ Unused-symbol searches can miss working behavior whose implementation costs more
 
 The [simplification skill](../../../skills/dsh-find-simplifications/SKILL.md) traces a complete producer-to-outcome path, asks which distinctions change consumer actions, considers explicit reductions in supported behavior, and searches for maintained copies that an authoritative read can replace. It separates composition availability from deployment policy and counts removed configuration, lifecycle, tests, and documentation together with source code.
 
-Production use changes the required trade-off evidence; it does not automatically veto a proposal or authorize implementation. Dynamic plugin discovery, installed consumers, generated runtime assets, profiles, applications, and Python participate in consumer tracing. Protected adapters and persistence designs, released data, trust boundaries, independent invariant observations, synchronous publication, cancellation, and quiescent disposal remain constraints.
+Production use changes the required trade-off evidence; it does not automatically veto a proposal or authorize implementation. Dynamic plugin discovery, installed consumers, generated runtime assets, profiles, applications, and Python participate in consumer tracing. Protected adapters and persistence designs, released data, trust boundaries, synchronous publication, cancellation, and quiescent disposal remain constraints.
 
 The entry point separates decision criteria from an [optional historical reference](../../../skills/dsh-find-simplifications/references/historical-patterns.md) pairing mechanisms with counterexamples and residual obligations. Archive mechanics remain at their existing owner, and the proposal skeleton uses the canonical headings.
 

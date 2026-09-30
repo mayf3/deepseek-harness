@@ -83,7 +83,6 @@ The budget uses the provider and model captured after `system-prompt/assemble` c
 | [`src/serialization.ts`](src/serialization.ts) | Tag-safe JSON escaping for snapshot payloads |
 | [`src/spill.ts`](src/spill.ts) | Full transcript serialization and model-visible omission notices |
 | [`src/types.ts`](src/types.ts) | `SessionReferenceInput`/`Candidate` and source types |
-| — | No runtime invariant companion is published; preparation returns immutable per-call snapshots validated while they are built, and the agent/session layers own durable context admission, freezing, and replay. |
 
 ### Main flow
 

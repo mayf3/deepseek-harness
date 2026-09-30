@@ -77,7 +77,7 @@ A runtime switch is one log-only `sandbox/mode` event on the session it applies 
 
 ### Model-visible text
 
-The `sandbox:policy` contribution states the mode's capability-neutral file-effect contract and the recorded session workspace under `workspace-write`. It does not enumerate mounted capabilities; tool plugins retain operation-specific denial and escalation guidance, approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section. The optional `./invariant` companion rejects a forged durable `sandbox/mode` event whose value falls outside the closed mode vocabulary.
+The `sandbox:policy` contribution states the mode's capability-neutral file-effect contract and the recorded session workspace under `workspace-write`. It does not enumerate mounted capabilities; tool plugins retain operation-specific denial and escalation guidance, approval policy contributes separately to the same snapshot, and plan guidance remains `dsh-plan-mode`'s system section.
 
 ### Source map
 
@@ -85,7 +85,6 @@ The `sandbox:policy` contribution states the mode's capability-neutral file-effe
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPolicyService`, `Config` schema, policy resolution and context contribution |
 | [`src/session-mode.ts`](src/session-mode.ts) | The `sandbox/mode` event, its fold, and the write path |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: rejects `sandbox/mode` values outside the closed vocabulary |
 
 </details>
 

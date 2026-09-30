@@ -83,7 +83,6 @@ kind: "package-reference"
 | [`src/serialization.ts`](src/serialization.ts) | 快照载荷的标签安全 JSON 转义 |
 | [`src/spill.ts`](src/spill.ts) | 完整 transcript 序列化与模型可见省略通知 |
 | [`src/types.ts`](src/types.ts) | `SessionReferenceInput`／`Candidate` 与来源类型 |
-| — | 不发布运行时不变式伴生入口；准备过程返回构建时已校验的不可变单次快照；持久上下文的准入、冻结与回放由 agent 层和会话层负责。 |
 
 ### 主要流程
 

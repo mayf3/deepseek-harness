@@ -52,4 +52,4 @@ Status: implemented
 
 `session/end-seed` 加入了落盘词汇表。当前格式要求由 Session 拥有的已校验 marker 语义；冻结的 v0 codec 与迁移边负责哪些历史 v0 seed 布局仍可接受。精确继承 cut 与逻辑 header 分离，并在读取正文后可用。
 
-[排队手动压缩决策](../feature/2026-07-30-queued-manual-compaction.zh.md)如今提供了第一个消费方。其尾部扫描会分别查找未匹配的 `compaction/start` 与最新 end-seed，只把位于该边界之后的 start 视为存活，并在同一个回放转换上清除不变量追踪状态。该谓词仍位于压缩功能所在的包中，不会成为通用核心辅助函数。
+[排队手动压缩决策](../feature/2026-07-30-queued-manual-compaction.zh.md)如今提供了第一个消费方。其尾部扫描会分别查找未匹配的 `compaction/start` 与最新 end-seed，并只把位于该边界之后的 start 视为存活。该谓词仍位于压缩功能所在的包中，不会成为通用核心辅助函数。

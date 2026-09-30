@@ -65,8 +65,6 @@ The registration context determines both visibility and ownership: a registratio
 |---|---|
 | [`src/index.ts`](src/index.ts) | `createScope`, `scopeOf`, `scopeTarget`, `bindScopeParent`/`scopeParentOf`/`scopeChainOf`, carrier marks |
 | [`src/store.ts`](src/store.ts) | `ScopedLayers`, `NamedEntries`, `AnonymousEntries`, `ScopeLayer` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion over the generated scoped-event map |
-| [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | Generated resolver map of declared scoped events |
 
 ### The parent chain
 

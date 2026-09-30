@@ -798,8 +798,8 @@ Source: [`packages/schedule/schedule/src/types.ts:358`](../packages/schedule/sch
  * keep ordinary restore and replay lifecycle boundaries.
  *
  * Only the `Session` constructor and `buildForkSeed` may create this marker.
- * The invariant companion deliberately constrains nothing here, so a plugin
- * appending one would silently classify every live bracket before it as seed history.
+ * Session append does not reject other writers, so a plugin appending one
+ * would silently classify every live bracket before it as seed history.
  *
  * An owner of a standalone open/close bracket (`compaction/start` …
  * `compaction/end`) reads it because seed history and live work are otherwise

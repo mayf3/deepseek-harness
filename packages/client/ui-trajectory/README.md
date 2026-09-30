@@ -112,5 +112,3 @@ These limits define what the view can show while work is in flight; they are cur
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. It is a pure-consumer plugin: it emits no Cordis events and owns no mutable cross-plugin state; its view-slot registration is a plain effect whose disposal the slot ledger's own specs and this package's behavior specs observe directly.

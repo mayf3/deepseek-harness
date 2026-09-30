@@ -114,7 +114,6 @@ The [hook-bridges Agent Note](../../../.agents/notes/archived/feature/2026-06-30
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: config validation, listener registration, per-event payloads, decision mapping |
 | [`src/config.ts`](src/config.ts) | Claude Code config parsing: supported events, matcher validation, command substitution |
-| — | No runtime invariant companion is published; this bridge publishes hook-protocol session events, whose companion owns which invocation event each result cites. |
 
 </details>
 

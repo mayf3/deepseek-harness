@@ -84,12 +84,11 @@ describe('preview example overlays', () => {
  * preview builds exercise the same path against complete real artifacts.
  */
 // The subject is zero-dep, but its peer/dependency closure (cordis, loader,
-// include, cosmokit, invariants) must also be built: on the complete lane
+// include, cosmokit) must also be built: on the complete lane
 // build and coverage run concurrently, so checking only the subject lets the
 // pack start before its real workspace dependencies exist.
 const subjectBuilt = [
   'packages/util/timeout/lib/index.js',
-  'packages/runtime-diagnostics/invariants/lib/index.js',
   'vendor/cordis/lib/index.js',
   'vendor/cosmokit/lib/index.js',
   'vendor/include/lib/index.js',

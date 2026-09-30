@@ -80,7 +80,7 @@ registry 的两个行为决定了「怎么尝试一次发布」。写入之间�
 
 所有指向 workspace 成员的引用都用 `workspace:` 协议。[发布范围策略](2026-09-22-workspace-release-ranges.zh.md)要求每个消费者的所有依赖区段对 DSH 使用精确的 `workspace:*` 引用，对 vendor/native 使用 `workspace:~` 引用，包括原生入口的可选平台包。本地 workspace 链接方式不变。
 
-`scripts/check-workspace-constraints.ts` 读取 `pnpm-workspace.yaml` 声明的全部成员及根清单，按依赖目标而非消费者目录校验范围。Invariant companion 规则要求 `@deepseek-ai/dsh-invariants` 使用 `workspace:*`；依赖修复器保留 vendor/native tilde 范围。因此，发布的 DSH peer 要求匹配的发布版本，而不接纳后续兼容版本。
+`scripts/check-workspace-constraints.ts` 读取 `pnpm-workspace.yaml` 声明的全部成员及根清单，按依赖目标而非消费者目录校验范围。依赖修复器保留 vendor/native tilde 范围。因此，发布的 DSH peer 要求匹配的发布版本，而不接纳后续兼容版本。
 
 ### 发布依赖门面使用显式策略
 

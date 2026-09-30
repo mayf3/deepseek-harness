@@ -80,5 +80,3 @@ kind: "package-reference"
 无。
 
 </details>
-
-**运行时不变量：** 不发布 companion；状态由 Host 注册表拥有，客户端展示与选择行为由组件测试验证。

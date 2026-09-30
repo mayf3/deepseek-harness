@@ -766,7 +766,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         if (value === undefined) this.values.delete(ref)
         else this.values.set(ref, value)
         // After the commit: a broken observer must never make the durable
-        // write look failed (an INVARIANT failure still rethrows).
+        // write look failed.
         this.notifyUpdated(ref)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
@@ -845,15 +845,13 @@ export class LocalCredentialProvider extends CredentialProvider {
    * Re-read the document after a watcher event. Unchanged content (including
    * this provider's own writes) is a no-op; an unreadable document keeps the
    * last good snapshot and warns — a live hot-reload must never take the
-   * process down. An invariant violation escaping the fan-out is not a reload
-   * failure and propagates to the queue's error surface.
+   * process down.
    */
   private async refresh(): Promise<void> {
     if (this.closed) return
     try {
       await this.reconcileFromDisk()
     } catch (error) {
-      if ((error as { code?: unknown } | null)?.code === 'INVARIANT') throw error
       this.ctx.logger.warn('credentials-local: reload failed at %s; keeping the last good document', this.spec.filename)
       this.ctx.logger.warn(error)
     }

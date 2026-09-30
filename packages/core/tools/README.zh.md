@@ -116,7 +116,6 @@ ctx.tools.register(defineTool({
 | [`src/ptc.ts`](src/ptc.ts) | PTC mode：SDK 生成、`run_code` 分发桥接层、结算 |
 | [`src/ts-types.ts`](src/ts-types.ts) | TypeScript SDK 类型渲染 |
 | [`src/py-types.ts`](src/py-types.ts) | Python SDK 类型渲染 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式配套 |
 
 ### 执行与取消
 

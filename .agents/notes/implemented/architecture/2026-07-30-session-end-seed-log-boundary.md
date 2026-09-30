@@ -52,4 +52,4 @@ Cost: a seeded session's log is one event longer, including an empty resumed log
 
 `session/end-seed` joins the on-disk vocabulary. The current format requires the validated marker semantics owned by Session; the frozen v0 codec and migration edge own which historical v0 seed layouts remain admissible. The exact inherited cut stays separate from the logical header and is available after a body read.
 
-The [queued manual compaction decision](../feature/2026-07-30-queued-manual-compaction.md) now supplies the first consumer. Its tail scan independently finds the unmatched `compaction/start` and newest end-seed, treats only a start after that boundary as live, and clears the invariant trace on the same replay transition. The predicate remains in the compaction package rather than becoming a generic core helper.
+The [queued manual compaction decision](../feature/2026-07-30-queued-manual-compaction.md) now supplies the first consumer. Its tail scan independently finds the unmatched `compaction/start` and newest end-seed, and treats only a start after that boundary as live. The predicate remains in the compaction package rather than becoming a generic core helper.

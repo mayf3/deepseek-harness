@@ -1515,26 +1515,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-invariants -->
-<a id="deepseek-aidsh-invariants"></a>
-
-## `@deepseek-ai/dsh-invariants`
-
-- `source`: [`packages/runtime-diagnostics/invariants/src/index.ts:15`](../packages/runtime-diagnostics/invariants/src/index.ts)
-
-```ts config-catalog
-/** Runtime invariant selection configured on the service plugin. */
-export interface Config {
-  /** Global switch; defaults to `true`. */
-  readonly enabled?: boolean
-  /** Case-sensitive JavaScript regex sources that admit package names; empty admits all. */
-  readonly package_allowlist?: string[]
-  /** Case-sensitive JavaScript regex sources that exclude package names after allowlist matching. */
-  readonly package_blocklist?: string[]
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-invariants -->
-
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-jobs-local -->
 <a id="deepseek-aidsh-jobs-local"></a>
 
@@ -3087,7 +3067,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ## `@deepseek-ai/dsh-subagent`
 
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:192`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:190`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */

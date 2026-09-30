@@ -95,7 +95,6 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 插件入口：工具注册、提示词区段、参数校验、升权、请求组装 |
 | [`src/background.ts`](src/background.ts) | 管理异步 shell 准备、将进程结算映射为任务结果，并把输出环读取渲染为进程读取 |
 | [`src/render.ts`](src/render.ts) | 模型侧结果文本：流、标记、截断通知 |
-| — | 不发布运行时不变式伴生入口；环境注册表在每次变更和读取时校验所有权及收集值，且不发布可供伴生入口交叉核对的独立快照；执行关系由能力 seam 负责。 |
 
 ### 请求解析
 

@@ -115,5 +115,3 @@ These limits define what the shell owns versus what its occupants own; they are 
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Panel metadata is a read-only presentation projection of the Slot registry and locale, with no independent write API. The registry owns entry identity and disposal; this package's assembly tests assert the projection after registration and locale notifications settle. The shell owns no separate navigation state to reconcile with those sources.

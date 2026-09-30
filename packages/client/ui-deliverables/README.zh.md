@@ -128,5 +128,3 @@ Node 半部注册[模型体验](#model-experience)所述的静态 `ui:deliverabl
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。提示词、slot、dictionary、文件操作路由与可选 service 注册归 effect 所有；Session 日志拥有声明，文件系统拥有文件内容。

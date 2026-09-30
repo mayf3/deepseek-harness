@@ -79,11 +79,10 @@ This section explains how the driver schedules rounds without races; the observa
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: driver state machine, race fences, teardown |
 | [`src/prompt.ts`](src/prompt.ts) | The retained `<goal_round>` continuation prompt |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: goal-round messages must match the package-owned prompt |
 
 ### The round prompt
 
-The retained prompt is one text block: the JSON-quoted objective and `round/maxGoalRounds` on the first lines, then the working instructions. The invariant companion reconstructs the goal from the durable prefix and rejects any goal-sourced message whose content does not match the prompt exactly.
+The retained prompt is one text block: the JSON-quoted objective and `round/maxGoalRounds` on the first lines, then the working instructions.
 
 </details>
 

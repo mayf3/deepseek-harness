@@ -235,7 +235,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'session',
     title: 'In-memory session store',
     mode: 'core',
-    consumers: ['agent-loop', 'agent', 'session-persistence', 'session-query', 'session-query-sqlite', 'subagent-in-process-driver', 'invariants', 'message-feedback'],
+    consumers: ['agent-loop', 'agent', 'session-persistence', 'session-query', 'session-query-sqlite', 'subagent-in-process-driver', 'message-feedback'],
     note: 'Owns append-only Session instances and emits the durable session event feed.',
   },
   {
@@ -321,14 +321,6 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Host directory-picking Remote controller',
     mode: 'core',
     note: 'Carries the picking seam onto the wire: capability gating, cancellation, and the seam-coded failures a browser directory flow discriminates on.',
-  },
-  {
-    key: 'invariants',
-    pkg: 'invariants',
-    title: 'Package-owned invariant registry',
-    mode: 'core',
-    consumers: ['session', 'agent', 'scope', 'agent-loop'],
-    note: 'Companion subpaths register owner-local checks; the service owns selection, uniqueness, child fibers, and package-attributed failures.',
   },
   {
     key: 'typert',

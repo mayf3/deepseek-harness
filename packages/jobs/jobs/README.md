@@ -81,7 +81,6 @@ This section explains the design decisions behind the contract and points at the
 | [`src/view.ts`](src/view.ts) | Client-safe leaf: `JobView`, `JobChunk`, `JobStatus`, and the merge-extensible `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
 | [`src/archive-admission.ts`](src/archive-admission.ts) | The `job` family of the Workspace registry's archive admission, installed by the seam's constructor for every implementation |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: checks the announced event protocol per job (registered first, one settlement, removal last) and each announced projection against the registry's own read |
 
 ### Service operations
 

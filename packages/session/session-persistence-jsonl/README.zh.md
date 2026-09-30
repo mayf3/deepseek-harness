@@ -114,7 +114,6 @@ kind: "package-reference"
 | [`src/migration-verifier.ts`](src/migration-verifier.ts) | stage 与竞争 generation 校验的 Worker 生命周期 |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard 帧压缩、解码与帧扫描 |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through 发布与目录创建 |
-| — | 不发布运行时不变式伴生入口；身份在存储层强制；持久化正确性依赖后端往返与崩溃尾部测试，本包不公开可持续观察的进程内关系。 |
 
 </details>
 
