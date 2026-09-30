@@ -32,7 +32,7 @@ The steering mid capture waits for that settled question title before it capture
 
 **Pin the clocks for the whole lane.** Pinning inside `launchWebScaffold` and `newEnglishPage` would cover every scenario at once, including the ones that fail this way in future. It loses on blast radius: 83 goldens carry a clock and session-tree goldens assert literal relative ages, so a lane-wide now moves every scenario away from its own session and fixture times simultaneously, and each would still need its own anchor to read the buckets it was recorded with.
 
-**Keep scenarios clear of local midnight.** Scheduling or refusing runs near the boundary leaves the dependency in place and fails the run instead of the code under test. The [CI readiness and completion decision](2026-09-08-ci-readiness-and-completion.md) already rejects budgets and retries as substitutes for a controlled observation.
+**Keep scenarios clear of local midnight.** Scheduling or refusing runs near the boundary leaves the dependency in place and fails the run instead of the code under test. The [CI test reliability workflow](../../../skills/dsh-ci-test-reliability/SKILL.md#reject-flake-masking-fixes) rejects budgets and retries as substitutes for a controlled observation.
 
 ## Verification
 

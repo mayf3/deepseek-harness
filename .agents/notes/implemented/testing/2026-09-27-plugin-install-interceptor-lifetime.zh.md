@@ -12,7 +12,7 @@ Status: implemented
 
 场景在导航前注册 `installBundle` 和 `cancelInstall` 拦截器，并保留到浏览器关闭。每个拦截器调用一个带类型的处理函数，场景切换阶段时替换该函数。请求交付和取消屏障保持原有顺序，`activeReplySettled` 在下一次安装开始前等待丢失响应的处理函数结束。普通请求仍然到达真实 Host。
 
-[输入状态决策](2026-09-27-web-lane-assertions-name-their-input-state.zh.md) 负责另一项等待：高亮卡片的状态变为 `running`。持续启用拦截使目录读取能够完成；轮询其结果仍负责确立预期输出记录的状态。
+[该场景](../../../../apps/web/tests/plugin-install-cancel.e2e.ts)还会单独等待高亮卡片的状态变为 `running`。持续启用拦截使目录读取能够完成；轮询其结果仍负责确立预期输出记录的状态。
 
 ## Alternatives considered
 
