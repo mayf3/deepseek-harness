@@ -33,7 +33,7 @@ pnpm install
 
 The install also configures worktree-local Lefthook hooks through `scripts/install-lefthook.mjs`. The [worktree-local hooks Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.md) owns the hook-path safety contract.
 
-The root workspace's `postinstall` also prefetches the pinned [DevTools frontend](../packages/experimental/inspector/README.md#use-this-package) from appspot. A cold cache needs network access; download failures stop installation. Run `pnpm run prefetch:devtools` to retry or prepare the cache before an offline build. Builds reuse the cache and download any missing resources. Published CLI and Inspector packages ship the built frontend and have no DevTools installation hook.
+The [DevTools frontend](../packages/experimental/inspector/README.md#use-this-package) is compiled locally from a pinned npm source package and Vite. After dependencies are installed, its build needs no network access or browser installation. Workspace and published-package installation run no DevTools resource-download hook; published Inspector packages contain the built frontend.
 
 If the hooks are missing because dependencies were restored from cache or `postinstall` was skipped, install them manually:
 

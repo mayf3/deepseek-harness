@@ -1,20 +1,29 @@
-/** DevTools prefetch belongs to contributor setup, not published package installation. */
+/** DevTools sources are fixed npm inputs; package installation starts no external resource download. */
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 
 interface Manifest {
   scripts?: Record<string, string>
   files?: string[]
+  devDependencies?: Record<string, string>
 }
 
 function manifest(path: string): Manifest {
   return JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')) as Manifest
 }
 
-it('prefetches DevTools from the root workspace after installing its existing Git hooks', () => {
+it('installs workspace Git hooks without prefetching DevTools', () => {
   const root = manifest('../../../../package.json')
-  expect(root.scripts?.postinstall).toBe('node scripts/install-lefthook.mjs && pnpm run prefetch:devtools')
-  expect(root.scripts?.['prefetch:devtools']).toBe('tsx packages/experimental/inspector/scripts/download-devtools.ts')
+  expect(root.scripts?.postinstall).toBe('node scripts/install-lefthook.mjs')
+  expect(root.scripts?.['prefetch:devtools']).toBeUndefined()
+})
+
+it('pins the npm source and uses workspace Vite without a webpack dependency', () => {
+  const dependencies = manifest('../package.json').devDependencies
+  expect(dependencies?.['chrome-devtools-frontend']).toBe('1.0.1638082')
+  expect(dependencies?.vite).toBeUndefined()
+  expect(manifest('../../../../package.json').devDependencies?.vite).toBe('8.0.16')
+  expect(Object.keys(dependencies ?? {}).some(name => name.includes('webpack'))).toBe(false)
 })
 
 it.each(['../../../../apps/cli/package.json', '../../inspector-profile/package.json', '../package.json'])(
