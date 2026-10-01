@@ -73,6 +73,7 @@
     "tests/shared-inspector.e2e.ts",
     "tests/devtools-frontend.e2e.ts",
     "tests/inspector-panels.e2e.ts",
+    "tests/inspector-source-build.e2e.ts",
     "tests/plugin-install-cancel.e2e.ts",
     "tests/plugin-install-approve.e2e.ts",
     "tests/plugin-install-registry.e2e.ts",

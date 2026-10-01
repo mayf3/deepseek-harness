@@ -39,11 +39,11 @@ kind: "package-reference"
 
 Host 在相对于应用根目录的 `inspector/devtools/devtools_app.html` 路径提供镜像后的 DevTools 前端，沿用现有 Web 登录鉴权。`inspector/devtools` 前缀重定向到该入口；GET 和 HEAD 提供文件，缺失资源返回 404，其他方法返回 405。其 `cdp` WebSocket 路由鉴权同一浏览器会话，只转发到当前 Inspector 的 Worker page target。底部面板将已声明的页面 `clientSourceId` 传给入口及自动 WebSocket 端点，重连时继续选择同一逻辑 Client。没有选择参数时包含全部 Client；指定 Client 不在线时保留 Host；空值或重复参数以 400 拒绝升级。显式 `ws` 或 `wss` query 参数覆盖自动端点及其选择范围。
 
-构建使用 Chrome 150.0.7871.186 的官方 appspot CDN 前端，由[下载脚本](scripts/download-devtools.ts)中的 `DEVTOOLS_REVISION` 固定版本。根 workspace 的 `pnpm install` 预取完整输入图（约 93.62 MiB）；`pnpm run prefetch:devtools` 也可独立运行这一步。脚本递归跟踪静态及字面量动态 import、Worker URL、CSS、图片和上游语言清单，在 `.cache/devtools` 中保留目录结构。输入清单记录体积、hash、依赖边和未静态解析的运行时 import。完整缓存不需要网络；预取或构建会下载缺失资源，下载失败会使对应命令失败。发布包不携带下载生命周期钩子。生成的 hash 描述本次下载的字节，并非提交到仓库的上游摘要锁。
+构建使用官方 `chrome-devtools-frontend@1.0.1638082` TypeScript 源码及根 workspace 的 Vite `8.0.16`。该 npm 快照是 Chromium 150 发布分支的祖先，不是其后续稳定版的逐字节副本。[源码配置](scripts/devtools/source.ts)与包清单共同固定版本。普通 npm 安装提供源码和工具链；构建不需要 appspot、下载或启动浏览器，也不需要提取 PAK。workspace 安装和发布包安装都不运行 DevTools 下载 hook。
 
-[分发构建](scripts/build-devtools.ts)移除 Lighthouse 及其 DevTools AI 审计、报告集成，再重新计算资源图，将可达文件复制到 `lib/devtools`。其他面板继续保留。语言列表和发布的语言文件仅包含 `en-US` 与 `zh`，不支持的语言偏好会解析为英语。Memory 的解析 Worker 保持相对 import；Performance 使用前端已有的 CPU profile 录制器记录 Host target。本包发布这些本地资源、完整性清单和 Chromium 许可证，不依赖 npm 前端包或运行时 CDN 请求。
+[分发构建](scripts/build-devtools.ts)将 ESM 入口、共享 chunk、显式 Worker、注入脚本与运行时资源输出到 `lib/devtools`，保留原始模块相对资源 URL，包括部署子路径。CSS 文本模块、图片变量和最小英文 locale 常量替代 GN 生成输入，不修改 npm 源码。前端直接使用上游模块内的英文 UIStrings，不包含翻译文件或词条生成器，其他语言偏好回退英文。所有上游面板均保留，包括 Lighthouse。Memory 带有解析 Worker，Performance 记录 Host CPU。发布包包含构建资源、完整性清单和 Chromium license，不包含构建用 npm 源码或 Vite 依赖。
 
-入口将未使用的 Node 专用导入映射为空浏览器模块，添加精确 CSP hash，再在 DevTools 启动前加载同源连接 bootstrap。底部面板添加 `disableLocaleInfoBar=true`；bootstrap 设置 DevTools 自身的 `disable-locale-info-bar` 偏好，不改变其语言。
+前端在构建时选择浏览器运行时适配器、排除 Node 专用传输，不使用 import map。同源连接 bootstrap 先于应用入口执行。底部面板添加 `disableLocaleInfoBar=true`，bootstrap 设置 DevTools 自己的 `disable-locale-info-bar` 偏好，不改变语言。升级前端时，需要一起调整 npm 版本和源码配置，然后重跑面板和 Worker 检查；不兼容的源码变动会使构建失败。
 
 <a id="runtime-layout"></a>
 ## 运行时布局

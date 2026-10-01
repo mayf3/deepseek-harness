@@ -7,4 +7,5 @@
   - tab "Memory"
   - tab "Application"
   - tab "Security"
+  - tab "Lighthouse"
   - tab "Recorder"
