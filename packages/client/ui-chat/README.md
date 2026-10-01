@@ -60,6 +60,8 @@ A completed Turn shows an expandable usage row only when the loaded window inclu
 
 Settings → General → Performance & usage appears after Send behavior while busy and before Session Log upload, and stores `ui-chat.performanceUsage` as `detailed` (default) or `compact`. Compact shows only available output speed and cache-hit percentage beneath the composer, without interactive statistic dialogs or per-Turn usage. Detailed exposes session statistics and per-Turn token usage. Neither mode shows elapsed time in the completed-turn footer. The preference changes presentation only; accounting and Session events remain intact.
 
+The composer statistics are two `conversation.composer.dock` list entries: `activity` (order 0, turn and step counts and output speed, with LLM time, tool time, and TTFT) and `usage` (order 1, token total and cache hit). Another plugin replaces one pill by registering the same id at a lower `priority`, or adds a pill under a new id. Each pill carries its id in `data-composer-stat`. An open pill dialog closes when the pointer or focus moves outside it, so at most one dialog is open.
+
 On non-loopback browsers, the preference remains process-local because the settings scope cannot persist writes. Explicit selections update every consumer immediately; accepted Host settings reconcile the live value on loopback browsers.
 
 Preference menus restore focus to their trigger without scrolling before publishing a new selection.
