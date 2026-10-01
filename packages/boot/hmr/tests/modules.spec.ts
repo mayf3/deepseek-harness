@@ -58,6 +58,42 @@ async function fixture(version: 'v1' | 'v2' = 'v2') {
   return { ctx, cache, imports, imported, reload, module, url, resolve }
 }
 
+it('does not reactivate a runtime removed during dependency traversal', async () => {
+  const { ctx, module, imports, imported, reload } = await fixture()
+  const dependency = module('dependency.mjs')
+  const original = { apply() {} }
+  const replacement = { apply: vi.fn() }
+  const job = module('plugin.mjs', original, [dependency])
+  const entry = ctx.loader.resolve(await ctx.loader.create({ name: job.url }))
+  await ctx.loader.await()
+  const fiber = entry.fiber!
+  const reached = Promise.withResolvers<undefined>()
+  const linked = Promise.withResolvers<ModuleJob[]>()
+  Object.defineProperty(job, 'linked', { configurable: true, get() {
+    reached.resolve(undefined)
+    return linked.promise
+  } })
+  onTestFinished(() => { linked.resolve([dependency]) })
+  imports.set(job.url, replacement)
+  imported.mockClear()
+  reload.stashed.add(dependency.url)
+  const operation = reload.partialReload()
+  try {
+    await reached.promise
+    ctx.registry.delete(original)
+    await fiber.await()
+    expect(ctx.registry.get(original)).toBeUndefined()
+    linked.resolve([dependency])
+    await operation
+    expect(imported).toHaveBeenCalledWith(job.url, expect.any(Function))
+    expect(replacement.apply).not.toHaveBeenCalled()
+    expect(ctx.registry.get(replacement)).toBeUndefined()
+  } finally {
+    linked.resolve([dependency])
+    await operation
+  }
+})
+
 it.each(['v1', 'v2'] as const)('replaces a %s module and retains the latest Loader entry configuration', async (version) => {
   const { ctx, module, imports, reload } = await fixture(version)
   const mounted: string[] = []
