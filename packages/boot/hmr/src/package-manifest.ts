@@ -1,7 +1,7 @@
 /** Expire Node's cached package configuration for package directories whose manifest changed. */
 import { isUtf8 } from 'node:buffer'
 import { readFileSync, realpathSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { basename, dirname, join, sep, toNamespacedPath } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -42,6 +42,8 @@ interface ResolveCacheClass {
 
 interface CommonJsModule {
   _pathCache: Record<string, string>
+  _resolveFilename(request: string, parent: NodeJS.Module | null | undefined, isMain?: boolean): string
+  _load(request: string, parent: NodeJS.Module | null | undefined, isMain?: boolean, ...options: unknown[]): unknown
 }
 
 interface NativeAccess {
@@ -49,6 +51,7 @@ interface NativeAccess {
   reader: PackageReader
   ResolveCache: ResolveCacheClass
   cjs: CommonJsModule
+  customization: { resolveHooks: readonly unknown[] }
   esmLoader: { resolveSync(...args: unknown[]): unknown }
 }
 
@@ -91,6 +94,7 @@ function loadNodeInternals(): NativeAccess {
     reader: requireInternal('internal/modules/package_json_reader') as PackageReader,
     ResolveCache: (requireInternal('internal/modules/esm/module_map') as { ResolveCache: ResolveCacheClass }).ResolveCache,
     cjs: (requireInternal('internal/modules/cjs/loader') as { Module: CommonJsModule }).Module,
+    customization: requireInternal('internal/modules/customization_hooks') as NativeAccess['customization'],
     esmLoader: esm.getOrInitializeCascadedLoader(),
   }
 }
@@ -137,6 +141,7 @@ export class PackageManifests {
   private native: NativeAccess | undefined
   private rawBinding!: PackageBinding
   private rawReader!: PackageReader
+  private rawCommonJs!: Pick<CommonJsModule, '_load'>
   private readonly restorers: Array<() => void> = []
 
   /**
@@ -197,15 +202,26 @@ export class PackageManifests {
     this.native = native
     const binding = createReplaceHelper(native.binding)
     const reader = createReplaceHelper(native.reader)
+    const commonJs = createReplaceHelper<Pick<CommonJsModule, '_load'>>(native.cjs)
     this.rawBinding = binding.rawImpl
     this.rawReader = reader.rawImpl
+    this.rawCommonJs = commonJs.rawImpl
     this.restorers.push(
       binding.replaceMethod('readPackageJSON', this.hookBindingReadPackageJSON.bind(this)),
       binding.replaceMethod('getPackageScopeConfig', this.hookBindingGetPackageScopeConfig.bind(this)),
       binding.replaceMethod('getPackageType', this.hookBindingGetPackageType.bind(this)),
       reader.replaceMethod('getNearestParentPackageJSON', this.hookReaderGetNearestParentPackageJSON.bind(this)),
+      commonJs.replaceMethod('_load', this.hookCommonJsLoad.bind(this)),
     )
     return native
+  }
+
+  private hookCommonJsLoad(...[request, parent, isMain, ...options]: Parameters<CommonJsModule['_load']>) {
+    const native = this.installPackageHooks()
+    // Absolute filenames bypass Node's private request cache without evicting evaluated modules.
+    const filename = request.startsWith('node:') || isBuiltin(request) || native.customization.resolveHooks.length
+      ? request : native.cjs._resolveFilename(request, parent, isMain)
+    return this.rawCommonJs._load.call(native.cjs, filename, parent, isMain, ...options)
   }
 
   private hookBindingReadPackageJSON(path: string, isEsm?: boolean, base?: string, specifier?: string) {

@@ -1,7 +1,7 @@
 /** Package configuration read by Node's resolver follows an invalidated manifest on disk. */
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import NodeModule, { createRequire, registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, toNamespacedPath } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -61,6 +61,84 @@ function resolveEsm(specifier: string, parentURL: string): string {
 }
 
 describe('package manifest invalidation', { concurrent: false }, () => {
+  it('preserves synchronous resolve hooks and node-prefixed builtins after invalidation', async () => {
+    const f = fixture()
+    file(f.manifest, '{}')
+    const importerRequire = createRequire(f.importer)
+    const nativeFs = importerRequire('node:fs') as typeof import('node:fs')
+    const missingBuiltin = 'node:dsh-hmr-missing'
+    const missingFailure = outcome(() => importerRequire(missingBuiltin))
+    expect(missingFailure).toHaveProperty('code', 'ERR_UNKNOWN_BUILTIN_MODULE')
+    const target = join(f.dir, 'a.cjs')
+    const specifier = `virtual:${f.importerURL}`
+    cleanup.push(() => { Reflect.deleteProperty(importerRequire.cache, target) })
+    let hooks: ReturnType<typeof registerHooks> | undefined = registerHooks({
+      resolve(request, context, nextResolve) {
+        if (request === specifier) return { url: pathToFileURL(target).href, shortCircuit: true }
+        return nextResolve(request, context)
+      },
+    })
+    cleanup.push(() => { hooks?.deregister() })
+    try {
+      const original = importerRequire(specifier) as { marker: string }
+      expect(original).toEqual({ marker: 'a' })
+      await f.invalidate(f.manifest)
+      expect(importerRequire(specifier)).toBe(original)
+    } finally {
+      hooks.deregister()
+      hooks = undefined
+    }
+
+    const descriptor = Object.getOwnPropertyDescriptor(importerRequire.cache, 'fs')
+    const restore = () => {
+      if (descriptor) Object.defineProperty(importerRequire.cache, 'fs', descriptor)
+      else Reflect.deleteProperty(importerRequire.cache, 'fs')
+    }
+    cleanup.push(restore)
+    const fake = new NodeModule('fs')
+    const fakeExports = { marker: 'fake fs' }
+    fake.exports = fakeExports
+    try {
+      importerRequire.cache.fs = fake
+      expect(importerRequire('fs')).toBe(fakeExports)
+      expect(importerRequire('node:fs')).toBe(nativeFs)
+      expect(outcome(() => importerRequire(missingBuiltin))).toEqual(missingFailure)
+    } finally {
+      restore()
+    }
+  })
+
+  it('loads changed CommonJS exports without evicting previously loaded modules', async () => {
+    const f = fixture()
+    const a = join(f.dir, 'a.cjs')
+    const b = join(f.dir, 'b.cjs')
+    const unrelated = join(f.root, 'unrelated.cjs')
+    file(unrelated, 'module.exports = { marker: "unrelated" }')
+    file(f.manifest, JSON.stringify({ name: 'pkg', exports: './a.cjs' }))
+    const importerRequire = createRequire(f.importer)
+    cleanup.push(() => {
+      for (const path of [a, b, unrelated]) Reflect.deleteProperty(importerRequire.cache, path)
+    })
+    const original = importerRequire('pkg') as { marker: string }
+    const other = importerRequire(unrelated) as { marker: string }
+    const originalModule = importerRequire.cache[a]
+    const otherModule = importerRequire.cache[unrelated]
+    expect(original).toEqual({ marker: 'a' })
+    expect(originalModule).toBeDefined()
+    expect(otherModule).toBeDefined()
+
+    file(f.manifest, JSON.stringify({ name: 'pkg', exports: './b.cjs' }))
+    await f.invalidate(f.manifest)
+    expect(importerRequire.resolve('pkg')).toBe(b)
+    const current = importerRequire('pkg') as { marker: string }
+    expect(importerRequire.cache[a]).toBe(originalModule)
+    expect(importerRequire.cache[unrelated]).toBe(otherModule)
+    expect(original).toEqual({ marker: 'a' })
+    expect(importerRequire(a)).toBe(original)
+    expect(importerRequire(unrelated)).toBe(other)
+    expect(current).toEqual({ marker: 'b' })
+  })
+
   it.each(['symlink', 'main'] as const)('refreshes a cached external %s entry after its manifest changes', async (entry) => {
     const f = fixture()
     const external = join(f.root, 'packages', 'outside', 'entry.mjs')
