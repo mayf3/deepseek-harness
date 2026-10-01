@@ -27,9 +27,13 @@ In HMR's change dispatch, a changed file named `package.json` outside `node_modu
 - CommonJS `_pathCache` is cleared for the same reason. Unrelated requests recompute their resolution without unloading their modules.
 - CommonJS loads using the default resolver pass the freshly resolved filename to the native loader. Its private request alias cannot select an older entry; cached module instances remain intact.
 
-Configuration invalidation alone leaves loaded modules unchanged. Stopping and restarting a Loader entry resolves its package name again and selects the new entry. Tracking active entry URLs independently of later package-name resolutions is deferred.
+Configuration invalidation alone leaves loaded modules unchanged. Loader entries retain their raw import results before export normalization. HMR matches imported Node module objects to cached ModuleJob namespaces and reloads the loaded URLs. All matching entry records, including disabled entries, update only after a successful reload and remain unchanged on failure. Stopping and restarting a Loader entry resolves its package name again and selects the new entry.
 
-The implementation lives in `packages/boot/hmr/src/package-manifest.ts`, which encapsulates its Node internal interfaces. `index.ts` dispatches manifest changes without changing the module-reload algorithm. HMR's `node_modules` exclusion is unchanged.
+Entry names are scoped by configuration-tree base URL and retain all distinct imported namespaces. An uninitialized entry contributes the name without erasing loaded namespaces; name-based resolution is used only when none is recorded, or for `cordis:` builtins. Dependency analysis considers every recorded module. Entries sharing a plugin runtime use one replacement operation, while each Loader entry selects its replacement by its original namespace. Module imports and export normalization finish before the old runtime is removed. Failed imports or activation restore the previous modules and plugin implementations and clean up partially activated replacements.
+
+An instance without a Loader entry has no recorded module identity. If a shared runtime's replacement modules have different plugin callbacks, HMR reports an ambiguity error and rolls back instead of assigning that instance to an arbitrary module.
+
+Package invalidation lives in `packages/boot/hmr/src/package-manifest.ts`, which encapsulates its Node internal interfaces. `index.ts` dispatches manifest changes and locates loaded entries by module identity. HMR's `node_modules` exclusion is unchanged.
 
 | Interface | Action |
 |---|---|
@@ -45,7 +49,6 @@ The binding's `getNearestParentPackageJSON` is called only by `package_json_read
 
 - Online replacement inside `node_modules`, same-path reinstall, changed link targets, and cross-package reload propagation remain unsupported. Package updates need process restart; this does not guarantee that every management result already reports that requirement correctly.
 - TSX versions using an asynchronous loader thread keep that thread's package configuration outside these hooks. Synchronizing it is deferred; this change does not provide general Worker cache synchronization.
-- After exports or main moves an entry, HMR can fail to locate its old loaded module by package name. Keeping an active-entry URL association is deferred; restarting the Loader entry selects the new entry.
 - CommonJS private-request-cache refresh with registered synchronous resolve hooks is deferred. Those requests retain their original loader behavior.
 - Disposing HMR restores the native readers, whose previous cached configuration can become visible again. Preserving invalidation state across HMR replacement is deferred.
 
@@ -57,12 +60,14 @@ The binding's `getNearestParentPackageJSON` is called only by `package_json_read
 
 **Re-import reloaded plugins by package name.** It would let an entry rename follow a source reload, but changes `partialReload`'s rule that the loaded URL is the reload unit. Entry renames already take effect when the Loader entry restarts, so this is not changed.
 
+**Keep one namespace per entry name.** Entries with the same name and base URL can have loaded different modules before and after a manifest change. Keeping only the first or last namespace loses a live module; an uninitialized entry must not erase another entry's imported namespace.
+
 ## Verification
 
 | Coverage | Location |
 |---|---|
 | Expired exports, main, imports, type, scope, and nearest manifests; native-reader parity; actual CommonJS loads and retained module instances; the `node_modules` boundary; restoration | `packages/boot/hmr/tests/package-manifest.spec.ts` |
-| Configuration-only manifests, JSON-module and host reloads, source reloads, entry restarts, and the `node_modules` exclusion | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
+| Configuration-only manifests, JSON-module and host reloads, source reloads, same-name and shared-runtime entries, import and activation rollback, entry restarts, and the `node_modules` exclusion | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
 
 Tests need no API key and make no model calls.
 

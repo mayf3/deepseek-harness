@@ -60,6 +60,10 @@ App-boot owns profile parsing and patch precedence. HMR reads the launcher’s d
 
 A changed `package.json` outside `node_modules` expires that package's cached configuration. A configuration-only manifest triggers no module reload; a manifest imported as a JSON module retains dependency-driven reloads, and one in the host dependency graph retains host reloads. Dedicated configuration watches keep their existing ownership. A new package entry takes effect when its Loader entry restarts.
 
+Loader entries retain their raw import results. HMR retains every distinct imported namespace for each entry name and configuration-tree base URL; an uninitialized entry does not overwrite another entry's namespace. HMR matches those objects to cached ModuleJob namespaces instead of resolving entry names again. Names without an imported namespace and `cordis:` builtins keep name-based resolution. Source reloads therefore use the loaded modules after `exports` or `main` changes.
+
+Entries sharing a runtime are replaced together, with each entry receiving the implementation for its own module. Duplicate entries for one module retain their separate plugin instances. On replacement failure, HMR removes partially activated replacements and restores the previous modules and plugin implementations. A successful reload updates every matching entry record, including disabled entries; a failed replacement leaves those records unchanged. Entries that have never loaded remain uninitialized.
+
 [package-manifest.ts](src/package-manifest.ts) owns the Node internal interfaces for package reads, scope, type, and nearest-manifest lookups. Each HMR instance owns its configuration cache and restores its installed hooks on disposal. Manifest invalidation clears the ESM `ResolveCache` and CommonJS `_pathCache`: neither records every consulted manifest, and entries may point outside their package directory. With Node's default resolver, CommonJS loads resolve the request to a filename before entering the native loader, bypassing its old request alias while preserving evaluated modules. Ordinary module replacement remains HMR's separate operation.
 
 Watched module paths use Node ESM resolution's `realpathSync()` spelling, including Windows short directory names, so file events match the module cache.
@@ -92,9 +96,9 @@ Reloading a contributing plugin can change later request prefixes; HMR does not 
 - Module replacement requires Node loader internals. Framework dependency changes call the host-provided `loader.exit()` hook; HMR itself does not restart the process.
 - Replacing installed package versions still requires a restart through Plugin Manager; manifests below `node_modules` keep Node's cached configuration. The browser Client module graph retains its separate browser-side loading mechanism.
 - Future work: support TSX's asynchronous loader thread. Main-thread hooks do not invalidate that thread's package configuration; ordinary application-created Workers are outside the supported scope.
-- Future work: retain active entry URLs after `exports` or `main` changes. HMR still resolves entry names when locating loaded modules; after an entry moves, source changes may not reload the old entry until the Loader entry restarts.
 - CommonJS requests with registered synchronous resolve hooks retain the original loader path; refreshing their private request cache is deferred. Builtins retain Node's original loading behavior.
 - Future work: retain package invalidation across HMR disposal and replacement. Restoring the native readers can expose their older cached configuration again.
+- If a shared runtime's replacement modules have different plugin callbacks, an instance without a Loader entry cannot be assigned to one of them. HMR reports an ambiguity error and rolls back the reload.
 - `watchConfig()` resolves when Chokidar reports readiness. On darwin, libuv starts the FSEvents stream afterwards on its own thread, so a write that lands within milliseconds of registration is not reported until the next event in that directory; edits made after startup are unaffected.
 
 ### Dev Note

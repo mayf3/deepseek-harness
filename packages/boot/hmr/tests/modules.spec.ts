@@ -328,7 +328,7 @@ it('ignores framework entries and reports unresolved entry modules', async () =>
   const framework = module('framework.mjs', { apply() {} })
   const uncached = module('uncached.mjs', { apply() {} })
   await ctx.loader.create({ name: framework.url })
-  await ctx.loader.create({ name: uncached.url })
+  await ctx.loader.create({ name: uncached.url, disabled: true })
   await ctx.loader.await()
   reload.externals.add(framework.url)
   resolve.mockImplementation((name) => {

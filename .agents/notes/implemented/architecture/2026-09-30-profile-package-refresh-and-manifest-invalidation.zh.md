@@ -27,9 +27,13 @@ HMR 的文件变化分派中，文件名为 `package.json` 且不在 `node_modul
 - 基于相同原因清空 CommonJS `_pathCache`。无关请求重新计算解析结果，不卸载其模块。
 - 使用默认 resolver 的 CommonJS 加载把重新解析的文件名交给原生 loader。其私有请求别名不再选中旧入口，已缓存的模块实例保持不变。
 
-仅使配置失效不会改变已加载模块。停止并重新启动 Loader entry 时，会重新按包名解析并选择新入口。独立于后续包名解析记录活动入口 URL 留待后续。
+仅使配置失效不会改变已加载模块。Loader entry 保留导出规范化之前的原始导入结果。HMR 将已导入的 Node 模块对象与缓存中 ModuleJob 的模块命名空间按对象身份匹配，重载已加载 URL。所有匹配的 entry 记录，包括已停用的 entry，仅在重载成功后更新，失败时保持不变。停止并重新启动 Loader entry 时，会重新按包名解析并选择新入口。
 
-实现位于 `packages/boot/hmr/src/package-manifest.ts`，封装其使用的 Node internal 接口。`index.ts` 分派 manifest 变更，不改变模块重载算法。HMR 的 `node_modules` 排除规则不变。
+entry 名称以配置树 base URL 为作用域，并保留所有不同的已导入命名空间。尚未初始化的 entry 只登记名称，不抹去已加载的命名空间；仅在没有记录命名空间或入口为 `cordis:` 内置模块时按名称解析。依赖分析考虑每个已记录模块。共享插件运行时的 entry 使用同一次替换操作，但每个 Loader entry 按自身原命名空间选择替换实现。模块导入与导出规范化在移除旧运行时之前完成。导入或激活失败时，恢复原来的模块和插件实现，并清理已部分激活的替换实例。
+
+没有 Loader entry 的实例不具备已记录的模块身份。如果共享运行时的替换模块具有不同的插件回调，HMR 会报告歧义错误并回滚，而不是将该实例随意分配给某个模块。
+
+包配置失效实现在 `packages/boot/hmr/src/package-manifest.ts`，封装其使用的 Node internal 接口。`index.ts` 分派 manifest 变更，并按模块身份定位已加载 entry。HMR 的 `node_modules` 排除规则不变。
 
 | 接口 | 动作 |
 |---|---|
@@ -45,7 +49,6 @@ binding 的 `getNearestParentPackageJSON` 只被 `package_json_reader` 自己调
 
 - 不支持 `node_modules` 内在线替换、同路径重装、link 换目标及跨包重载传播。包更新需要重启进程；这不保证每个管理操作的结果都已正确报告这一要求。
 - 使用异步 loader 线程的 TSX 版本，其线程内包配置不受这些 hook 管理。线程同步留待后续；本次不提供通用 Worker 缓存同步。
-- exports 或 main 改变入口后，HMR 可能无法按包名找到旧的已加载模块。保留活动 entry URL 关联留待后续；重启 Loader entry 会选择新入口。
 - 注册了同步 resolve hooks 时，CommonJS 私有请求缓存刷新留待后续；这些请求保留原有 loader 行为。
 - 销毁 HMR 会恢复原生 reader，其此前缓存的配置可能重新可见。跨 HMR 替换保留失效状态留待后续。
 
@@ -57,12 +60,14 @@ binding 的 `getNearestParentPackageJSON` 只被 `package_json_reader` 自己调
 
 **按插件名重新 import 被重载的插件。** 这能让入口改名随源码重载生效，但会改变 `partialReload` 以已加载 URL 为重载单位的规则。入口改名在 Loader entry 重启时已经生效，所以本次不改。
 
+**每个 entry 名称只保留一个命名空间。** 名称和 base URL 相同的 entry，可能在 manifest 变化前后加载了不同模块。只保留最早或最后一个命名空间会遗漏仍在使用的模块；尚未初始化的 entry 也不能抹去其他 entry 的已导入命名空间。
+
 ## Verification
 
 | 覆盖面 | 位置 |
 |---|---|
 | 失效后的 exports、main、imports、type、scope、最近 package.json，原生 reader 对照，实际 CommonJS 加载及旧模块实例保留，node_modules 边界，恢复 | `packages/boot/hmr/tests/package-manifest.spec.ts` |
-| 配置专用 manifest、JSON 模块与宿主重载、源码重载、entry 重启和 node_modules 排除规则 | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
+| 配置专用 manifest、JSON 模块与宿主重载、源码重载、同名及共享运行时的 entry、导入与激活失败回滚、entry 重启和 node_modules 排除规则 | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
 
 测试不需要 API key，不调用模型。
 
