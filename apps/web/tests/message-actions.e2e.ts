@@ -330,7 +330,8 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
 
   it.skipIf(MODE === 'record')('persists performance detail and hides statistics in Compact', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-performance-usage'))
-    const stats = page.locator('[data-composer-stats]')
+    const stats = page.locator('[data-composer-stat]')
+    const statsText = async (): Promise<string> => (await stats.allTextContents()).join(' ')
     await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
     const row = dialog.getByText('Performance & usage', { exact: true }).locator('../..')
@@ -339,11 +340,11 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ performanceUsage: 'compact' })
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
     await expect.poll(() => stats.locator('button').count()).toBe(0)
-    expect(await stats.textContent()).not.toContain('turns')
-    expect(await stats.textContent()).toContain('Cache hit')
-    await stats.hover()
+    expect(await statsText()).not.toContain('turns')
+    expect(await statsText()).toContain('Cache hit')
+    await stats.first().hover()
     expect(await page.getByRole('dialog').count()).toBe(0)
-    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-stats]', scaffold.workspaceCwd), MODE)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-dock]', scaffold.workspaceCwd), MODE)
     const warningStart = tripwire.warnings.length
     await page.reload()
     await openSettings(page, 'en')
