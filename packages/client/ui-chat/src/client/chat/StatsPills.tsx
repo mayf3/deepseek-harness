@@ -183,8 +183,8 @@ function PlainPill({ stat, icon, label }: PillContent) {
 
 /**
  * A pill button opening its own portaled dialog. Each pill owns its open
- * state; useStatDialog closes it on an outside pointerdown or click, so at
- * most one dialog is open across the dock.
+ * state; useStatDialog closes it on Escape or an outside pointerdown or click,
+ * so at most one dialog is open across the dock.
  */
 function DialogPill({ stat, icon, label, ariaLabel, title, titleValue, children }: PillContent & {
   ariaLabel: string

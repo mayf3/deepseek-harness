@@ -304,7 +304,7 @@ describe('composer stats pills', () => {
     expect(dialog.textContent).not.toContain('LLM time')
   })
 
-  it('closes the dialog on Escape or outside pointerdown', () => {
+  it('closes the dialog on Escape or an outside pointerdown', () => {
     const { source } = makeSource({ nodes: [timedStep()] })
     const view = render(<StatsPills {...props(source)} />)
     const timePill = view.getAllByRole('button')[0]!
