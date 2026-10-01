@@ -279,20 +279,20 @@ class Hmr extends Service {
           const filename = canonicalPath(resolve(watchBaseDir, path))
           const configuredFilename = resolve(this.baseDir, path)
           if (this.configPaths.has(filename) || this.configPaths.has(configuredFilename)) continue
-          // Package configuration is not a module: later resolutions read it again, but nothing reloads for it.
-          if (basename(filename) === 'package.json' && !filename.includes(`${sep}node_modules${sep}`)) {
+          const isManifest = basename(filename) === 'package.json' && !filename.includes(`${sep}node_modules${sep}`)
+          if (isManifest) {
             this.manifests.invalidate(filename)
-            continue
           }
           const url = pathToFileURL(filename).href
           if (this.externals.has(url)) {
             fullReload = true
             continue
           }
-          if (this.internal.loadCache.has(url)) {
+          if (this.internal.loadCache.has(url) || this.internal.loadCache.has(url, 'json')) {
             this.stashed.add(url)
             continue
           }
+          if (isManifest) continue
           const include = [...loader.entries()].map(entry => entry.subtree as Include | undefined)
             .find(tree => tree?.filename === filename || tree?.filename === configuredFilename)
           if (include !== undefined) includes.add(include)

@@ -123,6 +123,11 @@ interface Configuration {
   serialized: PackageTuple
 }
 
+interface ImportContext {
+  base: string
+  specifier: string | undefined
+}
+
 /** Package directories whose manifests are read from disk instead of Node's native cache. */
 export class PackageManifests {
   private readonly directories = new Set<string>()
@@ -144,33 +149,24 @@ export class PackageManifests {
     const directory = dirname(manifest)
     this.directories.add(directory)
     this.configurations.clear()
-    const prefix = directory + sep
-    for (const key of Object.keys(native.cjs._pathCache)) {
-      const target = native.cjs._pathCache[key]
-      if (target !== undefined && (target.startsWith(prefix) || key.includes(prefix))) Reflect.deleteProperty(native.cjs._pathCache, key)
-    }
+    this.realDirectories.clear()
+    // A package's entry may resolve outside its directory; cache keys do not record the manifests they consulted.
+    for (const key of Object.keys(native.cjs._pathCache)) Reflect.deleteProperty(native.cjs._pathCache, key)
     const directoryURL = pathToFileURL(directory).href + '/'
     const cache = captureEsmResolveCache(native, directoryURL)
-    /* v8 ignore else -- off-thread loader hooks resolve without this thread's cache; supported launches install none */
-    if (cache !== undefined) {
-      // The entry point resolves without a parent URL.
-      for (const parent of [...Map.prototype.keys.call(cache)] as Array<string | undefined>) {
-        const entries = Map.prototype.get.call(cache, parent) as Record<string, { url?: string } | undefined>
-        const stale = parent?.startsWith(directoryURL) === true
-          || Object.values(entries).some(result => result?.url?.startsWith(directoryURL) === true)
-        if (stale) Map.prototype.delete.call(cache, parent)
-      }
-    }
+    /* v8 ignore else -- asynchronous loader hooks own a separate cache; loader-thread invalidation is deferred */
+    if (cache !== undefined) Map.prototype.clear.call(cache)
   }
 
   /** Restore every replaced Node method this instance installed. */
   dispose(): void {
     for (const restore of this.restorers.splice(0).reverse()) restore()
     this.native = undefined
+    this.realDirectories.clear()
   }
 
   private isPathWithinDirectory(path: string, directory: string): boolean {
-    return path === directory || path.startsWith(directory + sep)
+    return path === directory || path.startsWith(join(directory, sep))
   }
 
   private isPathInInvalidatedDirectory(path: string): boolean {
@@ -216,7 +212,7 @@ export class PackageManifests {
     return this.isPathInInvalidatedDirectory(path)
       ? this.readCachedPackageConfig(
         path,
-        isEsm && base !== undefined ? ` while importing "${specifier}" from ${fileURLToPath(base)}` : '',
+        isEsm && base !== undefined ? { base, specifier } : undefined,
       )?.serialized
       : this.rawBinding.readPackageJSON(path, isEsm, base, specifier)
   }
@@ -245,8 +241,8 @@ export class PackageManifests {
     return { data: found.configuration.data, exists: true, path: found.path }
   }
 
-  private readCachedPackageConfig(path: string, importing = ''): Configuration | undefined {
-    if (!this.configurations.has(path)) this.configurations.set(path, this.readPackageConfigFromDisk(path, importing))
+  private readCachedPackageConfig(path: string, context?: ImportContext): Configuration | undefined {
+    if (!this.configurations.has(path)) this.configurations.set(path, this.readPackageConfigFromDisk(path, context))
     return this.configurations.get(path)
   }
 
@@ -260,12 +256,14 @@ export class PackageManifests {
       if (!this.isPathInInvalidatedDirectory(manifest)) return manifest
       const configuration = this.readCachedPackageConfig(manifest)
       if (configuration !== undefined) return { path: toNamespacedPath(manifest), configuration }
+      /* v8 ignore next -- root-scope queries run in an isolated child to contain non-termination */
+      if (parent === directory) return { path: manifest }
       directory = parent
     }
   }
 
-  /** @param importing - the native reader's ` while importing "<specifier>" from <path>` suffix, or empty. */
-  private readPackageConfigFromDisk(path: string, importing: string): Configuration | undefined {
+  /** @param context - optional ESM import details used only when reporting invalid package configuration. */
+  private readPackageConfigFromDisk(path: string, context?: ImportContext): Configuration | undefined {
     let bytes: Buffer
     try { bytes = readFileSync(path) } catch (_error) {
       // Node reports a missing manifest as absent configuration.
@@ -273,6 +271,9 @@ export class PackageManifests {
     }
     const throwInvalidPackageConfig = (): never => {
       // The native reader throws a plain Error carrying only this code.
+      const base = context?.base
+      const importing = base === undefined ? ''
+        : ` while importing "${context?.specifier}" from ${base.startsWith('file:') ? fileURLToPath(base) : base}`
       throw Object.assign(new Error(`Invalid package config ${toNamespacedPath(path)}${importing}.`), { code: 'ERR_INVALID_PACKAGE_CONFIG' })
     }
     if (!isUtf8(bytes)) return throwInvalidPackageConfig()

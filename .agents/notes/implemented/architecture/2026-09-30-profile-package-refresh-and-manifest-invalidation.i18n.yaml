@@ -6,26 +6,26 @@
   en: e6905d7657387304
   zh: a7e906173a82f27c
 /agent-note-expire-hmr-package-configuration/problem:
-  en: 0c94c90beb8f27da
-  zh: 721bec27065b1c52
+  en: e327f239592ffec0
+  zh: 339aa414b9dc8652
 /agent-note-expire-hmr-package-configuration/decision:
   en: a15c7c13f167e5ac
   zh: a15c7c13f167e5ac
 /agent-note-expire-hmr-package-configuration/decision/responsibilities:
-  en: 8e2c32e7bd3603fd
-  zh: 702ce5a1c5a45ccd
+  en: e72abbf8fafc89bb
+  zh: f6c59177696c5cd3
 /agent-note-expire-hmr-package-configuration/decision/hmr-package-configuration-expiry:
-  en: d0becbacae5038cc
-  zh: 8d20bce7ccc84152
-/agent-note-expire-hmr-package-configuration/decision/unsupported-scenarios:
-  en: 0386bb3af5765b44
-  zh: 3206e2d2286b8c9c
+  en: e5677d53b4aa8c1b
+  zh: 3aa660a2d13c63e2
+/agent-note-expire-hmr-package-configuration/decision/future-work:
+  en: a65f33aa459568ed
+  zh: b75c5eb69420ca2d
 /agent-note-expire-hmr-package-configuration/alternatives-considered:
-  en: de12dc08fc9c52bb
-  zh: 3385a252091626a3
+  en: 47590f8e9712ab5f
+  zh: 681162750e3b5cfb
 /agent-note-expire-hmr-package-configuration/verification:
-  en: 31671100a78f896e
-  zh: db0c6976c2615257
+  en: eecb458e1c7e1b3e
+  zh: ec2a3e1633d5427a
 /agent-note-expire-hmr-package-configuration/consequences:
-  en: 16dd88467b324ab2
-  zh: 0f59b55846e27ca5
+  en: e557562e3f7b07bc
+  zh: 3cd196a63e4099b0

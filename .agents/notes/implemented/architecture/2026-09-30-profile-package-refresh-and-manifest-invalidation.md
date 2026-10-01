@@ -6,7 +6,7 @@ English | [中文](2026-09-30-profile-package-refresh-and-manifest-invalidation.
 
 ## Problem
 
-- **HMR handled module contents but not package.json.** `packages/boot/hmr` clears module caches on a source change and re-imports the loaded URL. A plugin directory's package.json is not a module: HMR ignored its change and kept Node's package-configuration caches (the C++ package.json reader cache, `package_json_reader`'s nearest-manifest cache, the ESM `ResolveCache`, and CommonJS `_pathCache`). Later reloads and imports kept the old exports, main, and imports, and format detection kept the old type.
+- **Package configuration and module evaluation have separate caches.** Clearing a plugin's module cache does not refresh the package.json fields that Node uses for exports, main, imports, and format detection. A package.json can also be imported as a JSON module, in which case its consumers need ordinary module reloads.
 
 ## Decision
 
@@ -14,40 +14,44 @@ English | [中文](2026-09-30-profile-package-refresh-and-manifest-invalidation.
 
 | Owner | Does | Does not |
 |---|---|---|
-| HMR (`packages/boot/hmr`) | Expires a package's configuration caches when a package.json inside its watched roots changes | Reload plugins for a package.json change; handle `node_modules` |
+| HMR (`packages/boot/hmr`) | Expires package configuration and preserves ordinary reloads for manifests loaded as JSON modules | Reload plugins for configuration-only manifests; handle `node_modules` package replacement |
 
 ### HMR package-configuration expiry
 
-In HMR's change dispatch, a changed file named `package.json` outside `node_modules` goes to `PackageManifests.invalidate()` instead of `partialReload`. Source changes in the same batch reload afterwards and read the new configuration.
+In HMR's change dispatch, a changed file named `package.json` outside `node_modules` goes to `PackageManifests.invalidate()`. A manifest in the host dependency graph still requests a host reload; one loaded as a JSON module still reloads its consumers. A configuration-only manifest schedules no module reload. Configuration-owned paths stay with their dedicated watcher. Source changes in the same batch reload afterwards.
 
 `invalidate(manifest)` records the directory as expired. Afterwards:
 
 - package.json reads, scope lookups, type lookups, and nearest-manifest lookups below that directory read the current file. Ownership follows the real directory when a consumer reaches the package through a link.
-- ESM `ResolveCache` entries whose parent lies in that directory or whose result points into it are deleted.
-- CommonJS `_pathCache` entries whose result or lookup path lies in that directory are deleted.
+- ESM `ResolveCache` is cleared. Its entries do not record every consulted manifest, and a package entry may resolve outside the package directory.
+- CommonJS `_pathCache` is cleared for the same reason. Unrelated requests recompute their resolution without unloading their modules.
 
-Loaded modules stay unchanged. A reloaded plugin is re-imported from its loaded URL, so an entry rename takes effect when the Loader entry restarts, for example after disabling and enabling it, when the Loader resolves the package name again.
+Configuration invalidation alone leaves loaded modules unchanged. Stopping and restarting a Loader entry resolves its package name again and selects the new entry. Tracking active entry URLs independently of later package-name resolutions is deferred.
 
-The implementation lives in `packages/boot/hmr/src/package-manifest.ts`, which encapsulates every Node internal interface it needs; `index.ts` adds only the dispatch branch, a field, and restoration on disposal. HMR's `node_modules` exclusion is unchanged.
+The implementation lives in `packages/boot/hmr/src/package-manifest.ts`, which encapsulates its Node internal interfaces. `index.ts` dispatches manifest changes without changing the module-reload algorithm. HMR's `node_modules` exclusion is unchanged.
 
 | Interface | Action |
 |---|---|
 | modules binding `readPackageJSON`, `getPackageScopeConfig`, `getPackageType` | Replaced: paths in an expired directory read the current file; other calls reach the native method |
 | `package_json_reader.getNearestParentPackageJSON` | Replaced: expired directories bypass its JS cache; a lookup without a manifest returns the native absent result |
-| The ESM Loader's `ResolveCache` instance | The prototype `get` is replaced for one lookup to obtain the instance and restored at once; entries are then deleted by parent |
-| CommonJS `Module._pathCache` | Entries below an expired directory are deleted |
+| The ESM Loader's `ResolveCache` instance | The prototype `get` is replaced for one lookup to obtain the instance and restored at once; the resolution cache is then cleared |
+| CommonJS `Module._pathCache` | The request-to-filename cache is cleared |
 
 The binding's `getNearestParentPackageJSON` is called only by `package_json_reader` and is not replaced. The replacements are installed at the first expiry and restored when the HMR service is disposed.
 
-### Unsupported scenarios
+### Future Work
 
-Overwriting or upgrading a package installed in `node_modules`, and reinstalling at the same path after removal, still require restart. Module caches, `node_modules` package-configuration caches, and HMR's `node_modules` exclusion are unchanged.
+- Online replacement inside `node_modules`, same-path reinstall, changed link targets, and cross-package reload propagation remain unsupported. Package updates need process restart; this does not guarantee that every management result already reports that requirement correctly.
+- TSX versions using an asynchronous loader thread keep that thread's package configuration outside these hooks. Synchronizing it is deferred; this change does not provide general Worker cache synchronization.
+- After exports or main moves an entry, HMR can fail to locate its old loaded module by package name. Keeping an active-entry URL association is deferred; restarting the Loader entry selects the new entry.
+- An already loaded CommonJS request can still hit Node's private request cache and return its existing module even after `require.resolve()` changes. Invalidating that request cache and replacing module instances are deferred.
+- Disposing HMR restores the native readers, whose previous cached configuration can become visible again. Preserving invalidation state across HMR replacement is deferred.
 
 ## Alternatives considered
 
 **Let HMR reload packages inside `node_modules`.** It requires finding affected plugins over a module graph that includes `node_modules`, preventing duplicate evaluation of shared libraries and Cordis, and handling missing dynamic-import edges, module side effects, and Workers. It is not done here; those scenarios keep requiring restart.
 
-**Reload plugins when package.json changes.** package.json is not a module, and changing it does not necessarily call for re-evaluation; source HMR is driven by source changes. After expiry, the next source reload or new import reads the new configuration.
+**Reload every plugin for a package.json change.** Configuration-only manifests do not require module evaluation. Manifests actually imported as JSON modules retain ordinary dependency-driven reloads.
 
 **Re-import reloaded plugins by package name.** It would let an entry rename follow a source reload, but changes `partialReload`'s rule that the loaded URL is the reload unit. Entry renames already take effect when the Loader entry restarts, so this is not changed.
 
@@ -56,12 +60,12 @@ Overwriting or upgrading a package installed in `node_modules`, and reinstalling
 | Coverage | Location |
 |---|---|
 | Expired exports, main, imports, type, scope, and nearest manifests; parity with the native reader; the `node_modules` boundary; restoration | `packages/boot/hmr/tests/package-manifest.spec.ts` |
-| HMR dispatch: a manifest change alone reloads nothing, a same-batch source reload reads the new imports, an entry restart reads the new entry, and `node_modules` manifests are ignored | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
+| Configuration-only manifests, JSON-module and host reloads, source reloads, entry restarts, and the `node_modules` exclusion | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
 
 Tests need no API key and make no model calls.
 
 ## Consequences
 
-- During HMR development, changes to package.json imports, exports, main, and type reach the next reload or new import; package.json alone triggers no reload.
+- In the supported thread, package.json configuration reads use the changed fields; JSON modules retain their own reload behavior. The separate module, loader-thread, and Worker limitations above still apply.
 - Package configuration below expired directories is parsed in JavaScript and must keep the native reader's field and error semantics; tests compare it with the native reader on Node 22, 24, and 26.
 - The implementation depends on several Node internal interfaces, and these tests must run again for Node upgrades.

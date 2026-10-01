@@ -40,11 +40,15 @@ function manifest(entry: string, dep: string): string {
   return JSON.stringify({ name: 'addon', type: 'module', exports: `./${entry}.mjs`, imports: { '#dep': `./${dep}.mjs` } })
 }
 
-async function fixture() {
+async function fixture(source = plugin('a')) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-hmr-manifest-dispatch-')))
+  const ctx = new Context()
+  onTestFinished(async () => {
+    try { await ctx.fiber.dispose() } finally { rmSync(root, { recursive: true, force: true }) }
+  })
   const pkg = join(root, 'plugins', 'addon')
   file(join(pkg, 'package.json'), manifest('a', 'dep-1'))
-  file(join(pkg, 'a.mjs'), plugin('a'))
+  file(join(pkg, 'a.mjs'), source)
   file(join(pkg, 'b.mjs'), plugin('b'))
   file(join(pkg, 'dep-1.mjs'), 'export const value = 1')
   file(join(pkg, 'dep-2.mjs'), 'export const value = 2')
@@ -52,26 +56,26 @@ async function fixture() {
   mkdirSync(join(root, 'app', 'node_modules'), { recursive: true })
   symlinkSync(pkg, join(root, 'app', 'node_modules', 'addon'), process.platform === 'win32' ? 'junction' : 'dir')
   const trace: string[] = []
-  const ctx = new Context()
   ctx.baseUrl = pathToFileURL(join(root, 'app')).href + '/'
   ctx.provide('manifestTrace', trace)
   await ctx.plugin(Loader)
   await ctx.plugin(Timer)
   const start = watchers.length
   await ctx.plugin(Hmr, { root: ['../plugins'], ignored: [], debounce: 0 })
-  onTestFinished(async () => {
-    await ctx.fiber.dispose()
-    rmSync(root, { recursive: true, force: true })
-  })
   const watcher = watchers.slice(start).at(-1)!
   const entry = ctx.loader.resolve(await ctx.loader.create({ name: 'addon' }))
   await ctx.loader.await()
-  const settle = () => ctx.hmr.runExclusive(async () => {})
   const emit = async (...paths: string[]) => {
-    for (const path of paths) watcher.emit('change', path)
-    await vi.waitFor(async () => { await settle() })
-    await new Promise(resolve => setTimeout(resolve, 20))
-    await settle()
+    const dispatch = vi.spyOn(ctx.hmr, 'runExclusive')
+    try {
+      for (const path of paths) watcher.emit('change', path)
+      await vi.waitFor(() => { expect(dispatch).toHaveBeenCalledOnce() })
+      const result = dispatch.mock.results[0]!
+      expect(result.type).toBe('return')
+      await result.value
+    } finally {
+      dispatch.mockRestore()
+    }
   }
   return { ctx, pkg, trace, emit, entry }
 }
@@ -87,6 +91,47 @@ it('does not reload for a manifest alone and resolves the new entry when the Loa
   await f.entry.update({ disabled: false })
   await f.ctx.loader.await()
   expect(f.trace).toEqual(['start:a:1', 'stop:a', 'start:b:2'])
+})
+
+const jsonPlugin = `import manifest from './package.json' with { type: 'json' };
+export function apply(ctx) {
+  ctx.get('manifestTrace').push('start:json:' + manifest.imports['#dep']);
+  ctx.effect(() => () => { ctx.get('manifestTrace').push('stop:json'); });
+}
+`
+
+it('reloads a plugin that imports its changed manifest as a JSON module', async () => {
+  const f = await fixture(jsonPlugin)
+  expect(f.trace).toEqual(['start:json:./dep-1.mjs'])
+  file(join(f.pkg, 'package.json'), manifest('a', 'dep-2'))
+  await f.emit(join(f.pkg, 'package.json'))
+  expect(f.trace).toEqual(['start:json:./dep-1.mjs', 'stop:json', 'start:json:./dep-2.mjs'])
+})
+
+it('requests a host reload for a changed manifest in the host module graph', async () => {
+  const f = await fixture(jsonPlugin)
+  const filename = join(f.pkg, 'package.json')
+  const externals = Reflect.get(f.ctx.hmr, 'externals') as Set<string>
+  externals.add(pathToFileURL(filename).href)
+  const exit = vi.spyOn(f.ctx.loader, 'exit').mockImplementation(() => {})
+  onTestFinished(() => { exit.mockRestore() })
+  file(filename, manifest('a', 'dep-2'))
+  await f.emit(filename)
+  expect(exit).toHaveBeenCalledOnce()
+  expect(f.trace).toEqual(['start:json:./dep-1.mjs'])
+})
+
+it('leaves a configuration-owned manifest to its dedicated watcher', async () => {
+  const f = await fixture(jsonPlugin)
+  const filename = join(f.pkg, 'package.json')
+  const dispose = await f.ctx.hmr.watchConfig(filename, async () => {})
+  try {
+    file(filename, manifest('a', 'dep-2'))
+    await f.emit(filename)
+    expect(f.trace).toEqual(['start:json:./dep-1.mjs'])
+  } finally {
+    await dispose()
+  }
 })
 
 it('resolves package imports from the changed manifest when a source change reloads the plugin', async () => {

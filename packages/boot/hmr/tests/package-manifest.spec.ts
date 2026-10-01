@@ -1,9 +1,10 @@
 /** Package configuration read by Node's resolver follows an invalidated manifest on disk. */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, toNamespacedPath } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManifests } from '../src/package-manifest.ts'
@@ -11,7 +12,7 @@ import { PackageManifests } from '../src/package-manifest.ts'
 const require = createRequire(import.meta.url)
 const addon = require('node-addon-require-builtin') as { requireBuiltin(id: string): unknown }
 const reader = addon.requireBuiltin('internal/modules/package_json_reader') as {
-  read: (path: string) => { exists: boolean; type: string }
+  read: (path: string, options?: { isESM: boolean; base: string; specifier: string }) => { exists: boolean; type: string }
   getPackageScopeConfig: (url: string) => { exists: boolean; type: string; pjsonPath: string }
   getNearestParentPackageJSON: (path: string) => { data: { type: string }; path: string } | undefined
 }
@@ -22,8 +23,8 @@ const binding = (addon.requireBuiltin('internal/bootstrap/realm') as {
   internalBinding(id: 'modules'): Record<string, unknown>
 }).internalBinding('modules')
 
-const cleanup: Array<() => void> = []
-afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose() })
+const cleanup: Array<() => void | Promise<void>> = []
+afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
 function file(path: string, source: string): void {
   mkdirSync(dirname(path), { recursive: true })
@@ -48,7 +49,8 @@ function fixture() {
   }
   const manifests = new PackageManifests()
   cleanup.push(() => { manifests.dispose() })
-  return { root, dir, manifest, importer, importerURL: pathToFileURL(importer).href, manifests }
+  const invalidate = (path: string) => Promise.resolve().then(manifests.invalidate.bind(manifests, path))
+  return { root, dir, manifest, importer, importerURL: pathToFileURL(importer).href, manifests, invalidate }
 }
 
 function resolveEsm(specifier: string, parentURL: string): string {
@@ -59,6 +61,26 @@ function resolveEsm(specifier: string, parentURL: string): string {
 }
 
 describe('package manifest invalidation', { concurrent: false }, () => {
+  it.each(['symlink', 'main'] as const)('refreshes a cached external %s entry after its manifest changes', async (entry) => {
+    const f = fixture()
+    const external = join(f.root, 'packages', 'outside', 'entry.mjs')
+    file(external, 'export {}')
+    if (entry === 'symlink') {
+      symlinkSync(dirname(external), join(f.dir, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+      file(f.manifest, JSON.stringify({ name: 'pkg', exports: './linked/entry.mjs' }))
+    } else {
+      file(f.manifest, JSON.stringify({ name: 'pkg', main: external }))
+    }
+    const importerRequire = createRequire(f.importer)
+    expect(importerRequire.resolve('pkg')).toBe(external)
+    expect(resolveEsm('pkg', f.importerURL)).toBe(pathToFileURL(external).href)
+
+    file(f.manifest, JSON.stringify({ name: 'pkg', main: './b.mjs', exports: './b.mjs' }))
+    await f.invalidate(f.manifest)
+    expect.soft(importerRequire.resolve('pkg')).toBe(join(f.dir, 'b.mjs'))
+    expect(resolveEsm('pkg', f.importerURL)).toBe(pathToFileURL(join(f.dir, 'b.mjs')).href)
+  })
+
   it('resolves changed exports and main only after the manifest is invalidated', () => {
     const f = fixture()
     file(f.manifest, JSON.stringify({ name: 'pkg', exports: { import: './a.mjs', require: './a.cjs' } }))
@@ -131,6 +153,16 @@ describe('package manifest invalidation', { concurrent: false }, () => {
     f.manifests.dispose()
     expect(binding.readPackageJSON).toBe(original)
   })
+
+  it('reports invalid JSON with its non-file ESM base after invalidation', async () => {
+    const f = fixture()
+    file(f.manifest, '{')
+    await f.invalidate(f.manifest)
+    const base = 'data:text/javascript,export{}'
+    const failure = outcome(() => reader.read(f.manifest, { isESM: true, base, specifier: 'pkg' }))
+    expect(failure).toHaveProperty('code', 'ERR_INVALID_PACKAGE_CONFIG')
+    expect(failure).toHaveProperty('message', expect.stringContaining(base))
+  })
 })
 
 function outcome(run: () => unknown): unknown {
@@ -141,6 +173,58 @@ function outcome(run: () => unknown): unknown {
 }
 
 describe('package manifest reader parity', { concurrent: false }, () => {
+  it('terminates scope lookup after invalidating the filesystem root without modifying it', async () => {
+    const f = fixture()
+    const child = spawn(process.execPath, [
+      '--expose-internals',
+      fileURLToPath(new URL('./fixtures/package-root-scope.mjs', import.meta.url)),
+      f.root,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const completed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', (code, signal) => { resolve({ code, signal }) })
+    })
+    cleanup.push(async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+      await completed
+    })
+    let stdout = '', stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk })
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk })
+    const result = await completed
+    expect(result.signal, stderr).toBeNull()
+    expect(result.code, stderr).toBe(0)
+    expect(stdout).toBe('scope traversal completed\n')
+  })
+
+  it('reads valid JSON with a non-file ESM base like Node', async () => {
+    const f = fixture()
+    file(f.manifest, '{}')
+    const options = { isESM: true, base: 'data:text/javascript,export{}', specifier: 'pkg' }
+    const expected = outcome(() => reader.read(f.manifest, options))
+    await f.invalidate(f.manifest)
+    expect(outcome(() => reader.read(f.manifest, options))).toEqual(expected)
+  })
+
+  it('refreshes a cached real directory after a package link moves', async () => {
+    const f = fixture()
+    const other = join(f.root, 'packages', 'other')
+    const link = join(f.root, 'importer', 'node_modules', 'pkg')
+    const linkedManifest = join(link, 'package.json')
+    file(f.manifest, '{"type":"commonjs"}')
+    file(join(other, 'package.json'), '{"type":"commonjs"}')
+    unlinkSync(link)
+    symlinkSync(other, link, process.platform === 'win32' ? 'junction' : 'dir')
+    await f.invalidate(f.manifest)
+    expect(reader.read(linkedManifest).type).toBe('commonjs')
+
+    unlinkSync(link)
+    symlinkSync(f.dir, link, process.platform === 'win32' ? 'junction' : 'dir')
+    file(f.manifest, '{"type":"module"}')
+    await f.invalidate(f.manifest)
+    expect(reader.read(linkedManifest).type).toBe('module')
+  })
+
   it.each([
     '{}',
     '{"name":"pkg","main":"./a.cjs","type":"commonjs"}',
@@ -266,19 +350,29 @@ describe('package manifest reader parity', { concurrent: false }, () => {
     expect(importerRequire.resolve('pkg')).toBe(join(f.dir, 'b.cjs'))
   })
 
-  it('keeps readers replaced after installation when disposed', () => {
+  it('keeps readers replaced after installation when disposed', async () => {
     const f = fixture()
     file(f.manifest, '{}')
-    f.manifests.invalidate(f.manifest)
-    const later = () => undefined
     const previousRead = binding.readPackageJSON
+    const previousScope = binding.getPackageScopeConfig
+    const previousType = binding.getPackageType
     const previousNearest = reader.getNearestParentPackageJSON
-    binding.readPackageJSON = later
-    reader.getNearestParentPackageJSON = later
-    f.manifests.dispose()
-    expect(binding.readPackageJSON).toBe(later)
-    expect(reader.getNearestParentPackageJSON).toBe(later)
-    binding.readPackageJSON = previousRead
-    reader.getNearestParentPackageJSON = previousNearest
+    try {
+      await f.invalidate(f.manifest)
+      const later = () => undefined
+      binding.readPackageJSON = later
+      reader.getNearestParentPackageJSON = later
+      f.manifests.dispose()
+      expect(binding.readPackageJSON).toBe(later)
+      expect(reader.getNearestParentPackageJSON).toBe(later)
+      expect(binding.getPackageScopeConfig).toBe(previousScope)
+      expect(binding.getPackageType).toBe(previousType)
+    } finally {
+      f.manifests.dispose()
+      binding.readPackageJSON = previousRead
+      binding.getPackageScopeConfig = previousScope
+      binding.getPackageType = previousType
+      reader.getNearestParentPackageJSON = previousNearest
+    }
   })
 })
