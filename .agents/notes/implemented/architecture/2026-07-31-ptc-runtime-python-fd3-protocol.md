@@ -2,7 +2,7 @@
 
 Status: implemented
 
-The CPython PTC runtime lives at `packages/experimental/ptc-runtime-python` and publishes as `@deepseek-ai/dsh-experimental-ptc-runtime-python`; the [publication decision](../process/2026-09-12-publish-all-experimental-packages.md) preserves its experimental status.
+The CPython PTC runtime lives at `packages/experimental/ptc-runtime-python` and publishes as `@deepseek-ai/dsh-experimental-ptc-runtime-python`; the [publication policy](../../../../packages/experimental/README.md) preserves its experimental status.
 
 English | [中文](2026-07-31-ptc-runtime-python-fd3-protocol.zh.md)
 

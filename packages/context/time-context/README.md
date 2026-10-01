@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-time-context` gives the model a clock: on eligible steps it appends a durable, source-attributed reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. It helps the model interpret otherwise-unqualified dates and times in the user's browser zone, and tells it to ask when current-turn browser zones are mixed or missing. The shipped Web composition carries no row for it; the optional `@deepseek-ai/dsh-experimental-schedule-bundle` inserts and mounts it with Schedule from the Plugins page. Readings default to a 10-minute minimum interval; `refreshIntervalMs: 0` injects at every eligible step.
+`dsh-time-context` gives the model a clock: on eligible steps it appends a durable, source-attributed reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. It helps the model interpret otherwise-unqualified dates and times in the user's browser zone, and tells it to ask when current-turn browser zones are mixed or missing. The shipped Web composition carries no row for it; `standard`, `cordis`, and `ptc` declare it. Readings default to a 10-minute minimum interval; `refreshIntervalMs: 0` injects at every eligible step.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin when the model should interpret unqualified dates and times in the user's zone, and when a request-local browser zone is available or a configured fallback is acceptable. Each injection is one additional user-role message in the durable history; schedule it with `refreshIntervalMs` when per-step readings are more than the conversation needs.
+Mount this plugin when the model should interpret unqualified dates and times in the user's zone, and when a request-local browser zone is available or a configured fallback is acceptable. Each injection is one additional user-role message in the durable history; schedule it with `refreshIntervalMs` when per-step readings are more than the conversation needs. The shipped Web composition carries no Host `time-context` row, and the `standard`, `cordis`, and `ptc` presets declare it beside the reminder tools that consume it, while `minimal` declares neither.
 
 ### What the model gets
 

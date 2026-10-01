@@ -92,7 +92,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [fs-local](../fs-local/README.md) — the local backend this one extends.
 - [sandbox-policy](../../sandbox/sandbox-policy/README.md) — the shared per-session policy resolver this backend requires.
 - [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — modes, per-call policy, and fail-closed errors.
-- [Cross-family fs sandbox decision](../../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md) — the shared mode fence and its escalation choreography.
+- [Cross-family fs sandbox reference](../../sandbox/sandbox-policy/README.md) — the shared mode fence and its escalation choreography.
 
 -----
 

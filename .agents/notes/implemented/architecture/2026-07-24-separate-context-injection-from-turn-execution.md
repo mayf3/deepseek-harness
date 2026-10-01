@@ -42,7 +42,7 @@ Caller-driven injection and current-step context deliberately use different timi
 
 Cross-session references use that domain composition: TUI prepares the snapshot, returns it from the idle direct message's pre-step beside that message, or injects it before waking steering during a running turn. The target log contains two simple messages, so later source mutation cannot change replay and transcript consumers do not need a prompt envelope. This supersedes the attachment mechanism in the [cross-session reference decision](../../archived/feature/2026-07-21-cross-session-references.md) while retaining its snapshot and trust-boundary rules.
 
-This decision preserves the caller-owned framing decision from [unwrapped injected content](../simplification/2026-07-20-unwrap-injected-content-envelopes.md) and the one-item turn rule from [one send, one turn](../simplification/2026-07-17-one-send-one-turn.md). The later [standalone log-only event decision](../simplification/2026-07-28-remove-synthetic-log-only-turns.md) applies the same execution-only meaning to plugin-owned records.
+This decision preserves the caller-owned framing decision from [unwrapped injected content](../../../../packages/core/session/README.md) and the one-item turn rule from [one send, one turn](../simplification/2026-07-17-one-send-one-turn.md). The later [standalone log-only event decision](../simplification/2026-07-28-remove-synthetic-log-only-turns.md) applies the same execution-only meaning to plugin-owned records.
 
 ## Alternatives considered
 

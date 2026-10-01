@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-[逐会话 agent preset](2026-09-18-declarative-agent-presets.zh.md) 把每一个面向模型的行搬上了 agent 平面，此后的每一处修复都是一个仍按搬迁之前的世界写成的读取点。`tasks` 因为 realm 之外的 preset 行要解析它而搬回宿主；`goals` 因为同样的理由从未离开；而当所有面向模型的工具都变成祖先贡献之后，子 agent 的 `toolFilter` 也已被修好（[子 agent 加入父方 preset](../bug-fix/2026-08-10-child-agents-join-their-parent-preset.zh.md)）。
+[逐会话 agent preset](2026-09-18-declarative-agent-presets.zh.md) 把每一个面向模型的行搬上了 agent 平面，此后的每一处修复都是一个仍按搬迁之前的世界写成的读取点。`tasks` 因为 realm 之外的 preset 行要解析它而搬回宿主；`goals` 因为同样的理由从未离开；而当所有面向模型的工具都变成祖先贡献之后，子 agent 的 `toolFilter` 也已被修好（[历史子 agent 加入父方 preset](../../archived/bug-fix/2026-08-10-child-agents-join-their-parent-preset.md)）。
 
 还有两个读取点仍站在这条线的错误一侧。
 

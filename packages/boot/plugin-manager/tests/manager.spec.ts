@@ -506,6 +506,9 @@ it('installs only valid bundle declarations and honors installation without acti
   const install = vi.spyOn(operations, 'runProfilePnpm').mockImplementation(async (_context, args) => {
     const name = String(args[1])
     bundle(name, [{ id: name, name: './plugin.mjs', config: { service: name } }])
+    if (name === 'another-bundle') {
+      writeFileSync(join(dir, 'node_modules', name, 'package.json'), JSON.stringify({ name, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    }
     const manifest = readProfileManifest('test', dir)
     manifest.dependencies = { ...manifest.dependencies, [name]: '1.0.0' }
     writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
@@ -513,12 +516,14 @@ it('installs only valid bundle declarations and honors installation without acti
   })
   onTestFinished(() => { install.mockRestore() })
   expect(await manager.installBundle('new-bundle', { enabled: false })).toMatchObject({
-    changed: true, application: 'applied', stage: 'enable', target: 'new-bundle', bundle: 'new-bundle', packageResult: { exitCode: 0 },
+    changed: true, application: 'applied', stage: 'enable', target: 'new-bundle', bundle: 'new-bundle', version: '1.0.0', packageResult: { exitCode: 0 },
   })
   expect((await manager.listBundles()).find(row => row.name === 'new-bundle')?.enabled).toBe(false)
   expect(await manager.setBundleEnabled('new-bundle', true)).toMatchObject({ application: 'applied' })
   expect((await manager.listPlugins()).find(row => row.patchId === 'new-bundle')?.fiberPhase).toBe('active')
-  expect(await manager.installBundle('another-bundle')).toMatchObject({ application: 'applied' })
+  const another = await manager.installBundle('another-bundle')
+  expect(another).toMatchObject({ application: 'applied', bundle: 'another-bundle' })
+  expect(another).not.toHaveProperty('version')
   expect((await manager.listBundles()).find(row => row.name === 'another-bundle')?.enabled).toBe(true)
 })
 
@@ -1064,11 +1069,10 @@ it('refuses removal of a hot-installed bundle after HMR is disabled', async () =
   expect(await manager.removeBundle('later')).toMatchObject({ changed: false, application: 'failed' })
 })
 
-it('offers the launcher\'s optional bundles switched off and never removable', async () => {
+it.each(OPTIONAL_BUNDLES)('offers %s switched off and never removable', async (offered) => {
   const { manager, profile } = await fixture()
   // The launcher names the bundles the installation ships; the fixture supplies one of them from the
   // installation's own node_modules, which the resolver consults before the profile's and before the repository's.
-  const offered = OPTIONAL_BUNDLES[0]!
   const supplied = join(profile.home, 'node_modules', offered)
   mkdirSync(supplied, { recursive: true })
   writeFileSync(join(supplied, 'package.json'), JSON.stringify({
@@ -1086,6 +1090,23 @@ it('offers the launcher\'s optional bundles switched off and never removable', a
   expect(await manager.setBundleEnabled(offered, true)).toMatchObject({ application: 'applied' })
   expect((await manager.listBundles()).find(row => row.name === offered)).toMatchObject({ enabled: true, optional: true, removable: false })
   expect(await manager.removeBundle(offered)).toMatchObject({ changed: false, application: 'failed' })
+})
+
+it('removes a selected bundle no dependency holds by deselecting it without pnpm', async () => {
+  const { manager, dir } = await fixture()
+  const manifest = readProfileManifest('test', dir)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    ...manifest, dsh: { profile: { bundles: [...manifest.dsh?.profile?.bundles ?? [], 'retired'] } },
+  }))
+  expect((await manager.listBundles()).find(row => row.name === 'retired')).toMatchObject({
+    enabled: true, installed: false, optional: false, removable: true, error: { code: 'operation-error' },
+  })
+  const pnpm = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { pnpm.mockRestore() })
+  expect(await manager.removeBundle('retired')).toMatchObject({ changed: true, application: 'applied' })
+  expect(pnpm).not.toHaveBeenCalled()
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).not.toContain('retired')
+  expect((await manager.listBundles()).some(row => row.name === 'retired')).toBe(false)
 })
 
 it('omits installation-owned plain packages from the bundle inventory', async () => {

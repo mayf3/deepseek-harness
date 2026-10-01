@@ -82,7 +82,7 @@ The projector preserves native omission behavior by checking literal defaults ag
 
 ### Reading plugin display metadata
 
-Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads `package.json.icon` as an image data URL, even when locale text is complete; an icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
+Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. For a package-root specifier, missing locale fields fall back to the accessible `package.json`; a subpath specifier never reads a `package.json`. Malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads an image data URL, even when locale text is complete: a package root uses its manifest `icon`, or `<package>/icon` when that field is omitted; a subpath uses `<specifier>/icon`. An icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
 
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures
@@ -176,7 +176,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [dsh-home-paths](../../util/home-paths/README.md) — the Harness-home resolver (`resolveDshHome`).
 - [Configuration source ownership](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.md) — why a discovered file may not decide bootstrap behavior.
 - [Profile plugin bundles](../../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.md) — the profile and bundle composition design.
-- [User-patch HMR tests](../../../.agents/notes/implemented/testing/2026-09-09-user-patch-hmr-test-delivery.md) — ownership of live-patch behavior and native filesystem delivery.
+- [User-patch HMR tests](tests/user-patches.spec.ts) — ownership of live-patch behavior and native filesystem delivery.
 
 -----
 

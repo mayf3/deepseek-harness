@@ -23,6 +23,8 @@ The job seam had grown by accretion. Producers declared their output twice — a
 
 ## Alternatives considered
 
+**Separate lifecycle and observation registries.** One producer would register the same work twice and coordinate terminal state, correlation IDs, and two client rosters. A job therefore owns both lifecycle and observation. Foreground-only or model-invisible jobs would require separate reporting and visibility rules; foreground workflow narration gains live observation by becoming an ordinary background job instead.
+
 - **Keep three listeners with a shared owner filter.** It preserves the accreted names but not the property reviewers asked for — one place to learn what the registry announces — and `onJobDone`'s exact-owner delivery is what forced the registry to keep an `Agent` in every projection.
 - **Keep `reported` in the registry.** Only the tool knows which deliveries reach the model (a wait's tool result, a kill's acknowledgement); the registry could only approximate it, and the approximation was the source of the double-notice and missed-notice bugs the review listed.
 - **Keep the roster on the session control stream.** It saved one Remote stream but coupled the session controller to the job registry and mirrored a `record` flag the ring's byte count now answers directly (`output.total`).

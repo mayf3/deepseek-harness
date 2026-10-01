@@ -51,7 +51,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-目录与编辑器行为由 [Web subagent 对话笔记](../../../.agents/notes/implemented/feature/2026-07-27-web-subagent-conversations.zh.md) 与[当前轮次中断笔记](../../../.agents/notes/implemented/feature/2026-08-06-continuable-subagent-interrupt.zh.md) 规定。
+[子代理运行时](../../subagent/subagent/README.zh.md)负责 continuation 与中断；[对话参考](../ui-conversation/README.zh.md)说明编辑器行为。
 
 ### 目录派生
 
@@ -83,8 +83,8 @@ one-shot child 始终选用只读编辑器。可继续 child 仅在其确切 par
 - [ui-conversation](../ui-conversation/README.zh.md)——承载页头操作与编辑器链的聊天界面。
 - [ui-input-trigger](../ui-input-trigger/README.zh.md)——承载 `@` source 的建议机制。
 - [subagent](../../subagent/subagent/README.zh.md)——可继续 child 背后的宿主能力 seam。
-- [Web subagent 对话](../../../.agents/notes/implemented/feature/2026-07-27-web-subagent-conversations.zh.md)——目录与编辑器规范。
-- [当前轮次中断](../../../.agents/notes/implemented/feature/2026-08-06-continuable-subagent-interrupt.zh.md)——独立 Stop 的语义。
+- [历史Web subagent 对话](../../../.agents/notes/archived/feature/2026-07-27-web-subagent-conversations.md)——目录与编辑器规范。
+- [当前轮次中断](../../subagent/subagent/README.zh.md)——独立 Stop 的语义。
 
 -----
 

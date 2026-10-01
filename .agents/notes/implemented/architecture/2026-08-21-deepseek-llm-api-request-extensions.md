@@ -89,4 +89,4 @@ Official DeepSeek requests carry active package versions to their resolved `base
 
 The `delivery-accepted` event becomes part of the canonical log and is itself delivered on a later request. Crash recovery can duplicate a suffix but does not infer acceptance from assistant output or create a second local cursor store. Direct calls without a live Session omit the session field; host package inventory remains available.
 
-The [DeepSeek request-identity decision](../feature/2026-08-11-deepseek-request-user-id-header.md) continues to own user/session headers, which remain outside the body. The [session-telemetry decision](../feature/2026-07-23-session-telemetry-otel-revival.md) remains current until a separate change removes that seam and backend; this request path does not alter OTel capture or sharing modes.
+The [DeepSeek reference](../../../../packages/llm/llm-deepseek/README.md) defines user/session headers outside the body. The [Session telemetry reference](../../../../packages/session/session-telemetry/README.md) owns capture and redaction; this request path does not alter OTel capture or sharing modes.
