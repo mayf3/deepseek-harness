@@ -60,7 +60,7 @@ App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提
 
 `node_modules` 之外的 `package.json` 变化使该包的配置缓存失效。仅作为配置的 manifest 不触发模块重载；作为 JSON 模块导入的 manifest 保留依赖驱动重载，位于宿主依赖图中的 manifest 保留宿主重载。专属配置监听保留原有归属。新包入口在 Loader entry 重启时生效。
 
-[package-manifest.ts](src/package-manifest.ts) 封装 package 读取、scope、type 和最近 manifest 查询所需的 Node internal 接口。manifest 失效会清空 ESM `ResolveCache` 和 CommonJS `_pathCache`：它们都不记录查询过的全部 manifest，入口也可能指向包目录之外。这些是解析缓存，不是模块求值缓存；普通模块替换仍由 HMR 独立处理。
+[package-manifest.ts](src/package-manifest.ts) 封装 package 读取、scope、type 和最近 manifest 查询所需的 Node internal 接口。每个 HMR 实例拥有自己的配置缓存，销毁时恢复它安装的 hook。manifest 失效会清空 ESM `ResolveCache` 和 CommonJS `_pathCache`：它们都不记录查询过的全部 manifest，入口也可能指向包目录之外。使用 Node 默认 resolver 时，CommonJS 加载先将请求解析为文件名，再进入原生 loader，绕过旧请求别名并保留已求值模块。普通模块替换仍由 HMR 独立处理。
 
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 
@@ -93,7 +93,7 @@ App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提
 - 通过插件管理器替换已安装包版本仍需要重启；`node_modules` 之下的 manifest 保留 Node 缓存的配置。浏览器 Client 模块图保留独立的浏览器侧加载机制。
 - 后续工作：支持 TSX 的异步 loader 线程。主线程 hook 不会使该线程内的包配置失效；普通应用自行创建的 Worker 不在支持范围内。
 - 后续工作：在 `exports` 或 `main` 改变后保留活动 entry URL。HMR 定位已加载模块时仍重新解析 entry 名称；入口移动后，源码变化可能无法重载旧入口，需要先重启 Loader entry。
-- 后续工作：已加载的 CommonJS 请求可能通过 Node 私有请求缓存保留原模块，即使 `require.resolve()` 已改变。包配置失效不替换该模块实例。
+- 注册了同步 resolve hooks 的 CommonJS 请求保留原有 loader 路径，其私有请求缓存刷新留待后续。内置模块保留 Node 原有的加载行为。
 - 后续工作：跨 HMR 销毁和替换保留包配置失效状态。恢复原生 reader 后，其旧配置缓存可能重新可见。
 - `watchConfig()` 在 Chokidar 报告就绪时 resolve。darwin 上 libuv 随后才在自己的线程启动 FSEvents 流，因此注册后数毫秒内落地的写入要等到该目录的下一个事件才会被报告；启动之后的编辑不受影响。
 

@@ -25,6 +25,7 @@ In HMR's change dispatch, a changed file named `package.json` outside `node_modu
 - package.json reads, scope lookups, type lookups, and nearest-manifest lookups below that directory read the current file. Ownership follows the real directory when a consumer reaches the package through a link.
 - ESM `ResolveCache` is cleared. Its entries do not record every consulted manifest, and a package entry may resolve outside the package directory.
 - CommonJS `_pathCache` is cleared for the same reason. Unrelated requests recompute their resolution without unloading their modules.
+- CommonJS loads using the default resolver pass the freshly resolved filename to the native loader. Its private request alias cannot select an older entry; cached module instances remain intact.
 
 Configuration invalidation alone leaves loaded modules unchanged. Stopping and restarting a Loader entry resolves its package name again and selects the new entry. Tracking active entry URLs independently of later package-name resolutions is deferred.
 
@@ -36,15 +37,16 @@ The implementation lives in `packages/boot/hmr/src/package-manifest.ts`, which e
 | `package_json_reader.getNearestParentPackageJSON` | Replaced: expired directories bypass its JS cache; a lookup without a manifest returns the native absent result |
 | The ESM Loader's `ResolveCache` instance | The prototype `get` is replaced for one lookup to obtain the instance and restored at once; the resolution cache is then cleared |
 | CommonJS `Module._pathCache` | The request-to-filename cache is cleared |
+| CommonJS `Module._load` | Default-resolver requests load by resolved filename; builtins and registered resolve hooks keep the original path |
 
-The binding's `getNearestParentPackageJSON` is called only by `package_json_reader` and is not replaced. The replacements are installed at the first expiry and restored when the HMR service is disposed.
+The binding's `getNearestParentPackageJSON` is called only by `package_json_reader` and is not replaced. Each HMR instance owns a separate configuration cache. Its replacements are installed at the first expiry and restored when the service is disposed, alongside watcher and reload-queue cleanup.
 
 ### Future Work
 
 - Online replacement inside `node_modules`, same-path reinstall, changed link targets, and cross-package reload propagation remain unsupported. Package updates need process restart; this does not guarantee that every management result already reports that requirement correctly.
 - TSX versions using an asynchronous loader thread keep that thread's package configuration outside these hooks. Synchronizing it is deferred; this change does not provide general Worker cache synchronization.
 - After exports or main moves an entry, HMR can fail to locate its old loaded module by package name. Keeping an active-entry URL association is deferred; restarting the Loader entry selects the new entry.
-- An already loaded CommonJS request can still hit Node's private request cache and return its existing module even after `require.resolve()` changes. Invalidating that request cache and replacing module instances are deferred.
+- CommonJS private-request-cache refresh with registered synchronous resolve hooks is deferred. Those requests retain their original loader behavior.
 - Disposing HMR restores the native readers, whose previous cached configuration can become visible again. Preserving invalidation state across HMR replacement is deferred.
 
 ## Alternatives considered
@@ -59,7 +61,7 @@ The binding's `getNearestParentPackageJSON` is called only by `package_json_read
 
 | Coverage | Location |
 |---|---|
-| Expired exports, main, imports, type, scope, and nearest manifests; parity with the native reader; the `node_modules` boundary; restoration | `packages/boot/hmr/tests/package-manifest.spec.ts` |
+| Expired exports, main, imports, type, scope, and nearest manifests; native-reader parity; actual CommonJS loads and retained module instances; the `node_modules` boundary; restoration | `packages/boot/hmr/tests/package-manifest.spec.ts` |
 | Configuration-only manifests, JSON-module and host reloads, source reloads, entry restarts, and the `node_modules` exclusion | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
 
 Tests need no API key and make no model calls.

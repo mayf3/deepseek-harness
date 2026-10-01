@@ -25,6 +25,7 @@ HMR 的文件变化分派中，文件名为 `package.json` 且不在 `node_modul
 - 位于该目录下的 package.json 读取、scope 查询、type 查询、最近 package.json 查询，都按当前磁盘解析。消费方经由链接路径访问时，按真实目录判断归属。
 - 清空 ESM `ResolveCache`。其条目不记录查询过的全部 manifest，包入口也可能解析到包目录之外。
 - 基于相同原因清空 CommonJS `_pathCache`。无关请求重新计算解析结果，不卸载其模块。
+- 使用默认 resolver 的 CommonJS 加载把重新解析的文件名交给原生 loader。其私有请求别名不再选中旧入口，已缓存的模块实例保持不变。
 
 仅使配置失效不会改变已加载模块。停止并重新启动 Loader entry 时，会重新按包名解析并选择新入口。独立于后续包名解析记录活动入口 URL 留待后续。
 
@@ -36,15 +37,16 @@ HMR 的文件变化分派中，文件名为 `package.json` 且不在 `node_modul
 | `package_json_reader.getNearestParentPackageJSON` | 替换：已失效目录绕过它的 JS 缓存；没有 manifest 时返回原生的缺失结果 |
 | ESM Loader 的 `ResolveCache` 实例 | 临时替换原型的 `get`，取得实例后立即恢复，再清空解析缓存 |
 | CJS `Module._pathCache` | 清空请求到文件名的缓存 |
+| CJS `Module._load` | 默认 resolver 的请求按解析后的文件名加载；内置模块及注册的 resolve hooks 保留原路径 |
 
-binding 的 `getNearestParentPackageJSON` 只被 `package_json_reader` 自己调用，不替换。这些替换在第一次失效时安装，HMR 服务卸载时恢复。
+binding 的 `getNearestParentPackageJSON` 只被 `package_json_reader` 自己调用，不替换。每个 HMR 实例拥有独立的配置缓存，在第一次失效时安装 hook，并在服务销毁时恢复，同时清理 watcher 和重载队列。
 
 ### 后续工作
 
 - 不支持 `node_modules` 内在线替换、同路径重装、link 换目标及跨包重载传播。包更新需要重启进程；这不保证每个管理操作的结果都已正确报告这一要求。
 - 使用异步 loader 线程的 TSX 版本，其线程内包配置不受这些 hook 管理。线程同步留待后续；本次不提供通用 Worker 缓存同步。
 - exports 或 main 改变入口后，HMR 可能无法按包名找到旧的已加载模块。保留活动 entry URL 关联留待后续；重启 Loader entry 会选择新入口。
-- 已加载的 CommonJS 请求仍可能命中 Node 私有请求缓存，即使 `require.resolve()` 改变也返回原模块。请求缓存失效及模块实例替换留待后续。
+- 注册了同步 resolve hooks 时，CommonJS 私有请求缓存刷新留待后续；这些请求保留原有 loader 行为。
 - 销毁 HMR 会恢复原生 reader，其此前缓存的配置可能重新可见。跨 HMR 替换保留失效状态留待后续。
 
 ## Alternatives considered
@@ -59,7 +61,7 @@ binding 的 `getNearestParentPackageJSON` 只被 `package_json_reader` 自己调
 
 | 覆盖面 | 位置 |
 |---|---|
-| 失效后的 exports、main、imports、type、scope、最近 package.json，与原生读取的一致性，node_modules 边界，恢复 | `packages/boot/hmr/tests/package-manifest.spec.ts` |
+| 失效后的 exports、main、imports、type、scope、最近 package.json，原生 reader 对照，实际 CommonJS 加载及旧模块实例保留，node_modules 边界，恢复 | `packages/boot/hmr/tests/package-manifest.spec.ts` |
 | 配置专用 manifest、JSON 模块与宿主重载、源码重载、entry 重启和 node_modules 排除规则 | `packages/boot/hmr/tests/package-manifest-dispatch.spec.ts` |
 
 测试不需要 API key，不调用模型。
