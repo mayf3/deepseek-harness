@@ -127,9 +127,11 @@ export interface RuntimeInterception {
    * Atomically publish a complete successor and fresh caches. Profile-scoped mappings, local names, and linked
    * roots may be removed; removed roots stop intercepting uncovered directories. Existing modules and Node caches
    * remain intact, so callers remove a package only after its plugins stop.
+   * A retained profile mapping may change its declarer if its normalized directory, version, and scope stay unchanged.
    * @param successor - fully constructed generation retaining the installation mappings.
-   * @throws when the profile scope or a retained mapping changes, an installation mapping is removed, a new local name
-   * overrides an existing mapping, or a previously published link name selects a different real directory.
+   * @throws when the profile scope, a retained directory, version, scope, or installation declarer changes;
+   * an installation mapping is removed; a new local name overrides an existing mapping; or a previously published
+   * link name selects a different real directory.
    */
   replace(successor: RuntimeResolution): void
   /** Restore the native resolver methods. Interceptions dispose in reverse order. */
@@ -382,7 +384,7 @@ class ResolutionRouter {
       if (next === undefined && current.scope === 'profile') continue
       if (next === undefined
         || !sameResolution(current.packageDir, next.packageDir)
-        || !sameResolution(current.declarer, next.declarer)
+        || (current.scope === 'installation' && !sameResolution(current.declarer, next.declarer))
         || current.version !== next.version
         || current.scope !== next.scope) {
         throw new Error(`profile resolution: replacing ${JSON.stringify(name)} requires a process restart`)

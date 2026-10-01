@@ -83,7 +83,26 @@ describe('profile package metadata service', () => {
     expect(createRequire(join(profileDir, 'caller.cjs')).resolve('metadata-lib')).toBe(join(privateDir, 'index.cjs'))
   })
 
-  it('rejects refreshing a resolution that was not computed from a profile', async () => {
+  it('refreshes a computed resolution without a profile', async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-package-service-installation-')))
+    roots.push(root)
+    const installAnchor = join(root, 'install', 'package.json')
+    file(installAnchor, JSON.stringify({ name: 'installation', version: '1.0.0', dependencies: { 'metadata-lib': '*' } }))
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(PluginPackages, { resolution: await createRuntimeResolution({ installAnchor, home: root }) })
+    const parentURL = pathToFileURL(join(root, 'profiles', 'test', 'caller.cjs')).href
+    expect(ctx.pluginPackages.packageOf('metadata-lib', parentURL)).toBeUndefined()
+    const packageDir = join(root, 'install', 'node_modules', 'metadata-lib')
+    pkg(packageDir, '1.0.0')
+
+    await ctx.pluginPackages.refresh()
+
+    expect(ctx.pluginPackages.packageOf('metadata-lib', parentURL)).toMatchObject({ dir: packageDir, version: '1.0.0' })
+    expect(createRequire(parentURL).resolve('metadata-lib')).toBe(join(packageDir, 'index.cjs'))
+  })
+
+  it('rejects refreshing a plain-data or absent resolution', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-package-service-plain-'))
     roots.push(root)
     const packageDir = join(root, 'lib')

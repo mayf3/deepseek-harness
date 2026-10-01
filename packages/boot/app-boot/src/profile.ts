@@ -455,7 +455,7 @@ export async function createRuntimeResolution(
     : collectProfileScopePackages(profile, packageNames, profileDeclarers, profileVersions)
   const linkedRoots = profile === undefined ? [] : linkedProfileRoots(profile, profilesDir)
   // The Promise return type is the pre-stable API; construction has no asynchronous step.
-  return await Promise.resolve(new ProfileRuntimeResolution({ installAnchor, profile, home }, {
+  return await Promise.resolve(new ProfileRuntimeResolution({ installAnchor, profileDir: profile?.dir, home }, {
     profilesDir,
     profileDir: profile?.dir,
     localPackageNames: Object.freeze(localPackageNames),
@@ -477,7 +477,7 @@ export async function createRuntimeResolution(
 interface ResolutionSource {
   installAnchor: string
   home: string
-  profile: Profile | undefined
+  profileDir: string | undefined
 }
 
 /**
@@ -508,14 +508,15 @@ export class ProfileRuntimeResolution implements RuntimeResolution {
 
   /**
    * Compute the latest generation from the same installation, profile directory, and Harness home, rereading the
-   * profile's manifest, bundle selection, and installed packages. This instance is unchanged.
+   * profile's manifest, bundle selection, and installed packages from disk, without retaining synthetic layers.
+   * With no profile directory, only installation packages are recomputed. This instance is unchanged.
    * @returns a new resolution for the latest generation.
    */
   computeLatestResolution(): Promise<ProfileRuntimeResolution> {
-    const { installAnchor, home, profile } = this.#source
+    const { installAnchor, home, profileDir } = this.#source
     return createRuntimeResolution({
       installAnchor, home,
-      ...profile === undefined ? {} : { profile: loadProfileDirectory('dsh', profile.dir, installAnchor) },
+      ...profileDir === undefined ? {} : { profile: loadProfileDirectory('dsh', profileDir, installAnchor) },
     })
   }
 }

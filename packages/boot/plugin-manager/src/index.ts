@@ -779,6 +779,11 @@ export class PluginManager extends TypertRemoteService {
   }
 
   private async refreshPackages(): Promise<void> {
+    if (this.ownerContext.get('hmr') === undefined) {
+      const selected = readProfileManifest('dsh', this.profile.dir).dsh?.profile?.bundles ?? []
+      // Deselected startup bundles still run without HMR and need the existing package table.
+      if (this.profile.startedBundles.some(name => !selected.includes(name))) return
+    }
     await this.ownerContext.get('pluginPackages')?.refresh()
   }
 

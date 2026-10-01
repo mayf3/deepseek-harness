@@ -78,7 +78,9 @@ export class PluginPackages extends Service {
 
   /**
    * Publish a complete successor generation for this process and subsequently created Workers.
-   * Linked roots may be removed without unloading modules or clearing Node caches.
+   * Profile mappings and local package names may be removed after their plugins stop; linked roots may also be removed.
+   * Retained profile mappings may change their declarer, but not their normalized directory, version, or scope;
+   * installation mappings must remain unchanged. Publication does not unload modules or clear Node caches.
    * @param successor - fully constructed generation accepted by {@link RuntimeInterception.replace}.
    */
   replace(successor: RuntimeResolution): void {
@@ -93,7 +95,8 @@ export class PluginPackages extends Service {
   /**
    * Publish the latest generation computed by the installed resolution through {@link replace}. Package contents
    * and loaded modules are not reloaded.
-   * @throws when no resolution is installed, the installed one was not computed from a profile, or the successor is rejected.
+   * @throws when no resolution is installed, it is plain data rather than a {@link ProfileRuntimeResolution},
+   * reading the latest files fails, or the successor is rejected. A computed resolution without a profile can refresh.
    */
   async refresh(): Promise<void> {
     if (!(this.current instanceof ProfileRuntimeResolution)) {

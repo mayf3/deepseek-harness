@@ -1,5 +1,6 @@
 /** GUI package operations publish profile package resolution around activation and disposal through the real Loader. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -66,7 +67,20 @@ function removeFiles(dir: string): void {
   rmSync(join(dir, 'node_modules', 'addon'), { recursive: true })
 }
 
-async function fixture(options: { live?: boolean; installed?: boolean; enabled?: boolean } = {}) {
+function installOtherBundle(dir: string, shared = false): void {
+  const bundleDir = join(dir, 'node_modules', 'other')
+  mkdirSync(bundleDir, { recursive: true })
+  writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
+    name: 'other', version: '1.0.0', dependencies: shared ? { 'addon-plugin': '1.0.0' } : {},
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }))
+  writeFileSync(join(bundleDir, 'cordis.patch.yml'), '[]\n')
+  const manifest = readProfileManifest('test', dir)
+  manifest.dependencies = { ...manifest.dependencies, other: '1.0.0' }
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+}
+
+async function fixture(options: { live?: boolean; installed?: boolean; enabled?: boolean; shared?: boolean } = {}) {
   const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'manager-package-reload-')))
   let owner: Context | undefined
   onTestFinished(async () => {
@@ -98,6 +112,13 @@ export function apply(ctx) {
   manifest.dependencies = {}
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
   if (options.installed === true) installFiles(dir, 1)
+  if (options.shared === true) {
+    renameSync(join(dir, 'node_modules', 'addon', 'node_modules', 'addon-plugin'), join(dir, 'node_modules', 'addon-plugin'))
+    installOtherBundle(dir, true)
+    const shared = readProfileManifest('test', dir)
+    shared.dsh = { profile: { bundles: ['core', 'addon', 'other'] } }
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(shared))
+  }
   const loaded = loadProfileDirectory('test', dir, installAnchor)
   const profile: ProfileContext = {
     name: 'test', dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor, cwd: home, home,
@@ -227,6 +248,64 @@ it('keeps the running plugin and its private package lookup when a bundle is dis
   expect(trace).toEqual(['start:sibling', 'start:addon:1'])
 })
 
+it('keeps the running bundle resolution through later package operations without HMR', async () => {
+  const { ctx, dir, trace, published, manager, parentURL, entry } = await fixture({ live: false, installed: true })
+  const previous = entry()?.fiber
+  const mapping = ctx.pluginPackages.packageOf('addon-plugin', parentURL)
+  expect(previous?.state).toBe(FiberState.ACTIVE)
+  expect(mapping?.version).toBe('1.0.0')
+  mockPnpm(dir, trace, (args) => {
+    if (args[0] === 'add') {
+      installOtherBundle(dir)
+    } else {
+      expect(args).toEqual(['remove', 'other'])
+      const manifest = readProfileManifest('test', dir)
+      delete manifest.dependencies?.other
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
+      rmSync(join(dir, 'node_modules', 'other'), { recursive: true })
+    }
+  })
+  const expectRunningBundle = () => {
+    expect(ctx.pluginPackages.packageOf('addon-plugin', parentURL)).toBe(mapping)
+    expect(entry()?.fiber).toBe(previous)
+    expect(previous?.state).toBe(FiberState.ACTIVE)
+    expect(ctx.get('addonVersion')).toBe(1)
+    expect(published).not.toHaveBeenCalled()
+  }
+
+  expect(await manager.setBundleEnabled('addon', false)).toMatchObject({ application: 'restart-required', changed: true })
+  expectRunningBundle()
+  expect(await manager.installBundle('other', { enabled: false })).toMatchObject({ application: 'restart-required', changed: true })
+  expectRunningBundle()
+  expect(await manager.setBundleEnabled('other', true)).toMatchObject({ application: 'restart-required', changed: true })
+  expectRunningBundle()
+  expect(await manager.removeBundle('other')).toMatchObject({ application: 'restart-required', changed: true })
+  expectRunningBundle()
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core'])
+  expect(readProfileManifest('test', dir).dependencies).toEqual({ addon: '1.0.0' })
+  expect(existsSync(join(dir, 'node_modules', 'other'))).toBe(false)
+  expect(trace).toEqual(['start:sibling', 'start:addon:1', 'pnpm:add', 'pnpm:remove'])
+})
+
+it.each(['disable', 'remove'] as const)('retains a shared dependency after %s of its first declaring bundle', async (operation) => {
+  const { ctx, dir, trace, published, manager, parentURL, entry } = await fixture({ installed: true, shared: true })
+  const sharedDir = join(dir, 'node_modules', 'addon-plugin')
+  expect(ctx.pluginPackages.packageOf('addon-plugin', parentURL)?.dir).toBe(sharedDir)
+  mockPnpm(dir, trace, () => { removeFiles(dir) })
+
+  const result = operation === 'disable' ? await manager.setBundleEnabled('addon', false) : await manager.removeBundle('addon')
+
+  expect(result).toMatchObject({ application: 'applied', changed: true })
+  expect(published).toHaveBeenCalledOnce()
+  expect(published.mock.calls[0]?.[0].entries.find(item => item.name === 'addon-plugin')).toMatchObject({
+    packageDir: sharedDir, version: '1.0.0', scope: 'profile', declarer: join(dir, 'node_modules', 'other', 'package.json'),
+  })
+  expect(entry()).toBeUndefined()
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['core', 'other'])
+  expect(ctx.pluginPackages.packageOf('addon-plugin', parentURL)?.dir).toBe(sharedDir)
+  expect(createRequire(join(dir, 'node_modules', 'other', 'package.json')).resolve('addon-plugin')).toBe(join(sharedDir, 'plugin.mjs'))
+})
+
 it('removes a running bundle after its plugin stops and then publishes', async () => {
   const { ctx, dir, trace, published, manager, parentURL, bundleURL, bundleDir, entry } = await fixture({ installed: true })
   const previous = entry()?.fiber
@@ -309,6 +388,26 @@ it('publishes nothing after installation fails', async () => {
   expect(ctx.pluginPackages.packageOf('addon-plugin', parentURL)).toBeUndefined()
   expect(entry()).toBeUndefined()
   expect(existsSync(evaluationPath)).toBe(false)
+})
+
+it.each(['install', 'remove'] as const)('keeps successful %s disk changes when resolution publication fails', async (operation) => {
+  const { ctx, dir, trace, published, manager, parentURL, entry } = await fixture({ installed: operation === 'remove' })
+  const previous = ctx.pluginPackages.packageOf('addon-plugin', parentURL)
+  mockPnpm(dir, trace, () => { if (operation === 'install') installFiles(dir, 1); else removeFiles(dir) })
+  published.mockImplementation(() => { throw new Error('publication rejected') })
+
+  const result = operation === 'install' ? await manager.installBundle('addon') : await manager.removeBundle('addon')
+
+  expect(result).toMatchObject({
+    application: 'failed', changed: true, error: { diagnostic: 'publication rejected' }, packageResult: { exitCode: 0 },
+  })
+  expect(published).toHaveBeenCalledOnce()
+  const manifest = readProfileManifest('test', dir)
+  expect(manifest.dependencies).toEqual(operation === 'install' ? { addon: '1.0.0' } : {})
+  expect(manifest.dsh?.profile?.bundles).toEqual(operation === 'install' ? ['core', 'addon'] : ['core'])
+  expect(existsSync(join(dir, 'node_modules', 'addon'))).toBe(operation === 'install')
+  expect(ctx.pluginPackages.packageOf('addon-plugin', parentURL)).toBe(previous)
+  expect(entry()).toBeUndefined()
 })
 
 it('publishes nothing after installation is cancelled', async () => {
