@@ -5,7 +5,7 @@ import { chromium, type Browser } from 'playwright'
 import { expect, it, onTestFinished } from 'vitest'
 import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
-it('serves the trimmed DevTools frontend under its own path without rebuilding DevTools', async () => {
+it('serves the built DevTools frontend under its own path without rebuilding DevTools', async () => {
   const resources: { scaffold?: WebScaffold; browser?: Browser } = {}
   onTestFinished(async () => {
     try { await resources.browser?.close() } finally { await resources.scaffold?.close() }
@@ -35,11 +35,9 @@ it('serves the trimmed DevTools frontend under its own path without rebuilding D
   expect(html.headers()['content-type']).toContain('text/html')
   expect(html.headers()['x-content-type-options']).toBe('nosniff')
   const markup = await html.text()
-  const importMap = markup.match(/<script type="importmap">([^<]+)<\/script>/u)?.[1]
-  expect(JSON.parse(importMap!)).toMatchObject({ imports: { 'node:worker_threads': './node-runtime-unavailable.js' } })
+  expect(markup).not.toContain('type="importmap"')
   expect(markup).not.toMatch(/script-src[^;]*'unsafe-inline'/u)
-  expect(markup.indexOf('src="./connect.js"')).toBeLessThan(markup.indexOf('type="module"'))
-  expect(markup.indexOf('type="importmap"')).toBeLessThan(markup.indexOf('type="module"'))
+  expect(markup.indexOf('src="./connect.js"')).toBeLessThan(markup.indexOf('src="./entrypoints/devtools_app/devtools_app.js"'))
   const assets = [...markup.matchAll(/(?:src|href)="\.\/([^"\s]+\.(?:js|css))"/gu)].map(match => match[1]!)
   expect(assets.map(path => path.slice(path.lastIndexOf('.'))).sort()).toEqual(['.css', '.css', '.js', '.js'])
   for (const asset of assets) {
@@ -48,10 +46,9 @@ it('serves the trimmed DevTools frontend under its own path without rebuilding D
     expect(response.headers()['content-type']).toMatch(asset.endsWith('.js') ? /javascript/u : /text\/css/u)
     expect((await response.body()).byteLength).toBeGreaterThan(0)
   }
-  for (const locale of ['en-US', 'zh']) expect((await page.request.get(`${root}core/i18n/locales/${locale}.json`)).status()).toBe(200)
-  expect((await page.request.get(`${root}core/i18n/locales/fr.json`)).status()).toBe(404)
+  for (const locale of ['en-US', 'zh', 'fr']) expect((await page.request.get(`${root}core/i18n/locales/${locale}.json`)).status()).toBe(404)
   expect((await page.request.get(`${root}entrypoints/heap_snapshot_worker/heap_snapshot_worker-entrypoint.js`)).status()).toBe(200)
-  expect((await page.request.get(`${root}entrypoints/lighthouse_worker/lighthouse_worker.js`)).status()).toBe(404)
+  expect((await page.request.get(`${root}entrypoints/lighthouse_worker/lighthouse_worker.js`)).status()).toBe(200)
   expect((await page.request.get(`${root}missing.js`)).status()).toBe(404)
   expect((await page.request.get(`${root}%2e%2e%2findex.js`)).status()).toBe(404)
   const head = await page.request.head(`${root}devtools_app.html`)
@@ -78,8 +75,8 @@ it('serves the trimmed DevTools frontend under its own path without rebuilding D
   try {
     await page.getByRole('tab', { name: 'Console', exact: true }).waitFor({ state: 'visible' })
     expect(await page.getByRole('tab', { name: 'Connection', exact: true }).count()).toBe(0)
-    expect(await page.getByRole('tab', { name: 'Lighthouse', exact: true }).count()).toBe(0)
-    await page.getByText('DevTools is now available in Chinese', { exact: true }).waitFor({ state: 'visible' })
+    expect(await page.getByRole('tab', { name: 'Lighthouse', exact: true }).count()).toBe(1)
+    expect(await page.getByText('DevTools is now available in Chinese', { exact: true }).count()).toBe(0)
     await page.goto(`${root}devtools_app.html?disableLocaleInfoBar=true`, { waitUntil: 'load' })
     await page.getByRole('tab', { name: 'Console', exact: true }).waitFor({ state: 'visible' })
     expect(await page.getByText('DevTools is now available in Chinese', { exact: true }).count()).toBe(0)
@@ -92,11 +89,6 @@ it('serves the trimmed DevTools frontend under its own path without rebuilding D
     await prompt.fill('[process.release.name, 6 * 7].join(":")')
     await prompt.press('Enter')
     await page.getByText('node:42', { exact: false }).waitFor({ state: 'visible' })
-    // Vite must not rewrite the import that executes inside the browser.
-    expect(await page.evaluate(`import(new URL('core/i18n/i18n.js', location.href).href).then(({ i18n }) => ({
-      locales: i18n.getAllSupportedDevToolsLocales(),
-      fallback: i18n.lookupClosestSupportedDevToolsLocale('fr'),
-    }))`)).toEqual({ locales: ['en-US', 'zh'], fallback: 'en-US' })
     expect(await page.evaluate(() => ({
       fontSize: getComputedStyle(document.body).fontSize,
       zoom: getComputedStyle(document.documentElement).zoom,
