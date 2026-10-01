@@ -68,6 +68,7 @@
     "apps/web/tests/layout-bottom.e2e.ts",
     "apps/web/tests/devtools-frontend.e2e.ts",
     "apps/web/tests/inspector-panels.e2e.ts",
+    "apps/web/tests/inspector-source-build.e2e.ts",
     "apps/web/tests/plugin-install-cancel.e2e.ts",
     "apps/web/tests/plugin-install-approve.e2e.ts",
     "apps/web/tests/plugin-install-registry.e2e.ts",
