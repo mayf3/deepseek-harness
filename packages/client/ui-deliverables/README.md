@@ -128,5 +128,3 @@ These limits define the current deliverables vocabulary. They are current packag
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Prompt, slot, dictionary, file-action route, and optional service registrations are effect-owned; the Session log owns declarations and the filesystem owns file contents.

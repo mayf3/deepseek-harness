@@ -64,7 +64,7 @@ const manifest: DshPackageManifest = {
 <details>
 <summary>实现细节——点击展开</summary>
 
-包根仅重新导出 [`src/types.ts`](src/types.ts) 中的声明。本包不发布运行时不变量伴随模块，因为它没有运行时状态或可独立观察的关系。
+包根仅重新导出 [`src/types.ts`](src/types.ts) 中的声明。本包
 
 </details>
 

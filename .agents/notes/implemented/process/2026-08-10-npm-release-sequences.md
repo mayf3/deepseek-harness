@@ -80,7 +80,7 @@ Two registry behaviours shape how a publish is attempted. Writes are spaced by a
 
 Every reference to a workspace member uses the `workspace:` protocol. Every dependency section and consumer uses exact `workspace:*` DSH references and `workspace:~` vendor/native references, including the native entry's optional platform packages. Vendor and native patch releases must preserve consumer-facing APIs and binary interfaces. Local workspace linking is unchanged.
 
-`scripts/check-workspace-constraints.ts` reads every member declared in `pnpm-workspace.yaml` plus the root manifest and enforces ranges by dependency target, not consumer directory. The invariant-companion rule requires `workspace:*` for `@deepseek-ai/dsh-invariants`; the dependency repairer preserves vendor/native tilde ranges. Published DSH peers therefore require the matching release instead of admitting later compatible versions.
+`scripts/check-workspace-constraints.ts` reads every member declared in `pnpm-workspace.yaml` plus the root manifest and enforces ranges by dependency target, not consumer directory. The dependency repairer preserves vendor/native tilde ranges. Published DSH peers therefore require the matching release instead of admitting later compatible versions.
 
 ### Published dependency faces use an explicit policy
 

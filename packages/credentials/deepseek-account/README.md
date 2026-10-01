@@ -45,7 +45,7 @@ Account model failures with `ACCOUNT_SIGN_IN_REQUIRED` emit `deepseek-account/mo
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The service defines account operations without maintaining a second credential index; no invariant companion is published. The provider owns persistence and login lifecycle checks.
+The service defines account operations without maintaining a second credential index. The provider owns persistence and login lifecycle checks.
 
 <a id="further-exploration"></a>
 ## Further Exploration

@@ -118,7 +118,6 @@ The registry holds typed `ToolDefinition`s in scoped layers and projects them on
 | [`src/ptc.ts`](src/ptc.ts) | PTC mode: SDK generation, `run_code` dispatch bridge, settlement |
 | [`src/ts-types.ts`](src/ts-types.ts) | TypeScript SDK type rendering |
 | [`src/py-types.ts`](src/py-types.ts) | Python SDK type rendering |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
 
 ### Execution and cancellation
 

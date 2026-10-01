@@ -107,5 +107,3 @@ Existing Agents retain their plugins and prompts. New Agents build their prefixe
 None.
 
 </details>
-
-**Runtime invariant:** The companion checks services leaked globally after activation and Agents addressing a model without joining a configured preset.

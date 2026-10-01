@@ -45,7 +45,7 @@ getUnnotifiedBonuses 返回平台尚未记录为已展示的赠金及其所属�
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-服务只定义账号操作，不维护第二份凭证索引，因此不发布 invariant。提供者负责持久化和登录生命周期检查。
+服务只定义账号操作，不维护第二份凭证索引。提供者负责持久化和登录生命周期检查。
 
 <a id="further-exploration"></a>
 ## 深入探索

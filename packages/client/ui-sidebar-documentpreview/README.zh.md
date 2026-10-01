@@ -155,5 +155,3 @@ Office Remote 通过 Connection 的 multipart 二进制传输返回原生 `Uint8
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。渲染器元数据、文档加载和视图状态归本地注册表与声明的 Slot store 所有，没有可比对的独立运行时来源；注册释放和 tab 生命周期由行为测试覆盖。

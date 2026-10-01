@@ -61,7 +61,6 @@ kind: "package-reference"
 | 文件 | 作用 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：四个注册、选择器校验，以及 render/present 辅助函数 |
-| — | 不发布运行时 invariant 伴随模块；这些工具不持有独立生命周期流，它们维护的关系属于 `ctx.schedule` 服务。 |
 
 </details>
 

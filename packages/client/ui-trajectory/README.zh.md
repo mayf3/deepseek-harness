@@ -112,5 +112,3 @@ Trajectory 要求会话壳把 composer 作为浮层置于全高记录表上方�
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。这是纯消费插件，不发出 Cordis 事件，也不持有跨插件可变状态；其 view-slot 注册是普通 effect，slot ledger 自身的规格测试与本包的行为规格测试会直接观察其释放。

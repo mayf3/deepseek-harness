@@ -85,5 +85,3 @@ API Gateway Client 把内部 `$events` 逻辑流注册为唯一 generation sourc
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。浏览器会话验证会在请求授权工作时异步读取凭据记录，而记录的 commit-event 生命周期由 credentials 伴生入口负责；流与重连的时序及 rpcId 往返约束由行为规范直接验证，路由注册与 dispose（资源释放）的对称性由 webserver 伴生入口审计。

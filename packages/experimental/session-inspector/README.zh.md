@@ -66,7 +66,7 @@ Assistant 日志将原始带时间分片放到对应的 `block-start` 下，包�
 <details>
 <summary>实现内部细节 — 点击展开</summary>
 
-[`src/index.ts`](src/index.ts) 是不执行行为的 Host 发现入口。[Tab 注册](src/client/views/index.ts)贡献页面类型及 Session 作用域的正文，借用 Sidebar 已有的 Session 引用。[合并面板](src/client/views/View.tsx)在[日志模型](src/client/views/session-log/model.ts)和 [Chat 模型](src/client/views/chat-node/model.ts)之间切换，只有当前表格订阅来源。[对象索引](src/client/views/chat-node/objects.ts)通过弱引用身份标记 Node、Group 快照、各自 data 根对象，以及 Turn/Step 位置与 Data reader。具名引用读取当前值，不保留已替换的快照。节点枚举使用现有 `nodes.values()` reader。[定位器](src/client/views/chat-node/reveal.ts)和[选取器](src/client/views/chat-node/picker.ts)在本包内负责全部 DOM 交互，不增加 Chat 或 Conversation API。共享[表格](src/client/views/InspectorTable.tsx)使用 TanStack Virtualizer。本包不发布 invariant companion，因为表格投影现有来源，不拥有独立业务状态。
+[`src/index.ts`](src/index.ts) 是不执行行为的 Host 发现入口。[Tab 注册](src/client/views/index.ts)贡献页面类型及 Session 作用域的正文，借用 Sidebar 已有的 Session 引用。[合并面板](src/client/views/View.tsx)在[日志模型](src/client/views/session-log/model.ts)和 [Chat 模型](src/client/views/chat-node/model.ts)之间切换，只有当前表格订阅来源。[对象索引](src/client/views/chat-node/objects.ts)通过弱引用身份标记 Node、Group 快照、各自 data 根对象，以及 Turn/Step 位置与 Data reader。具名引用读取当前值，不保留已替换的快照。节点枚举使用现有 `nodes.values()` reader。[定位器](src/client/views/chat-node/reveal.ts)和[选取器](src/client/views/chat-node/picker.ts)在本包内负责全部 DOM 交互，不增加 Chat 或 Conversation API。共享[表格](src/client/views/InspectorTable.tsx)使用 TanStack Virtualizer。
 
 直播日志追加复用历史行对象与 Turn/Step 分组游标。每个分片只向对应 block 插入一行，按需替换闭合组头，并调整后续根行的偏移。分页、结算、替换或跳过版本时重建层级，同时保留按键缓存的原始记录来源。DOM 字符串先匹配当前 Group 引用，再访问注册表；未分组的 Chat key 沿用上游字符串类型，不使用品牌断言。
 

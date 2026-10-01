@@ -107,5 +107,3 @@ register 调用可以用 `store: defineStore(...)` 声明 store 席位：`init` 
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。这是零依赖的纯注册表核心，本身不发出 Cordis 事件；`ui-renderer` SlotRegistry 负责事件桥及其不变式。本包的行为规范直接断言 define/register/dispose 的执行顺序。

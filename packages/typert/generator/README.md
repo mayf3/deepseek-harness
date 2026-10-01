@@ -143,5 +143,3 @@ These limits define what the generator cannot model or emit; they are current pa
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The source-project analyzer and build-time emitter run outside any Cordis runtime; model snapshots, executable artifacts, and consuming-package typechecks enforce the output contract.

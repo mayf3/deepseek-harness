@@ -112,7 +112,6 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 | [`src/spec.ts`](src/spec.ts) | 领域声明：记录 schema、注册表状态、`defineDomain` 规范 |
 | [`src/types.ts`](src/types.ts) | 公开 `Workspace` 接口与 `WorkspaceId` 品牌 |
 | [`src/paths.ts`](src/paths.ts) | `realpath` 唯一性规范 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：实体缓存镜像持久表 |
 
 ### 持久形态
 
@@ -125,10 +124,6 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 ### 失败与恢复
 
 创建或删除的第二次写入失败时，缓存与先前顺序会回滚；当操作与回滚都失败时，持久标记仍指明被中断的操作，下一次启动会补全或回滚它。已提交的删除即使标记清理失败仍报告成功，下一次启动会幂等地清除该标记。
-
-### 不变式
-
-`workspace-invariant` 伴生插件注册归属关系：`workspaces` 表的每个持久 `domain/changed` 都必须指向实体缓存已持有的记录——只有在注册表从缓存移除实体之后删除才有效，因此绕过注册表的写入路径会触发不变式失败。
 
 </details>
 

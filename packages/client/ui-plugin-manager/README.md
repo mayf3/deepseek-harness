@@ -173,5 +173,3 @@ These limits define the reach of the management view; they are current package c
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The panel reads Host-owned facts, and the registry-probe cache stores one comparison result without an independently maintained projection.

@@ -144,5 +144,3 @@ These limits define the dispatch depth and the view ownership; they are current 
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Tool composition is browser-only and contributes no events or cross-plugin mutable state; slot ownership is checked by ui-slots.

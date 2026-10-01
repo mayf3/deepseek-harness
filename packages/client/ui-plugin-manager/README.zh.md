@@ -173,5 +173,3 @@ Host 入口通过生成的 Remote 接口暴露 `pluginRegistryProbe.fastest()`�
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生检查。面板读取 Host 事实，安装源探测缓存只保存一次比较结果，没有独立维护的投影。

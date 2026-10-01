@@ -79,11 +79,10 @@ Round 只在整个 agent 进入 idle 时启动；完成、暂停和阻塞会阻�
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：驱动器状态机、竞态防护、teardown |
 | [`src/prompt.ts`](src/prompt.ts) | 保留的 `<goal_round>` 续行提示词 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生：goal-round 消息必须与包自有提示词一致 |
 
 ### Round 提示词
 
-保留的提示词是一个文本块：前几行为 JSON 引用的目标与 `round/maxGoalRounds`，其后是工作指令。不变式伴生会从持久前缀重建 goal，并拒绝内容与该提示词不完全一致的任何 goal 来源消息。
+保留的提示词是一个文本块：前几行为 JSON 引用的目标与 `round/maxGoalRounds`，其后是工作指令。
 
 </details>
 

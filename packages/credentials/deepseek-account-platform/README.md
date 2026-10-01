@@ -70,7 +70,7 @@ At provider initialization, a valid stored grant whose issuer differs from platf
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-No runtime invariant companion is published: account presence reads the credential store, and attempt state projects private state directly. There is no independently maintained account index to compare. Behavior tests verify asynchronous cancellation and commit ordering.
+Account presence reads the credential store, and attempt state projects private state directly. Behavior tests verify asynchronous cancellation and commit ordering.
 
 <a id="further-exploration"></a>
 ## Further Exploration

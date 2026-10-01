@@ -70,7 +70,7 @@ inferenceOrigin 默认为 `https://api.deepseek.com`。私有部署 patch 可将
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-不发布运行时 invariant：账号是否存在直接读取凭证存储，尝试状态直接投影私有状态；不存在可与另一个独立索引比较的账号索引。异步取消和提交由行为测试验证。
+账号是否存在直接读取凭证存储，尝试状态直接投影私有状态。异步取消和提交由行为测试验证。
 
 <a id="further-exploration"></a>
 ## 深入探索

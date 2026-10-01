@@ -65,8 +65,6 @@ await scope.dispose()   // unwinds every registration made through scope.ctx
 |---|---|
 | [`src/index.ts`](src/index.ts) | `createScope`、`scopeOf`、`scopeTarget`、`bindScopeParent`/`scopeParentOf`/`scopeChainOf`、载体标记 |
 | [`src/store.ts`](src/store.ts) | `ScopedLayers`、`NamedEntries`、`AnonymousEntries`、`ScopeLayer` |
-| [`src/invariant.ts`](src/invariant.ts) | 基于生成的作用域事件映射的不变式配套 |
-| [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | 已声明带作用域事件的生成解析器映射 |
 
 ### 父链
 

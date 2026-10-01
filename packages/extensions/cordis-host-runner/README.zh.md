@@ -150,5 +150,3 @@ runner 基于两项职责划分。**注册表与沙箱是同一个服务。** `D
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。definition registry 位于进程内存中且没有可观察的事件流；它唯一负责的关系是运行中的 definition 拥有已结算的 host-half fiber 及其 handler table，该关系在单个等待完成的操作中建立和解除，因此由包测试直接断言。

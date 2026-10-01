@@ -71,7 +71,6 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | `ApprovalService`：请求分发、策略折叠与写入路径、运行时上下文贡献 |
 | [`src/types.ts`](src/types.ts) | `ApprovalRequestId` brand 与结果类型 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：在未结束的轮次内配对 `approval/asked` 与 `approval/decided` |
 
 ### 分发
 
@@ -83,7 +82,7 @@ kind: "package-reference"
 
 ### 审计
 
-`request()` 先追加携带请求身份与工具的 `approval/asked`，再追加携带最终结果的 `approval/decided`；确切追加字段见 [`src/index.ts`](src/index.ts)。两者都只写入日志；不变式会在同一个未结束轮次内按 id 校验这一事件对，并校验结果属于封闭词汇。
+`request()` 先追加携带请求身份与工具的 `approval/asked`，再追加携带最终结果的 `approval/decided`；确切追加字段见 [`src/index.ts`](src/index.ts)。两者都只写入日志。
 
 </details>
 

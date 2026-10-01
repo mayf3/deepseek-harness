@@ -80,5 +80,3 @@ Selection changes affect only later tasks; existing plugins and prompts remain u
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published; the Host registry owns state, and component tests cover client presentation and selection.

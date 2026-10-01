@@ -72,7 +72,7 @@ cron 输入携带 `expression` 和 `time_zone`。表达式是标准五字段 Vix
 
 Schedule domain 声明整 unit 布局，因为任务是权威数据。路由到 JSON 后端时，文件不可读、文档损坏、版本不受支持或任务非法都会拒绝启动，而不是发布部分任务目录。恢复失败不会改写 `schedule.json`，初始不存在的文件则作为空 domain 打开；修复该文件后可按相同任务身份重新打开。注册启动通过 `Service.init` 等待存储校验与运行时初始化；打开期间卸载会释放已取得的 domain，而不开始投递。
 
-历史 `schedule/change` 事件在解码器、fold 和 invariant 中保留 `LegacyScheduleRecord`（`after`、`at` 和 `every`）。宿主记录解码器单独接受 `daily`、`weekly` 和 `cron`，保留已提交的 UTC 目标，并在规范名称变化后继续接受有效的已存储时区别名。宿主记录解码器要求已存储的 `title`：标题缺失、去除首尾空白后为空、带首尾空白或超过 120 个字符的任务记录都以 `ScheduleLogError` 拒绝解码。历史变更解码器容忍缺失的 `title`，以便已写入的 Session 日志仍可读取；该成员存在时按同样的规则校验。任务 schema 未声明备份并跳过的策略，因此一条这样的已存储任务会拒绝整个 domain 的打开，而不是被丢弃。历史事件不填充宿主任务表。加载含有活动历史提醒的会话时，日志会提示通过 `schedule_create` 重新创建；宿主不扫描历史会话、不隐式迁移任务，也不将已有 `at` 任务转换为每日、每周或 cron 规则。
+历史 `schedule/change` 事件在解码器和 fold 中保留 `LegacyScheduleRecord`（`after`、`at` 和 `every`）。宿主记录解码器单独接受 `daily`、`weekly` 和 `cron`，保留已提交的 UTC 目标，并在规范名称变化后继续接受有效的已存储时区别名。宿主记录解码器要求已存储的 `title`：标题缺失、去除首尾空白后为空、带首尾空白或超过 120 个字符的任务记录都以 `ScheduleLogError` 拒绝解码。历史变更解码器容忍缺失的 `title`，以便已写入的 Session 日志仍可读取；该成员存在时按同样的规则校验。任务 schema 未声明备份并跳过的策略，因此一条这样的已存储任务会拒绝整个 domain 的打开，而不是被丢弃。历史事件不填充宿主任务表。加载含有活动历史提醒的会话时，日志会提示通过 `schedule_create` 重新创建；宿主不扫描历史会话、不隐式迁移任务，也不将已有 `at` 任务转换为每日、每周或 cron 规则。
 
 `schedule.archiveAdmission()` effect 为每个会话回答 Workspace 注册表的归档准入（[接缝](../../workspace/workspace/README.zh.md)）。宿主任务比其会话的 Agent 活得更久，因此准入读取已存储的行，而不是活 runtime 或会话日志 fold：`workspace/session-activity` 把该会话的活动宿主任务作为 `schedule` 族报告，每条任务一项、以其已存储 id 与 title 作名称，并把该族前插到 `next()` 的结果之前，使其他族保留各自条目；`workspace/session-stop` 在与工具相同的串行队列的一个槽位里删除这些行，因此停止会排在写入尚未完成的创建之后；它直接删行，因为在队列内重入公开的 `delete` 会自锁。没有活动宿主任务的会话不报告任何内容，也没有可停的提醒。
 

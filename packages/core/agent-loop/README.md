@@ -104,7 +104,6 @@ The loop deep-freezes each derived message identity on its first request and reu
 | [`src/tool-calls.ts`](src/tool-calls.ts) | Tool scheduling: exclusive barriers and the bounded parallel pool |
 | [`src/runtime-context.ts`](src/runtime-context.ts) | Per-step runtime-context snapshot handling |
 | [`src/constants.ts`](src/constants.ts) | `DEFAULT_MAX_PARALLEL_TOOL_CALLS` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: request reconstruction from the session log |
 
 ### Creation and teardown
 

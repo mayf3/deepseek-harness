@@ -61,7 +61,6 @@ The plugin registers four `defineTool` definitions through the context that load
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the four registrations, selector validation, and the render/present helpers |
-| — | No runtime invariant companion is published; the tools hold no independent lifecycle stream, and the relations they preserve belong to the `ctx.schedule` service. |
 
 </details>
 

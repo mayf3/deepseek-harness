@@ -1,9 +1,6 @@
 /**
  * The Schedule `session/created` listener must not veto Session creation when a historical
- * `schedule/change` stream is unreadable. This suite excludes the package invariant companion
- * on purpose: the companion owns the failure signal and rejects the stream before this
- * listener runs, so only a companion-free topology can observe the listener's warn-and-continue
- * behavior for a bad historical stream.
+ * `schedule/change` stream is unreadable.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'

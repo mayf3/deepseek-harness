@@ -72,4 +72,4 @@ Defer. If runtime validation is wanted at the durable boundary, **Option B** (sc
 
 - If a registry is adopted, is the library **schemastery** (already in the tree, already the config schema lib) or **Zod** (richer ecosystem, currently only transitive)? Adopting two schema libraries is a cost in itself.
 - Can a hybrid keep compile-time inference (so `defineTool` and plugin DX survive) while adding an *optional* runtime schema per variant, validated only at the persistence/wire boundary rather than on every in-process append?
-- Does the `ctx.invariants` service already cover enough of the runtime-shape gap when enabled that boundary validation is only needed for genuinely untrusted input (reload of an externally-modified log)?
+- Did the `ctx.invariants` service, since removed, already cover enough of the runtime-shape gap when enabled that boundary validation is only needed for genuinely untrusted input (reload of an externally-modified log)?
