@@ -47,8 +47,10 @@ export function useStatDialog(): StatDialogSeat {
   })
 
   // Outside pointerdown closes through the shared primitive; the portaled
-  // panel counts as inside. An outside click also closes, so keyboard
-  // activation of a sibling pill never stacks a second dialog. Escape closes.
+  // panel counts as inside. An outside click also closes, because keyboard
+  // activation of a sibling trigger fires click without pointerdown; the
+  // capture phase lets that click close this dialog before the sibling opens.
+  // Escape closes.
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
     if (!open) return
@@ -56,8 +58,11 @@ export function useStatDialog(): StatDialogSeat {
       if (e.key === 'Escape') setOpen(false)
     }
     const onClick = (e: MouseEvent): void => {
-      const target = e.target as Node
-      if (rootRef.current?.contains(target) !== true && panelRef.current?.contains(target) !== true) setOpen(false)
+      if (e.target instanceof Node
+        && rootRef.current?.contains(e.target) !== true
+        && panelRef.current?.contains(e.target) !== true) {
+        setOpen(false)
+      }
     }
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('click', onClick, true)

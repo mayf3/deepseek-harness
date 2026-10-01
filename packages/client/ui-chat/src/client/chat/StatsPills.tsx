@@ -187,7 +187,7 @@ function PlainPill({ stat, icon, label }: PillContent) {
  * most one dialog is open across the dock.
  */
 function DialogPill({ stat, icon, label, ariaLabel, title, titleValue, children }: PillContent & {
-  ariaLabel?: string
+  ariaLabel: string
   title: string
   titleValue?: string
   children: ReactNode
