@@ -450,6 +450,7 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       })
       const outcome = await handle.done
       if (deadline.aborted) throw new Error(`$.process.run: ${argv[0]} did not exit within ${timeoutMs} ms`)
+      /* v8 ignore next -- a Windows child reports an exit code even when terminated; POSIX coverage owns this branch */
       if (outcome.exitCode === null) throw new Error(`$.process.run: ${argv[0]} was terminated by signal ${String(outcome.signal)}`)
       return {
         exitCode: outcome.exitCode,

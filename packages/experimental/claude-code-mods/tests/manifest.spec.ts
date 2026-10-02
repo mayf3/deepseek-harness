@@ -41,11 +41,12 @@ describe('parseModManifest', () => {
 })
 
 describe('parseHooksJson', () => {
-  const hooksJson = '/plugins/demo/hooks/hooks.json'
+  const root = resolve('/plugins/demo')
+  const hooksJson = join(root, 'hooks', 'hooks.json')
 
   it('resolves the one module path against hooks.json and notes settings hooks', () => {
-    expect(parseHooksJson({ modules: ['./register.js'] }, hooksJson)).toEqual({ modulePath: '/plugins/demo/hooks/register.js', hasSettingsHooks: false })
-    expect(parseHooksJson({ modules: ['../lib/mod.mts'], hooks: {} }, hooksJson)).toEqual({ modulePath: '/plugins/demo/lib/mod.mts', hasSettingsHooks: true })
+    expect(parseHooksJson({ modules: ['./register.js'] }, hooksJson)).toEqual({ modulePath: join(root, 'hooks', 'register.js'), hasSettingsHooks: false })
+    expect(parseHooksJson({ modules: ['../lib/mod.mts'], hooks: {} }, hooksJson)).toEqual({ modulePath: join(root, 'lib', 'mod.mts'), hasSettingsHooks: true })
     expect(HOOKS_MODULE_EXTENSIONS).toContain('.tsx')
   })
 

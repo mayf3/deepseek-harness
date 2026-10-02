@@ -178,7 +178,10 @@ describe('processes through the subprocess seam', () => {
     expect(run.stdout.endsWith('|set')).toBe(true)
     const viaAgent = await call('process.run', { argv: ['node', '-e', 'process.stdout.write(process.cwd())'] }, fakeAgent(ctx, { cwd })) as { stdout: string }
     expect(viaAgent.stdout.length).toBeGreaterThan(0)
-    await expect(call('process.run', { argv: ['node', '-e', 'process.kill(process.pid, "SIGKILL")'] })).rejects.toThrow(/was terminated by signal SIGKILL/)
+    // A Windows child that kills itself still reports an exit code, so the signal branch is POSIX evidence.
+    if (process.platform !== 'win32') {
+      await expect(call('process.run', { argv: ['node', '-e', 'process.kill(process.pid, "SIGKILL")'] })).rejects.toThrow(/was terminated by signal SIGKILL/)
+    }
     await expect(call('process.run', { argv: [] })).rejects.toThrow(/non-empty argv/)
     await expect(call('process.run', { argv: ['node', 1] })).rejects.toThrow(/non-empty argv/)
   })
