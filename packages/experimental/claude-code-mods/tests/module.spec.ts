@@ -35,7 +35,8 @@ describe('createOn', () => {
     expect(() => on('session.start', { cwd: '/x' }, noop)).not.toThrow()
     expect(() => loose('turn.start', 'nope')).toThrow(/needs a hook function/)
     expect(() => loose('turn.start', 'nope', noop)).toThrow(/matcher must be an object/)
-    const attach = on('turn.complete', noop).catch as (handler: unknown) => void
+    const registration = on('turn.complete', noop)
+    const attach = registration.catch.bind(registration) as (handler: unknown) => void
     expect(() => { attach('nope') }).toThrow(/needs a handler function/)
   })
 })
