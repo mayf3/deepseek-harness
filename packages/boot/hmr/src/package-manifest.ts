@@ -51,7 +51,6 @@ interface NativeAccess {
   reader: PackageReader
   ResolveCache: ResolveCacheClass
   cjs: CommonJsModule
-  customization: { resolveHooks: readonly unknown[] }
   esmLoader: { resolveSync(...args: unknown[]): unknown }
 }
 
@@ -94,7 +93,6 @@ function loadNodeInternals(): NativeAccess {
     reader: requireInternal('internal/modules/package_json_reader') as PackageReader,
     ResolveCache: (requireInternal('internal/modules/esm/module_map') as { ResolveCache: ResolveCacheClass }).ResolveCache,
     cjs: (requireInternal('internal/modules/cjs/loader') as { Module: CommonJsModule }).Module,
-    customization: requireInternal('internal/modules/customization_hooks') as NativeAccess['customization'],
     esmLoader: esm.getOrInitializeCascadedLoader(),
   }
 }
@@ -219,7 +217,7 @@ export class PackageManifests {
   private hookCommonJsLoad(...[request, parent, isMain, ...options]: Parameters<CommonJsModule['_load']>) {
     const native = this.installPackageHooks()
     // Absolute filenames bypass Node's private request cache without evicting evaluated modules.
-    const filename = request.startsWith('node:') || isBuiltin(request) || native.customization.resolveHooks.length
+    const filename = request.startsWith('node:') || isBuiltin(request)
       ? request : native.cjs._resolveFilename(request, parent, isMain)
     return this.rawCommonJs._load.call(native.cjs, filename, parent, isMain, ...options)
   }

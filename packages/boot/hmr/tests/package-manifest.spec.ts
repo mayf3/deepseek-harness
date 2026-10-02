@@ -61,7 +61,7 @@ function resolveEsm(specifier: string, parentURL: string): string {
 }
 
 describe('package manifest invalidation', { concurrent: false }, () => {
-  it('preserves synchronous resolve hooks and node-prefixed builtins after invalidation', async () => {
+  it('preserves filename-based resolve hooks and node-prefixed builtins after invalidation', async () => {
     const f = fixture()
     file(f.manifest, '{}')
     const importerRequire = createRequire(f.importer)
@@ -70,12 +70,13 @@ describe('package manifest invalidation', { concurrent: false }, () => {
     const missingFailure = outcome(() => importerRequire(missingBuiltin))
     expect(missingFailure).toHaveProperty('code', 'ERR_UNKNOWN_BUILTIN_MODULE')
     const target = join(f.dir, 'a.cjs')
-    const specifier = `virtual:${f.importerURL}`
+    const specifier = join(f.dir, 'alias.cjs')
+    file(specifier, 'module.exports = { marker: "alias" }')
     cleanup.push(() => { Reflect.deleteProperty(importerRequire.cache, target) })
     let hooks: ReturnType<typeof registerHooks> | undefined = registerHooks({
       resolve(request, context, nextResolve) {
-        if (request === specifier) return { url: pathToFileURL(target).href, shortCircuit: true }
-        return nextResolve(request, context)
+        const resolved = nextResolve(request, context)
+        return resolved.url === pathToFileURL(specifier).href ? { ...resolved, url: pathToFileURL(target).href } : resolved
       },
     })
     cleanup.push(() => { hooks?.deregister() })

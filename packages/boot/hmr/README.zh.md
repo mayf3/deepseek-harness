@@ -64,7 +64,7 @@ Loader entry 保留原始导入结果。HMR 为每个 entry 名称与配置树 b
 
 共享同一运行时的 entry 一起替换，每个 entry 使用其自身模块对应的实现。同一模块的重复 entry 仍保有各自的插件实例。替换失败时，HMR 清理已部分激活的替换实例，并恢复原来的模块和插件实现。重载成功后更新所有匹配的 entry 记录，包括已停用的 entry；替换失败时这些记录保持不变。从未加载过的 entry 仍保持未初始化状态。
 
-[package-manifest.ts](src/package-manifest.ts) 封装 package 读取、scope、type 和最近 manifest 查询所需的 Node internal 接口。每个 HMR 实例拥有自己的配置缓存，销毁时恢复它安装的 hook。manifest 失效会清空 ESM `ResolveCache` 和 CommonJS `_pathCache`：它们都不记录查询过的全部 manifest，入口也可能指向包目录之外。使用 Node 默认 resolver 时，CommonJS 加载先将请求解析为文件名，再进入原生 loader，绕过旧请求别名并保留已求值模块。普通模块替换仍由 HMR 独立处理。
+[package-manifest.ts](src/package-manifest.ts) 封装 package 读取、scope、type 和最近 manifest 查询所需的 Node internal 接口。每个 HMR 实例拥有自己的配置缓存，销毁时恢复它安装的 hook。manifest 失效会清空 ESM `ResolveCache` 和 CommonJS `_pathCache`：它们都不记录查询过的全部 manifest，入口也可能指向包目录之外。CommonJS 加载先用 Node 默认 resolver 解析请求，再进入原生 loader，绕过旧请求别名并保留已求值模块。同步 resolve hook 收到的是解析后的文件名。普通模块替换仍由 HMR 独立处理。
 
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 
@@ -95,8 +95,8 @@ Loader entry 保留原始导入结果。HMR 为每个 entry 名称与配置树 b
 
 - 模块替换需要 Node loader 内部接口。框架依赖变化调用宿主提供的 `loader.exit()` 钩子；HMR 本身不重启进程。
 - 通过插件管理器替换已安装包版本仍需要重启；`node_modules` 之下的 manifest 保留 Node 缓存的配置。浏览器 Client 模块图保留独立的浏览器侧加载机制。
-- 后续工作：支持 TSX 的异步 loader 线程。主线程 hook 不会使该线程内的包配置失效；普通应用自行创建的 Worker 不在支持范围内。
-- 注册了同步 resolve hooks 的 CommonJS 请求保留原有 loader 路径，其私有请求缓存刷新留待后续。内置模块保留 Node 原有的加载行为。
+- TSX loader 和普通应用自行创建的 Worker 不在包缓存刷新支持范围内。
+- CommonJS 请求必须能由 Node 默认 resolver 解析。同步 hook 可以像 Desktop 的 Office resolver 一样处理解析后的文件名；依赖原始请求名或引入虚拟请求的 hook 不受支持。内置模块保留 Node 原有的加载行为。
 - 后续工作：跨 HMR 销毁和替换保留包配置失效状态。恢复原生 reader 后，其旧配置缓存可能重新可见。
 - 如果共享运行时的替换模块具有不同的插件回调，没有 Loader entry 的实例就无法确定应使用哪一个。HMR 会报告歧义错误并回滚此次重载。
 - `watchConfig()` 在 Chokidar 报告就绪时 resolve。darwin 上 libuv 随后才在自己的线程启动 FSEvents 流，因此注册后数毫秒内落地的写入要等到该目录的下一个事件才会被报告；启动之后的编辑不受影响。
