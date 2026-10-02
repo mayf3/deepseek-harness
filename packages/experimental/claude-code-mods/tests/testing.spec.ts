@@ -65,7 +65,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
           $.ui.toast(`turn ${value + 1}`, { timeoutMs: 10 })
           const { Text } = $.ui.resolve({ component: 'AbovePrompt', surface: 'AbovePrompt', props: {}, viewport: { columns: 80 } })
           const resolved = Text({ children: 'hi' }).type
-          return { ...(await next(e) as object), turns: value + 1, resolved }
+          return { ...await next(e), turns: value + 1, resolved }
         })
       },
     }] })
@@ -135,7 +135,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
           await $.store.delete('stale')
           await $.env.set('NOTES_HOME', await $.env.get('HOME_DIR') ?? 'unset')
           await $.env.set('GONE', undefined)
-          return { ...(await next(e) as object), keys: await $.store.keys() }
+          return { ...await next(e), keys: await $.store.keys() }
         })
       },
     }] })
@@ -239,7 +239,7 @@ describe('createModTestKit: surfaces, clocks, and kit defaults', () => {
         on('turn.start', async ($, e, next) => {
           const before = await $.clock.now()
           await $.clock.sleep(250)
-          return { ...(await next(e) as object), before, after: await $.clock.now() }
+          return { ...await next(e), before, after: await $.clock.now() }
         })
       },
     }] })

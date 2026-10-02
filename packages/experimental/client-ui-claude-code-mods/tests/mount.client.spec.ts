@@ -1,4 +1,5 @@
 /** The band's registration: the Remote mount, one watch per session fed into the dock entry, and the press. */
+import assert from 'node:assert/strict'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -11,6 +12,12 @@ import { Band, type BandInjected } from '../src/client/Band.tsx'
 import { inject, mountModsBand } from '../src/client/mount.ts'
 
 const REMOTE: TypertRemoteContribution = { package: '@deepseek-ai/dsh-experimental-claude-code-mods', descriptors: [] }
+
+/** Narrow the erased registry payload before exercising the band's injected face. */
+function assertBandInjected(value: Record<string, unknown>): asserts value is Record<string, unknown> & BandInjected {
+  assert(typeof value.press === 'function')
+  assert(typeof value.hooks === 'object' && value.hooks !== null)
+}
 
 /** A fake `watchBand` stream handle the test feeds by hand. */
 function stream() {
@@ -71,7 +78,13 @@ async function fixture() {
   await fiber
   const entry = ctx.slots.entries('conversation.input.dock').find(candidate => candidate.component === Band)
   if (entry === undefined || dispose === undefined) throw new Error('the band registered no dock entry')
-  const injected = (sessionId: string): BandInjected => (entry.inject as (sessionId: SessionId) => BandInjected)(sessionId as SessionId)
+  const injectFace = entry.inject
+  if (injectFace === undefined) throw new Error('the dock entry injects nothing')
+  const injected = (sessionId: string): BandInjected => {
+    const value = injectFace(sessionId as SessionId as never)
+    assertBandInjected(value)
+    return value
+  }
   return { ctx, dispose, unmount, streams, watchBand, pressBand, warn, injected }
 }
 

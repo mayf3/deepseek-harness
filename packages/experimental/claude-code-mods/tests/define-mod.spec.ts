@@ -17,7 +17,7 @@ describe('defineMod', () => {
       userConfig: { history: 12, unit: 'tokens' },
       register(on, options) {
         seen.push(options)
-        on('turn.complete', ($, e, next) => next(e))
+        on('turn.complete', (_$, e, next) => next(e))
       },
     })
     expect(plugin.name).toBe('claude-code-mod-weather')
@@ -26,7 +26,7 @@ describe('defineMod', () => {
     expect(typeof plugin.definition.register).toBe('function')
     expect(plugin.Config({})).toEqual({})
     expect(plugin.Config({ history: 3, tags: ['a'] })).toEqual({ history: 3, tags: ['a'] })
-    expect(() => plugin.Config({ history: { nested: true } })).toThrow()
+    expect(() => plugin.Config({ history: { nested: true } } as never)).toThrow()
 
     const ctx = new Context()
     fibers.push(ctx.fiber)

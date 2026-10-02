@@ -30,7 +30,7 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-const mod: LoadedMod = { name: 'unit-mod', version: undefined, root: '/mods/unit-mod', modulePath: '', options: {}, order: 0 }
+const mod: LoadedMod = { name: 'unit-mod', version: undefined, root: '/mods/unit-mod', options: {}, order: 0 }
 
 function setup(ctx = new Context()) {
   contexts.push(ctx)

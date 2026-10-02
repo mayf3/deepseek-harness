@@ -503,7 +503,7 @@ describe('the mods API over harness services', () => {
 })
 
 describe('$.ui.ask through the user-questions answerer', () => {
-  function askMod(): string {
+  function askMod(): Promise<ModPlugin> {
     return writeMod('ask-mod', `
       export function register(on) {
         on('tool.call', { tool: 'echo' }, async ($, e, next) => {

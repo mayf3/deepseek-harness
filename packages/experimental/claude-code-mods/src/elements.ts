@@ -17,34 +17,34 @@ export interface UiElement {
 /** What a `ui.render` hook returns: an element, text, nothing, or a list of those. */
 export type UiNode = UiElement | string | number | null | undefined | false | readonly UiNode[]
 
-/** `Box` props this host lays out. */
+/** `Box` props this host lays out; a prop set to `undefined` is one a mod left out. */
 export interface BoxProps {
-  readonly flexDirection?: 'row' | 'column'
-  readonly paddingX?: number
-  readonly paddingY?: number
-  readonly padding?: number
-  readonly gap?: number
-  readonly border?: boolean | string
-  readonly borderColor?: string
-  readonly children?: UiNode
+  readonly flexDirection?: 'row' | 'column' | undefined
+  readonly paddingX?: number | undefined
+  readonly paddingY?: number | undefined
+  readonly padding?: number | undefined
+  readonly gap?: number | undefined
+  readonly border?: boolean | string | undefined
+  readonly borderColor?: string | undefined
+  readonly children?: UiNode | undefined
 }
 
 /** `Text` props this host styles. */
 export interface TextProps {
-  readonly color?: string
-  readonly bold?: boolean
-  readonly dimColor?: boolean
-  readonly italic?: boolean
-  readonly underline?: boolean
-  readonly children?: UiNode
+  readonly color?: string | undefined
+  readonly bold?: boolean | undefined
+  readonly dimColor?: boolean | undefined
+  readonly italic?: boolean | undefined
+  readonly underline?: boolean | undefined
+  readonly children?: UiNode | undefined
 }
 
 /** `Button` props: a label, an optional hotkey hint, and the callback a press runs on the host. */
 export interface ButtonProps {
   readonly label: string
-  readonly hotkey?: string
-  readonly disabled?: boolean
-  readonly onPress?: () => unknown
+  readonly hotkey?: string | undefined
+  readonly disabled?: boolean | undefined
+  readonly onPress?: (() => unknown) | undefined
 }
 
 /** The constructors `$.ui.resolve(e)` returns. */

@@ -4,7 +4,7 @@ import type { DispatchRequest, LoadedMod, RegisteredHook } from '../src/chain.ts
 import { createModsApi } from '../src/api.ts'
 import type { AnyHook, HookMatcher, ModsApi } from '../src/types.ts'
 
-const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, modulePath: '', options: {}, order })
+const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, options: {}, order })
 
 function hook(owner: LoadedMod, event: string, fn: AnyHook, matcher?: HookMatcher): RegisteredHook {
   return { mod: owner, event, matcher, hook: fn, catchHandler: undefined, reported: new Set() }
