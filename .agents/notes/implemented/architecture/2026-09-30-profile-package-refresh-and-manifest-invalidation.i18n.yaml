@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for 2026-09-30-profile-package-refresh-and-manifest-invalidation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-30-profile-package-refresh-and-manifest-invalidation.md
+/agent-note-expire-hmr-package-configuration:
+  en: e6905d7657387304
+  zh: a7e906173a82f27c
+/agent-note-expire-hmr-package-configuration/problem:
+  en: e327f239592ffec0
+  zh: 339aa414b9dc8652
+/agent-note-expire-hmr-package-configuration/decision:
+  en: a15c7c13f167e5ac
+  zh: a15c7c13f167e5ac
+/agent-note-expire-hmr-package-configuration/decision/responsibilities:
+  en: e72abbf8fafc89bb
+  zh: f6c59177696c5cd3
+/agent-note-expire-hmr-package-configuration/decision/hmr-package-configuration-expiry:
+  en: c7de8dafe47a5587
+  zh: 6010a70d8451edd1
+/agent-note-expire-hmr-package-configuration/decision/future-work:
+  en: 31818f8f7f80470b
+  zh: ecb7ac85bb49cf6d
+/agent-note-expire-hmr-package-configuration/alternatives-considered:
+  en: 5dab1237a312169c
+  zh: b24927d5badedcf7
+/agent-note-expire-hmr-package-configuration/verification:
+  en: d1d931904beb1c9f
+  zh: ea7874b974e1c209
+/agent-note-expire-hmr-package-configuration/consequences:
+  en: e557562e3f7b07bc
+  zh: 3cd196a63e4099b0
