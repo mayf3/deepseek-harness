@@ -21,19 +21,28 @@ export type { ModTestKit, TestKitRaisers }
 export type ModTestBody = ($: TestKitRaisers, on: ModTestKit['on'], kit: ModTestKit) => Promise<void> | void
 
 /** How `test` finds the mod under test for the current test file. */
-let modUnderTest: ((testPath: string) => Promise<readonly (ModDefinition | ModPlugin)[]>) | undefined
+/** Maps the running test file and full test name to the mods to load. */
+type ModResolver = (testPath: string, testName: string | undefined) => Promise<readonly (ModDefinition | ModPlugin)[]>
+
+let modUnderTest: ModResolver | undefined
 
 /**
  * Name the mods `test` loads instead of inferring them from the test file's location.
- * @param resolver - maps the running test file to the mods to load; `undefined` restores inference.
+ * @param resolver - maps the running test file and full test name to the mods to load; `undefined` restores inference.
  */
-export function defineModTests(resolver: ((testPath: string) => Promise<readonly (ModDefinition | ModPlugin)[]>) | undefined): void {
+export function defineModTests(resolver: ModResolver | undefined): void {
   modUnderTest = resolver
 }
 
-/** Load the plugin two directories above a `tests/<name>.test.ts` file: `<mod>/index.ts` exporting a `defineMod` plugin. */
-async function inferMod(testPath: string): Promise<readonly (ModDefinition | ModPlugin)[]> {
-  const modDir = dirname(dirname(testPath))
+/**
+ * Load the mod under test: the plugin two directories above a
+ * `<mod>/tests/<name>.test.ts` file, or, when the file runs through a spec
+ * that imports it, the example named by the outermost `describe`.
+ */
+async function inferMod(testPath: string, testName: string | undefined): Promise<readonly (ModDefinition | ModPlugin)[]> {
+  const modDir = testPath.endsWith('.test.ts')
+    ? dirname(dirname(testPath))
+    : resolve(import.meta.dirname, '../../examples', testName?.split(' > ')[0] ?? '')
   const namespace: unknown = await import(pathToFileURL(resolve(modDir, 'index.ts')).href)
   const plugin = (namespace as { default?: unknown }).default
   if (typeof plugin !== 'object' || plugin === null || !('definition' in plugin)) {
@@ -61,9 +70,9 @@ export function tier(_tier: string): void {}
  */
 export function test(name: string, body: ModTestBody): void {
   vitestTest(name, async () => {
-    const testPath = vitestExpect.getState().testPath
+    const { testPath, currentTestName } = vitestExpect.getState()
     if (testPath === undefined) throw new Error('claude-code/testing: test() needs Vitest to know the test file path')
-    const mods = await (modUnderTest ?? inferMod)(testPath)
+    const mods = await (modUnderTest ?? inferMod)(testPath, currentTestName)
     const kit = await createModTestKit({ mods })
     try {
       await body(kit.$, kit.on, kit)
