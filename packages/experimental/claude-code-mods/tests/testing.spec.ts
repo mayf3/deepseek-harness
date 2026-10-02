@@ -1,13 +1,23 @@
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { defineMod } from '../src/define-mod.ts'
+import type { ModPlugin } from '../src/define-mod.ts'
 import { createModTestKit, mock } from '../src/testing.ts'
-import type { ModsApi } from '../src/types.ts'
+import type { ModRegister, ModsApi } from '../src/types.ts'
 
-const FIXTURES = resolve(import.meta.dirname, 'fixtures')
+let loads = 0
+
+/** The tutorial mod, its module evaluated afresh so its module-level counter starts at zero, as a Claude Code reload does. */
+async function firstMod(): Promise<ModPlugin> {
+  loads += 1
+  const namespace = await import(`${pathToFileURL(resolve(import.meta.dirname, 'fixtures/first-mod.mjs')).href}?load=${loads}`) as { register: ModRegister }
+  return defineMod({ name: 'first-mod', version: '0.1.0', userConfig: { greeting: 'Claude has made' }, register: namespace.register })
+}
 
 describe('createModTestKit: the tutorial mod', () => {
   it('/tally reports the tool calls the mod has seen (the test from Claude Code\'s "Test a mod" page)', async () => {
-    const kit = await createModTestKit({ dirs: ['first-mod'], cwd: FIXTURES })
+    const kit = await createModTestKit({ mods: [await firstMod()] })
     try {
       // Answer each tool call in Claude Code's place, so no tool runs
       kit.on('tool.call', () => ({ result: 'ok' }))
@@ -27,7 +37,7 @@ describe('createModTestKit: the tutorial mod', () => {
   })
 
   it('passes configured options to register and answers session.start by default', async () => {
-    const kit = await createModTestKit({ dirs: [resolve(FIXTURES, 'first-mod')], options: { 'first-mod': { greeting: 'The model made' } } })
+    const kit = await createModTestKit({ mods: [await firstMod()], options: { 'first-mod': { greeting: 'The model made' } } })
     try {
       const registered: unknown[] = []
       kit.on('command.register', (_$, e) => {
@@ -45,26 +55,22 @@ describe('createModTestKit: the tutorial mod', () => {
 })
 
 describe('createModTestKit: stubs, defaults, and inline mods', () => {
-  it('keeps $.state for the test, reports a fire-and-forget call nobody answers, and refuses $.ui.resolve', async () => {
-    const kit = await createModTestKit({ modules: [{
+  it('keeps $.state for the test, reports a fire-and-forget call nobody answers, and hands out element constructors', async () => {
+    const kit = await createModTestKit({ mods: [{
       name: 'stateful',
       register(on) {
         on('turn.start', async ($, e, next) => {
           const { value = 0 } = await $.state.get({ plugin: 'stateful', key: 'turns' }) as { value?: number }
           await $.state.set({ plugin: 'stateful', key: 'turns' }, value + 1)
           $.ui.toast(`turn ${value + 1}`, { timeoutMs: 10 })
-          let resolved = 'resolved'
-          try {
-            $.ui.resolve(e)
-          } catch (error) {
-            resolved = (error as Error).message
-          }
+          const { Text } = $.ui.resolve({ component: 'AbovePrompt', surface: 'AbovePrompt', props: {}, viewport: { columns: 80 } })
+          const resolved = Text({ children: 'hi' }).type
           return { ...(await next(e) as object), turns: value + 1, resolved }
         })
       },
     }] })
     try {
-      expect(await kit.$.turn.start({ turnId: '1', text: 'a' })).toEqual({ turnId: '1', turns: 1, resolved: 'stateful: $.ui.resolve has no element table: this bridge raises no ui.render events' })
+      expect(await kit.$.turn.start({ turnId: '1', text: 'a' })).toEqual({ turnId: '1', turns: 1, resolved: 'Text' })
       expect(await kit.$.turn.start({ turnId: '2', text: 'b' })).toMatchObject({ turns: 2 })
       await new Promise(resolve => setTimeout(resolve, 0))
       expect(kit.reports).toEqual(['stateful: $.ui.toast failed: no implementation for ui.toast', 'stateful: $.ui.toast failed: no implementation for ui.toast'])
@@ -74,7 +80,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
   })
 
   it('requires a stub for tool.call and reports a mods API call nobody answers', async () => {
-    const kit = await createModTestKit({ modules: [{
+    const kit = await createModTestKit({ mods: [{
       name: 'reader',
       register(on) {
         on('tool.call', async ($, e, next) => {
@@ -92,7 +98,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
   })
 
   it('answers mods API calls from stubs returning { value } or { deny }, and the kit answers ui.invalidate itself', async () => {
-    const kit = await createModTestKit({ modules: [{
+    const kit = await createModTestKit({ mods: [{
       name: 'grader',
       register(on) {
         on('command.run', { command: 'grade' }, async ($, e) => {
@@ -118,7 +124,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
   })
 
   it('mock.store and mock.env answer whole namespaces from memory', async () => {
-    const kit = await createModTestKit({ modules: [{
+    const kit = await createModTestKit({ mods: [{
       name: 'notes',
       options: { prefix: 'note:' },
       async register(on, options) {
@@ -149,7 +155,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
 
   it('raises the other bridged events with their default answers and lets a stub replace them', async () => {
     const seen: string[] = []
-    const kit = await createModTestKit({ modules: [{
+    const kit = await createModTestKit({ mods: [{
       name: 'observer',
       register(on) {
         on('*', (_$: ModsApi, e, next) => {
@@ -171,6 +177,77 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       kit.on('turn.complete', () => undefined)
       await expect(kit.$.turn.complete({ turnId: '3', answer: '', durationMs: 0, isAborted: false, reason: 'answer' })).rejects.toThrow('the stub returned no result')
       expect(seen).toEqual(['1', '1', 'hello', 'plain', 's1', 'undefined', '2', '3'])
+    } finally {
+      await kit.dispose()
+    }
+  })
+})
+
+describe('createModTestKit: surfaces, clocks, and kit defaults', () => {
+  it('mounts a surface that renders on every read, presses buttons, and refuses invalid trees and double mounts', async () => {
+    const pressed: string[] = []
+    const kit = await createModTestKit({ mods: [{
+      name: 'drawer',
+      register(on) {
+        on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
+          const { Box, Text, Button } = $.ui.resolve(e)
+          const { value: count = 0 } = await $.state.get({ plugin: 'drawer', key: 'count' }) as { value?: number }
+          if (e.props['broken'] === true) return { type: 'Text', props: {} } as never
+          return Box({ children: [Text({ children: `count ${count}` }), Button({ label: 'More', onPress: async () => {
+            pressed.push('more')
+            await $.state.set({ plugin: 'drawer', key: 'count' }, count + 1)
+          } })] })
+        })
+        on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+          const opened = await $.ui.open({ id: 'p', title: 'Pane' })
+          await $.ui.close({ id: 'p' })
+          return opened.isPlaced ? next(e) : $.ui.resolve(e).Text({ children: `pane ${e.requestId ?? ''} ${e.surface}` })
+        })
+      },
+    }] })
+    try {
+      const band = await kit.$.ui.mount({ component: 'AbovePrompt', props: { bodyColumns: 100 } })
+      expect(await band.text()).toBe('count 0More')
+      const [more] = await band.findAll({ type: 'Button' })
+      expect(more?.text).toBe('More')
+      await more?.press()
+      expect(await band.text()).toBe('count 1More')
+      await expect((await band.find({ type: 'Text' }))?.press()).rejects.toThrow('press() needs a Button with onPress, not a Text')
+      await expect(kit.$.ui.mount({ component: 'AbovePrompt' })).rejects.toThrow('surface AbovePrompt is already mounted')
+      await band.unmount()
+      const broken = kit.$.ui.mount({ component: 'AbovePrompt', props: { broken: true } })
+      await expect(broken).rejects.toThrow(/ui.render returned a tree that does not validate: a tree node is object/)
+      // The kit's own defaults answer ui.open (unplaced) and ui.close.
+      const pane = await kit.$.ui.mount({ component: 'Pane', requestId: 'p' })
+      expect(await pane.text()).toBe('pane p p')
+      await pane.unmount()
+    } finally {
+      await kit.dispose()
+    }
+  })
+
+  it('loads nothing by default', async () => {
+    const kit = await createModTestKit()
+    expect(kit.mods).toEqual([])
+    await kit.dispose()
+  })
+
+  it('mock.clock answers clock.now and clock.sleep from a settable instant', async () => {
+    const kit = await createModTestKit({ mods: [{
+      name: 'timer',
+      register(on) {
+        on('turn.start', async ($, e, next) => {
+          const before = await $.clock.now()
+          await $.clock.sleep(250)
+          return { ...(await next(e) as object), before, after: await $.clock.now() }
+        })
+      },
+    }] })
+    try {
+      const clock = mock.clock(kit.on, 1_000)
+      expect(await kit.$.turn.start({ turnId: '1' })).toEqual({ turnId: '1', before: 1_000, after: 1_250 })
+      clock.advance(50)
+      expect(clock.now).toBe(1_300)
     } finally {
       await kit.dispose()
     }

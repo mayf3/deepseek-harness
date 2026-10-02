@@ -1,4 +1,0 @@
-{
-  "description": "The first-mod hooks module",
-  "modules": ["./register.js"]
-}

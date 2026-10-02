@@ -1,5 +1,0 @@
-{
-  "name": "ticket-mod",
-  "version": "0.1.0",
-  "description": "Registers a ticket lookup tool, adds branch context to PR prompts, and times turns"
-}

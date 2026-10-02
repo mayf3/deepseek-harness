@@ -11,8 +11,8 @@ import { dispatch, ENGINE_ORIGIN } from './chain.ts'
 import { createModsApi } from './api.ts'
 import type { TimerHost } from './api.ts'
 import { messageOf, record } from './values.ts'
-import { HookRegistry } from './module.ts'
-import type { ModsApi, OpResult, ModTimer } from './types.ts'
+import { HookRegistry, registerMod } from './module.ts'
+import type { ModDefinition, ModsApi, OpResult, ModTimer } from './types.ts'
 
 /** The engine behavior for one mods API call. */
 export type OpCore<B> = (input: unknown, context: OpContext<B>) => unknown
@@ -50,7 +50,10 @@ export interface ModsEngineOptions<B> {
    * `clock.now`, and `clock.sleep` itself when the resolver serves none.
    */
   readonly ops: OpResolver<B>
-  /** The key `$.state` values live under: Claude Code's "for the whole session". */
+  /**
+   * The key `$.state` values and a mod's timers live under: Claude Code's "for
+   * the whole session". The empty string is the sessionless scope.
+   */
   readonly stateKey: (binding: B) => string
   /** A hook's own running-time limit in milliseconds. */
   readonly budgetMs: number
@@ -61,12 +64,38 @@ export interface ModsEngineOptions<B> {
 }
 
 /** Options for raising one engine event. */
-export interface RaiseOptions<B> {
+export interface RaiseOptions<B, E = unknown> {
   readonly binding: B
   readonly signal?: AbortSignal
+  /** Checks the input a hook passes to `next`; a throw skips that hook and continues with the input it received. */
+  readonly validateNext?: (e: E, hook: RegisteredHook) => void
 }
 
 const NEVER_ABORTS = new AbortController().signal
+
+/** Wait `ms`, or reject with the signal's reason when the event is cancelled before or while waiting. */
+function sleepUnless(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortReasonOf(signal))
+      return
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    function onAbort(): void {
+      clearTimeout(timer)
+      reject(abortReasonOf(signal))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function abortReasonOf(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
+  return reason instanceof Error ? reason : new Error(`$.clock.sleep cancelled: ${messageOf(reason)}`)
+}
 
 /** One named `$.state` slot: `<plugin>\u0000<key>`. */
 function stateSlot(plugin: unknown, key: unknown): string {
@@ -134,9 +163,28 @@ export class ModsEngine<B> {
   /** The loaded mods and their registrations. */
   readonly registry = new HookRegistry()
   private readonly state = new Map<string, Map<string, unknown>>()
+  /** Timer sets by `<session key>\u0000<plugin>`: a mod's timers belong to the session whose event started them. */
   private readonly timers = new Map<string, TimerSet>()
+  private nextOrder = 0
 
   constructor(private readonly options: ModsEngineOptions<B>) {}
+
+  /**
+   * Run one mod's `register` and add its hooks beneath every mod added before it.
+   * @param definition - the mod as its plugin defined it.
+   * @returns the loaded mod.
+   * @throws Error when the name is taken or invalid, or when `register` throws.
+   */
+  async add(definition: ModDefinition): Promise<LoadedMod> {
+    if (this.registry.list().some(loaded => loaded.name === definition.name)) {
+      throw new Error(`mod "${definition.name}" not loaded: another mod of that name is already loaded`)
+    }
+    const order = this.nextOrder
+    this.nextOrder += 1
+    const { mod, hooks } = await registerMod(definition, order)
+    this.registry.add(mod, hooks)
+    return mod
+  }
 
   /**
    * Raise one engine event through its hooks, outermost first.
@@ -146,7 +194,7 @@ export class ModsEngine<B> {
    * @param options - the binding events of this agent share, and its cancellation.
    * @returns the result as the outermost hook returned it.
    */
-  raise<E, R>(event: string, input: E, core: (e: E) => Promise<R> | R, options: RaiseOptions<B>): Promise<R> {
+  raise<E, R>(event: string, input: E, core: (e: E) => Promise<R> | R, options: RaiseOptions<B, E>): Promise<R> {
     return this.raiseWith(event, this.registry.select(event), undefined, input, core, options)
   }
 
@@ -168,7 +216,7 @@ export class ModsEngine<B> {
     raisedBy: LoadedMod | undefined,
     input: E,
     core: (e: E) => Promise<R> | R,
-    options: RaiseOptions<B>,
+    options: RaiseOptions<B, E>,
   ): Promise<R> {
     const signal = options.signal ?? NEVER_ABORTS
     return dispatch<E, R>({
@@ -182,6 +230,7 @@ export class ModsEngine<B> {
       catchBudgetMs: this.options.catchBudgetMs,
       signal,
       report: this.options.report,
+      ...options.validateNext === undefined ? {} : { validateNext: options.validateNext },
     })
   }
 
@@ -237,17 +286,26 @@ export class ModsEngine<B> {
       mod,
       clock,
       invoke: (op, input) => this.invoke(mod, op, input, binding, signal),
-      timers: this.timersOf(mod),
+      timers: this.timersOf(mod, this.options.stateKey(binding)),
       report: this.options.report,
     })
   }
 
   /**
-   * Forget one session's `$.state` values.
-   * @param key - the session key the values were kept under.
+   * Forget one session's `$.state` values and close the timers its events started.
+   * @param key - the session key the values and timers were kept under.
+   * @returns settles once the session's timer callbacks have finished.
    */
-  forgetState(key: string): void {
+  async forgetSession(key: string): Promise<void> {
     this.state.delete(key)
+    const closing: Promise<void>[] = []
+    for (const [timerKey, timers] of this.timers) {
+      if (timerKey.startsWith(`${key}\u0000`)) {
+        this.timers.delete(timerKey)
+        closing.push(timers.close())
+      }
+    }
+    await Promise.all(closing)
   }
 
   /**
@@ -267,9 +325,14 @@ export class ModsEngine<B> {
    */
   async unload(name: string): Promise<void> {
     this.registry.remove(name)
-    const timers = this.timers.get(name)
-    this.timers.delete(name)
-    await timers?.close()
+    const closing: Promise<void>[] = []
+    for (const [timerKey, timers] of this.timers) {
+      if (timerKey.endsWith(`\u0000${name}`)) {
+        this.timers.delete(timerKey)
+        closing.push(timers.close())
+      }
+    }
+    await Promise.all(closing)
   }
 
   /**
@@ -281,11 +344,12 @@ export class ModsEngine<B> {
     this.state.clear()
   }
 
-  private timersOf(mod: LoadedMod): TimerSet {
-    let timers = this.timers.get(mod.name)
+  private timersOf(mod: LoadedMod, sessionKey: string): TimerSet {
+    const timerKey = `${sessionKey}\u0000${mod.name}`
+    let timers = this.timers.get(timerKey)
     if (timers === undefined) {
       timers = new TimerSet(this.options.report, mod.name)
-      this.timers.set(mod.name, timers)
+      this.timers.set(timerKey, timers)
     }
     return timers
   }
@@ -315,7 +379,7 @@ export class ModsEngine<B> {
       case 'clock.sleep': {
         const ms = fields.ms
         if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) throw new TypeError('$.clock.sleep needs a non-negative number of milliseconds')
-        return new Promise<void>((resolve) => { setTimeout(resolve, ms) })
+        return sleepUnless(ms, context.signal)
       }
       default:
         throw new Error(`no implementation for ${op}`)

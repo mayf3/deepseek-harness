@@ -7,6 +7,7 @@
  * @module
  */
 
+import { uiElements } from './elements.ts'
 import type { BudgetClock, LoadedMod } from './chain.ts'
 import { messageOf } from './values.ts'
 import type {
@@ -87,9 +88,7 @@ export function createModsApi(binding: ApiBinding): ModsApi {
         const normalized: AskOptions = Array.isArray(options) ? { options } : options as AskOptions | undefined ?? {}
         return call('ui.ask', { question, ...normalized })
       },
-      resolve(): never {
-        throw new Error(`${mod.name}: $.ui.resolve has no element table: this bridge raises no ui.render events`)
-      },
+      resolve: () => uiElements(),
     }),
     command: Object.freeze({
       register(command: CommandSpec): Promise<void> {

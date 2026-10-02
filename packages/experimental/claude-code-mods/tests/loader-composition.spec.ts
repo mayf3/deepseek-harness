@@ -45,12 +45,14 @@ it('loads from cordis.yml, counts the model\'s tool calls, and answers /tally th
     ['@deepseek-ai/dsh-commands', CommandRuntime],
     ['@deepseek-ai/dsh-experimental-claude-code-mods', ClaudeCodeMods],
   ])
-  await writeFile(configPath, [...modules.keys()].flatMap(name => [
-    `- name: '${name}'`,
-    ...name === '@deepseek-ai/dsh-experimental-claude-code-mods'
-      ? ['  config:', '    pluginDirs:', `      - ${JSON.stringify(join(FIXTURES, 'first-mod'))}`, '    options:', '      first-mod:', '        greeting: The model made']
-      : [],
-  ]).join('\n') + '\n')
+  // A mod is a plugin like any other: here the tutorial mod's `defineMod` wrapper, mounted by file URL after the bridge.
+  const firstMod = pathToFileURL(resolve(FIXTURES, 'first-mod.ts')).href
+  await writeFile(configPath, [
+    ...[...modules.keys()].map(name => `- name: '${name}'`),
+    `- name: '${firstMod}'`,
+    '  config:',
+    '    greeting: The model made',
+  ].join('\n') + '\n')
 
   const context = ctx = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'

@@ -13,6 +13,21 @@ import type { HookMatcher, MatcherValue } from './types.ts'
  * name outside this list with Claude Code's own wording, so a misspelling
  * fails at load rather than registering a hook that never runs.
  */
+/** The events the engine raises on its own, as opposed to the `<namespace>.<method>` events a mods API call raises. */
+export const ENGINE_EVENTS: ReadonlySet<string> = new Set([
+  'tool.call', 'tool.check', 'tool.describe',
+  'prompt.submit', 'prompt.fill', 'prompt.suggest', 'prompt.edit', 'prompt.compose', 'prompt.section',
+  'prompt.context', 'prompt.attachment', 'skill.prompt', 'attribution.text',
+  'command.run', 'command.describe', 'config.set', 'config.describe',
+  'turn.start', 'turn.step', 'turn.complete',
+  'session.start', 'session.end', 'session.compact', 'session.receive', 'session.send', 'session.append',
+  'session.attach', 'session.detach', 'session.measure',
+  'agent.offer', 'agent.spawn',
+  'ui.render', 'ui.resolve', 'ui.press', 'ui.input', 'ui.select', 'ui.focus', 'ui.scroll', 'ui.close', 'ui.message',
+  'plugin.register', 'engine.create',
+  'telemetry.log', 'telemetry.mark',
+])
+
 export const KNOWN_EVENTS: ReadonlySet<string> = new Set([
   // tools
   'tool.call', 'tool.check', 'tool.describe',

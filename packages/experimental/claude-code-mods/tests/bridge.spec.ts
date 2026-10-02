@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
@@ -23,7 +24,7 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import * as ClaudeCodeMods from '../src/index.ts'
+import ClaudeCodeMods, { defineMod, MODS_API_VERSION, type Config, type ModPlugin, type ModRegister } from '../src/index.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 /**
@@ -48,19 +49,34 @@ function scratch(prefix = 'dsh-cc-mods-'): string {
   return dir
 }
 
-/** Write an inline mod directory: a manifest, hooks.json, and the given register.js body. */
-function writeMod(name: string, body: string): string {
-  const root = join(scratch(), name)
-  mkdirSync(join(root, '.claude-plugin'), { recursive: true })
-  mkdirSync(join(root, 'hooks'))
-  writeFileSync(join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name, version: '0.0.1' }))
-  writeFileSync(join(root, 'hooks', 'hooks.json'), JSON.stringify({ modules: ['./register.js'] }))
-  writeFileSync(join(root, 'hooks', 'register.js'), body)
-  return root
+let loads = 0
+
+/** Import a hooks module afresh, as a Claude Code reload evaluates it: module-level variables start over. */
+async function importRegister(path: string): Promise<ModRegister> {
+  loads += 1
+  const namespace: unknown = await import(`${pathToFileURL(path).href}?load=${loads}`)
+  const register = (namespace as { register?: unknown }).register
+  if (typeof register !== 'function') throw new Error(`${path} does not export register`)
+  return register as ModRegister
+}
+
+/** Write an inline hooks module and wrap it as a mod plugin. */
+async function writeMod(name: string, body: string, userConfig?: Record<string, string>): Promise<ModPlugin> {
+  const path = join(scratch(), `${name}.mjs`)
+  writeFileSync(path, body)
+  return defineMod({ name, version: '0.0.1', ...userConfig === undefined ? {} : { userConfig }, register: await importRegister(path) })
+}
+
+/** A fixture mod under `tests/fixtures/<name>.mjs`, wrapped as a plugin with the fixture's `userConfig`. */
+async function fixtureMod(name: string): Promise<ModPlugin> {
+  const userConfig = name === 'first-mod' ? { greeting: 'Claude has made' } : undefined
+  return defineMod({ name, version: '0.1.0', ...userConfig === undefined ? {} : { userConfig }, register: await importRegister(join(FIXTURES, `${name}.mjs`)) })
 }
 
 interface HarnessOptions {
-  readonly config?: Partial<ClaudeCodeMods.Config>
+  readonly config?: Partial<Config>
+  /** Config per mod plugin, by name: the `options` its `register` receives. */
+  readonly modConfig?: Record<string, Record<string, string | number | boolean | string[]>>
   readonly services?: (ctx: Context, workspace: string) => Promise<void>
   readonly tools?: { mode?: 'native' | 'ptc' | 'both' }
 }
@@ -76,7 +92,11 @@ interface Harness {
   turn(agent: Agent, text: string): Promise<void>
 }
 
-async function harness(pluginDirs: string[], adapter: MockAdapter, options: HarnessOptions = {}): Promise<Harness> {
+async function harness(
+  modsToLoad: readonly (string | ModPlugin | Promise<ModPlugin>)[],
+  adapter: MockAdapter,
+  options: HarnessOptions = {},
+): Promise<Harness> {
   const ctx = new Context()
   fibers.push(ctx.fiber)
   const info = vi.fn()
@@ -88,8 +108,13 @@ async function harness(pluginDirs: string[], adapter: MockAdapter, options: Harn
   await ctx.plugin(CommandRuntime)
   const workspace = scratch('dsh-cc-mods-ws-')
   await options.services?.(ctx, workspace)
-  const mods = await ctx.plugin(ClaudeCodeMods, { pluginDirs, ...options.config })
+  const mods = await ctx.plugin(ClaudeCodeMods, { ...options.config })
   await mods.await()
+  for (const entry of modsToLoad) {
+    const plugin = typeof entry === 'string' ? await fixtureMod(entry) : await entry
+    const fiber = await ctx.plugin(plugin, options.modConfig?.[plugin.definition.name] ?? {})
+    await fiber.await()
+  }
   ctx.llm.registerAdapter(['mock'], adapter)
   return {
     ctx, adapter, workspace, mods, info, warn,
@@ -133,7 +158,7 @@ async function waitFor(predicate: () => boolean, timeout = 5000): Promise<void> 
 describe('first-mod: the tutorial mod on the real loop', () => {
   it('registers /tally at session start, counts the turn\'s tool calls, prints the count without a model turn, and unregisters on dispose', async () => {
     const adapter = new MockAdapter([toolCallResponse('c1', 'echo', { command: 'ls' }), textResponse('done')])
-    const h = await harness([join(FIXTURES, 'first-mod')], adapter)
+    const h = await harness(['first-mod'], adapter)
     h.ctx.tools.register(echoTool('echo'))
     const agent = await h.agent()
     expect(h.ctx.commands.list(agent).map(command => command.name)).toEqual(['tally'])
@@ -162,9 +187,8 @@ describe('guard-mod: tool.call deny, observe-after, and fail-closed .catch', () 
   it('refuses a risky Bash command before the tool body runs, with the reason as the model-visible error', async () => {
     const ran: string[] = []
     const adapter = new MockAdapter([toolCallResponse('c1', 'bash', { command: 'git push --force' }), textResponse('ok')])
-    const h = await harness([join(FIXTURES, 'guard-mod')], adapter)
+    const h = await harness(['guard-mod'], adapter)
     h.ctx.tools.register(echoTool('bash', ran))
-    expect(h.warn).toHaveBeenCalledWith(expect.stringMatching(/settings hooks in hooks.json are not run by this bridge/))
     const agent = await h.agent()
     await h.turn(agent, 'force push')
     expect(ran).toEqual([])
@@ -174,7 +198,7 @@ describe('guard-mod: tool.call deny, observe-after, and fail-closed .catch', () 
   it('lets a safe command through, observes the result, and reaches the host log through $.ui.log', async () => {
     const ran: string[] = []
     const adapter = new MockAdapter([toolCallResponse('c1', 'bash', { command: 'ls' }), textResponse('ok')])
-    const h = await harness([join(FIXTURES, 'guard-mod')], adapter)
+    const h = await harness(['guard-mod'], adapter)
     h.ctx.tools.register(echoTool('bash', ran))
     const agent = await h.agent()
     await h.turn(agent, 'list')
@@ -186,7 +210,7 @@ describe('guard-mod: tool.call deny, observe-after, and fail-closed .catch', () 
   it('fails closed through .catch when the guard throws', async () => {
     const ran: string[] = []
     const adapter = new MockAdapter([toolCallResponse('c1', 'bash', { command: 'explode' }), textResponse('ok')])
-    const h = await harness([join(FIXTURES, 'guard-mod')], adapter)
+    const h = await harness(['guard-mod'], adapter)
     h.ctx.tools.register(echoTool('bash', ran))
     const agent = await h.agent()
     await h.turn(agent, 'boom')
@@ -199,7 +223,7 @@ describe('guard-mod: tool.call deny, observe-after, and fail-closed .catch', () 
 describe('ticket-mod: a mod-registered tool, prompt context, and a turn.complete line', () => {
   it('offers mcp__ticket-mod__ticket to the model and answers its calls with a successful result', async () => {
     const adapter = new MockAdapter([toolCallResponse('c1', 'mcp__ticket-mod__ticket', { id: 'T-1' }), textResponse('ok')])
-    const h = await harness([join(FIXTURES, 'ticket-mod')], adapter)
+    const h = await harness(['ticket-mod'], adapter)
     const agent = await h.agent()
     const schema = h.ctx.tools.schemas(scopeOf(agent.ctx)).find(tool => tool.name === 'mcp__ticket-mod__ticket')
     expect(schema).toMatchObject({ description: 'Look up a ticket by its id and return its title and status', parameters: { type: 'object', required: ['id'] } })
@@ -209,14 +233,18 @@ describe('ticket-mod: a mod-registered tool, prompt context, and a turn.complete
     await waitFor(() => h.info.mock.calls.some(call => call[0] === 'claude-code-mods: Done in some ms'))
   })
 
-  it('appends prompt.submit context as a mod-sourced message the model reads after the prompt', async () => {
+  it('appends prompt.submit context as blocks after the prompt as typed, inside the user\'s own message', async () => {
     const adapter = new MockAdapter([textResponse('ok')])
-    const h = await harness([join(FIXTURES, 'ticket-mod')], adapter)
+    const h = await harness(['ticket-mod'], adapter)
     const agent = await h.agent()
     await h.turn(agent, 'open a PR for this change')
     expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Current branch: feature/mods')
-    const context = events(agent).find(e => e.type === 'user/message' && e.data.source.kind !== 'user')
-    expect(context?.type === 'user/message' && context.data.source).toEqual({ kind: 'claude-code-mods' })
+    const prompts = events(agent).filter(e => e.type === 'user/message')
+    expect(prompts.map(e => e.type === 'user/message' && e.data.source)).toEqual([{ kind: 'user' }])
+    expect(prompts[0]?.type === 'user/message' && prompts[0].data.content).toEqual([
+      { type: 'text', text: 'open a PR for this change' },
+      { type: 'text', text: 'Current branch: feature/mods' },
+    ])
     expect(toolResult(agent)).toBeUndefined()
   })
 })
@@ -249,19 +277,18 @@ describe('prompt.submit: rewrite and drop', () => {
     // A result with the wrong types keeps the original text and only the string context lines.
     await h.turn(agent, 'some junk')
     const last = adapter.requests[1]?.messages.filter(message => message.role === 'user') ?? []
-    expect(last.slice(-2).map(message => message.role === 'user' && message.content)).toEqual([
-      [{ type: 'text', text: 'some junk' }],
-      [{ type: 'text', text: 'kept context' }],
-    ])
+    expect(last.at(-1)?.content).toEqual([{ type: 'text', text: 'some junk' }, { type: 'text', text: 'kept context' }])
   })
 })
 
 describe('tool.call: answers and rewrites', () => {
-  it('answers a built-in tool in its place as an error-shaped result, keeps a rewritten result through post-execute, and warns once about rewritten arguments', async () => {
+  it('answers a built-in tool by its output schema, keeps a rewritten result through post-execute, and skips a hook that rewrote arguments', async () => {
     const mod = writeMod('answer-mod', `
       export function register(on) {
+        on('tool.call', { tool: 'greet' }, async ($, e) => ({ result: 'hello from answer-mod' }))
         on('tool.call', { tool: 'echo' }, async ($, e, next) => {
           if (e.command === 'skip') return { result: 'Skipped by answer-mod' }
+          if (e.command === 'greet') return { result: 'hello from answer-mod' }
           if (e.command === 'redact') {
             const r = await next({ ...e, command: 'rewritten' })
             return { ...r, result: String(r.result).replace('ran', 'RAN') }
@@ -270,6 +297,12 @@ describe('tool.call: answers and rewrites', () => {
             const r = await next(e)
             return { ...r, result: 'marked failed', isError: true }
           }
+          if (e.command === 'tweak') {
+            const r = await next(e)
+            return { ...r, result: 'tweaked' }
+          }
+          if (e.command === 'empty') return {}
+          if (e.command === 'error') return { result: 'refused outright', isError: true }
           return next(e)
         })
       }
@@ -277,31 +310,58 @@ describe('tool.call: answers and rewrites', () => {
     const ran: string[] = []
     const adapter = new MockAdapter([
       toolCallResponse('c1', 'echo', { command: 'skip' }), textResponse('one'),
+      toolCallResponse('c5', 'greet', {}), textResponse('hi'),
       toolCallResponse('c2', 'echo', { command: 'redact' }), textResponse('two'),
       toolCallResponse('c3', 'echo', { command: 'redact' }), textResponse('three'),
       toolCallResponse('c4', 'echo', { command: 'fail' }), textResponse('four'),
+      toolCallResponse('c6', 'echo', { command: 'tweak' }), textResponse('five'),
+      toolCallResponse('c7', 'echo', { command: 'empty' }), textResponse('six'),
+      toolCallResponse('c8', 'echo', { command: 'error' }), textResponse('seven'),
     ])
     const h = await harness([mod], adapter)
     h.ctx.tools.register(echoTool('echo', ran))
+    // A tool whose output schema admits a string: a mod's string answer is its ordinary result.
+    h.ctx.tools.register({
+      name: 'greet', description: 'greets', parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: `rendered ${value as string}` }] },
+      execute: () => Promise.resolve('never runs'),
+    })
     const agent = await h.agent()
     await h.turn(agent, 'skip it')
     expect(ran).toEqual([])
+    // The echo fixture's output schema does not admit a bare string, so the answer is error-shaped.
     expect(toolResult(agent)).toEqual({ isError: true, text: 'Skipped by answer-mod' })
     const first = events(agent).find(e => e.type === 'tool/result')
     expect(first?.type === 'tool/result' && JSON.stringify(first.data)).toContain('MOD_ANSWERED')
 
+    await h.turn(agent, 'greet')
     await h.turn(agent, 'redact it')
     await h.turn(agent, 'redact again')
     await h.turn(agent, 'fail it')
-    expect(ran).toEqual(['redact', 'redact', 'fail'])
+    await h.turn(agent, 'tweak it')
+    await h.turn(agent, 'empty answer')
+    await h.turn(agent, 'error answer')
+    // The rewrite is refused: the hook is skipped once per kind and the call runs with its logged arguments.
+    expect(ran).toEqual(['redact', 'redact', 'fail', 'tweak'])
     const results = events(agent).filter(e => e.type === 'tool/result')
       .map(e => e.type === 'tool/result' && [e.data.message.isError === true, e.data.message.content[0]])
     expect(results.slice(1)).toEqual([
-      [false, { type: 'text', text: 'RAN redact' }],
-      [false, { type: 'text', text: 'RAN redact' }],
+      [false, { type: 'text', text: 'rendered hello from answer-mod' }],
+      [false, { type: 'text', text: 'ran redact' }],
+      [false, { type: 'text', text: 'ran redact' }],
       [true, { type: 'text', text: 'marked failed' }],
+      [false, { type: 'text', text: 'tweaked' }],
+      [true, { type: 'text', text: '' }],
+      [true, { type: 'text', text: 'refused outright' }],
     ])
-    expect(h.warn.mock.calls.filter(call => String(call[0]).includes('rewrote the arguments of echo'))).toHaveLength(1)
+    // A call without an agent (a host-side execute) is answered by the same schema rule.
+    const direct = await h.ctx.tools.execute({ callId: ToolCallIdOf('direct'), name: 'greet', arguments: {}, signal: new AbortController().signal })
+    expect(direct.isError).toBe(false)
+    expect(direct.content).toEqual([{ type: 'text', text: 'rendered hello from answer-mod' }])
+    const refusals = h.warn.mock.calls.map(call => String(call[0])).filter(line => line.includes('rewrote the arguments of echo'))
+    expect(refusals).toEqual([
+      'claude-code-mods: answer-mod: tool.call hook skipped: rewrote the arguments of echo; argument rewrites need the pre-tool input rewrite mechanism (.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.md)',
+    ])
   })
 
   it('leaves tools alone when no mod hooks tool.call', async () => {
@@ -407,7 +467,7 @@ describe('the mods API over harness services', () => {
       expect(out.timeout).toMatch(/did not exit within 200 ms/)
       expect(out.session).toEqual({
         id: 'a1', cwd: h.workspace, root: h.workspace, model: 'mock', turns: 1,
-        version: ClaudeCodeMods.MODS_API_VERSION,
+        version: MODS_API_VERSION,
         usage: { startedAt: agent.session.header.createdAt, context: { window: 0 }, rateLimits: [] },
         messages: [{ role: 'user', text: 'hello', toolUses: [] }, { role: 'assistant', text: 'ok', toolUses: [] }],
       })
@@ -499,8 +559,10 @@ describe('commands and prompts raised by a mod', () => {
           await $.command.register({ name: 'silent', description: 'Registered without a command.run hook' })
           await $.command.register({ name: 'relay', description: 'Run another command' })
           await $.command.register({ name: 'quiet', description: 'Prints nothing' })
+          await $.command.register({ name: 'call-echo', description: 'Call the echo tool from the mod' })
           return next(e)
         })
+        on('command.run', { command: 'call-echo' }, async ($, e) => ({ text: JSON.stringify(await $.tool.call({ tool: 'echo', command: e.args })) }))
         on('command.run', { command: 'quiet' }, async ($) => {
           $.ui.log((await $.command.list()).map(c => c.name + '/' + c.source).join(','))
           return {}
@@ -528,8 +590,9 @@ describe('commands and prompts raised by a mod', () => {
     expect(nudged?.result).toEqual({ kind: 'success', text: 'driver-mod: sent 47' })
     await agent.whenIdle()
     expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('Message from the \\"driver-mod\\" mod:\\nfrom the mod')
+    // Claude Code submits a mod's prompt as the user's own; the framing in the text names the mod.
     const submitted = events(agent).find(e => e.type === 'user/message')
-    expect(submitted?.type === 'user/message' && submitted.data.source).toEqual({ kind: 'claude-code-mods' })
+    expect(submitted?.type === 'user/message' && submitted.data.source).toEqual({ kind: 'user' })
 
     const relayed = await h.ctx.commands.execute(agent, '/relay', [], signal)
     expect(relayed?.result).toEqual({ kind: 'success', text: 'driver-mod: {"text":"driver-mod: sent 11"}' })
@@ -544,7 +607,17 @@ describe('commands and prompts raised by a mod', () => {
     expect((await h.ctx.commands.execute(agent, '/relay fail', [], signal))?.result.text).toBe('driver-mod: failed: nope')
     expect((await h.ctx.commands.execute(agent, '/relay mute', [], signal))?.result.text).toBe('driver-mod: {}')
     expect((await h.ctx.commands.execute(agent, '/quiet', [], signal))?.result).toEqual({ kind: 'success' })
-    expect(h.info).toHaveBeenCalledWith('driver-mod: fail/builtin,mute/builtin,nudge/plugin,quiet/plugin,relay/plugin,silent/plugin')
+    expect(h.info).toHaveBeenCalledWith('driver-mod: call-echo/plugin,fail/builtin,mute/builtin,nudge/plugin,quiet/plugin,relay/plugin,silent/plugin')
+
+    // Guidance a tool defers to the next request still reaches the model when the mod made the call.
+    h.ctx.tools.register(echoTool('echo'))
+    h.ctx.on('tools/post-execute', async (_exec, _result, next) => {
+      const downstream = await next()
+      return { ...downstream, additionalContexts: [createUserMessage({ content: [{ type: 'text', text: 'deferred guidance' }], source: { kind: 'user' } })] }
+    })
+    expect((await h.ctx.commands.execute(agent, '/call-echo hi', [], signal))?.result.text).toBe('driver-mod: {"result":"ran hi"}')
+    await h.turn(agent, 'next prompt')
+    expect(JSON.stringify(adapter.requests[2]?.messages)).toContain('deferred guidance')
   })
 })
 
@@ -732,36 +805,65 @@ describe('$.session.usage with the token meter', () => {
 })
 
 describe('loading diagnostics and configuration', () => {
-  it('skips a mod whose module fails and one that exports no register, loads the rest, and fails loud on a missing directory', async () => {
+  it('fails a mod plugin whose register throws, loads the rest, reports unserved events, and refuses a taken name', async () => {
     const quiet = writeMod('quiet-mod', 'export function register() {}')
     const adapter = new MockAdapter([])
-    const h = await harness([join(FIXTURES, 'broken-mod'), join(FIXTURES, 'no-register'), quiet], adapter, {
-      config: { hookTimeoutMs: 50, catchTimeoutMs: 20, processTimeoutMs: 100 },
-    })
-    const warnings = h.warn.mock.calls.map(call => String(call[0]))
-    expect(warnings).toContainEqual(
-      expect.stringMatching(/broken-mod: hooks module did not load: register threw .*"tool.calls" is not an event/),
-    )
-    expect(warnings).toContainEqual(expect.stringMatching(/no-register: hooks module did not load: .*does not export a register function/))
+    const h = await harness([quiet], adapter, { config: { hookTimeoutMs: 50, catchTimeoutMs: 20, processTimeoutMs: 100 } })
     expect(h.info).toHaveBeenCalledWith('claude-code-mods: hooks module quiet-mod@inline loaded (tier user); events: (none)')
 
-    const ctx = new Context()
-    fibers.push(ctx.fiber)
-    await expect(ClaudeCodeMods.apply(ctx, { pluginDirs: [join(FIXTURES, 'missing')] })).rejects.toThrow(/plugin\.json: cannot read/)
-    await expect(ClaudeCodeMods.apply(ctx, { pluginDirs: [], hookTimeoutMs: 0 })).rejects.toThrow(/hookTimeoutMs must be a positive number/)
-    await expect(ClaudeCodeMods.apply(ctx, { pluginDirs: [], catchTimeoutMs: -1 }))
-      .rejects.toThrow(/catchTimeoutMs must be a positive number/)
-    await expect(ClaudeCodeMods.apply(ctx, { pluginDirs: [], processTimeoutMs: Number.NaN }))
-      .rejects.toThrow(/processTimeoutMs must be a positive number/)
-    await expect(ClaudeCodeMods.apply(ctx, { pluginDirs: [] })).resolves.toBeUndefined()
+    const broken = await writeMod('broken-mod', "export function register(on) { on('tool.calls', () => ({})) }")
+    await expect(h.ctx.claudeCodeMods.add(broken.definition))
+      .rejects.toThrow(/broken-mod: hooks module did not load: register threw .*"tool.calls" is not an event/)
+    await expect(h.ctx.claudeCodeMods.add({ name: 'bad name!', register: () => {} }))
+      .rejects.toThrow(/a plugin name uses letters, digits, _ and - only/)
+    await expect(h.ctx.claudeCodeMods.add({ name: 'quiet-mod', register: () => {} }))
+      .rejects.toThrow(/another mod of that name is already loaded/)
+
+    // A hook on an event this host never raises registers, and the load reports it.
+    const dispose = await h.ctx.claudeCodeMods.add({
+      name: 'unserved-mod',
+      register: (on) => {
+        on('tool.check', () => ({ decision: 'allow' }))
+        on('turn.step', () => ({}))
+        on('tool.check', { tool: 'Bash' }, () => ({ decision: 'allow' }))
+      },
+    })
+    expect(h.warn).toHaveBeenCalledWith(
+      'claude-code-mods: unserved-mod: on("tool.check", "turn.step") registered, but this host never raises those events',
+    )
+    expect(h.ctx.claudeCodeMods.mods.map(mod => mod.name)).toEqual(['quiet-mod', 'unserved-mod'])
+    await dispose()
+    expect(h.ctx.claudeCodeMods.mods.map(mod => mod.name)).toEqual(['quiet-mod'])
+
+    const fresh = (): Context => {
+      const ctx = new Context()
+      fibers.push(ctx.fiber)
+      return ctx
+    }
+    expect(() => new ClaudeCodeMods(fresh(), { hookTimeoutMs: 0 })).toThrow(/hookTimeoutMs must be a positive number/)
+    expect(() => new ClaudeCodeMods(fresh(), { catchTimeoutMs: -1 })).toThrow(/catchTimeoutMs must be a positive number/)
+    expect(() => new ClaudeCodeMods(fresh(), { processTimeoutMs: Number.NaN })).toThrow(/processTimeoutMs must be a positive number/)
   })
 
-  it('has the namespace-plugin export shape (no stray default) so the Loader keeps name/inject/apply', () => {
-    expect('default' in ClaudeCodeMods).toBe(false)
-    expect(ClaudeCodeMods.name).toBe('claude-code-mods')
+  it('mounts a mod plugin through the Loader-visible plugin shape and unmounts it with its hooks', async () => {
+    const adapter = new MockAdapter([])
+    const h = await harness([], adapter)
+    const plugin = await writeMod('late-mod', "export function register(on, options) { on('turn.start', ($, e, next) => next(e)); globalThis.lateOptions = options }", { greeting: 'hi' })
+    expect(plugin.name).toBe('claude-code-mod-late-mod')
+    expect(plugin.inject).toEqual(['claudeCodeMods'])
+    const fiber = await h.ctx.plugin(plugin, { greeting: 'hello', extra: 2 })
+    await fiber.await()
+    expect((globalThis as { lateOptions?: unknown }).lateOptions).toEqual({ greeting: 'hello', extra: 2 })
+    expect(h.ctx.claudeCodeMods.mods.map(mod => mod.name)).toEqual(['late-mod'])
+    await fiber.dispose()
+    expect(h.ctx.claudeCodeMods.mods).toEqual([])
+    delete (globalThis as { lateOptions?: unknown }).lateOptions
+  })
+
+  it('is a Service plugin the Loader keeps by its default export', () => {
     expect(ClaudeCodeMods.inject).toEqual([])
     const loader = Object.create(Loader.prototype) as Loader
-    const unwrapped: unknown = loader.unwrapExports(ClaudeCodeMods)
+    const unwrapped: unknown = loader.unwrapExports({ default: ClaudeCodeMods })
     expect(unwrapped).toBe(ClaudeCodeMods)
   })
 })
@@ -793,7 +895,7 @@ describe('post-execute interplay and prompt rewrites with images', () => {
     const agent = await h.agent()
     const image = { type: 'image' as const, attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } as ImageAttachmentRef }
     // Injected context from another plugin is claimed with the waking prompt; only the human's message is the prompt.
-    agent.inject(createUserMessage({ content: [{ type: 'text', text: 'injected by a plugin' }], source: { kind: 'claude-code-mods' } }))
+    agent.inject(createUserMessage({ content: [{ type: 'text', text: 'injected by a plugin' }], source: { kind: 'user-question-reply', callId: ToolCallIdOf('q1'), outcome: 'answered' } }))
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'first' }, image, { type: 'text', text: 'second' }], source: { kind: 'user' } }))
     await agent.whenIdle()
     const entered = () => events(agent).filter(e => e.type === 'user/message').map(e => e.type === 'user/message' && e.data.content)
@@ -811,7 +913,7 @@ describe('post-execute interplay and prompt rewrites with images', () => {
     agent.followup(createUserMessage({ content: [image], source: { kind: 'user' } }))
     await agent.whenIdle()
     expect(entered().at(-1)).toEqual([image, { type: 'text', text: 'rewritten: ' }])
-    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'from a plugin' }], source: { kind: 'claude-code-mods' } }))
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'from a plugin' }], source: { kind: 'user-question-reply', callId: ToolCallIdOf('q2'), outcome: 'answered' } }))
     await agent.whenIdle()
     expect(entered().at(-1)).toEqual([{ type: 'text', text: 'from a plugin' }])
   })

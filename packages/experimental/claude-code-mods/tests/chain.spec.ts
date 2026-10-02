@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BudgetClock, dispatch, ENGINE_ORIGIN, HookTimeoutError } from '../src/chain.ts'
+import { BudgetClock, dispatch, ENGINE_ORIGIN, HookTimeoutError, RewriteRefusedError } from '../src/chain.ts'
 import type { DispatchRequest, LoadedMod, RegisteredHook } from '../src/chain.ts'
 import { createModsApi } from '../src/api.ts'
 import type { AnyHook, HookMatcher, ModsApi } from '../src/types.ts'
@@ -126,6 +126,67 @@ describe('dispatch: the three moves', () => {
     expect(observed.ms).toBe(200)
     expect(observed.remaining).toBeLessThanOrEqual(200)
     expect(observed.aborted).toBe(false)
+  })
+})
+
+describe('dispatch: one run beneath per hook', () => {
+  it('hands a second next call the first run and awaits a started run before the hook\'s own answer settles', async () => {
+    const a = mod('a')
+    const core = vi.fn(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      return { ok: 'core' }
+    })
+    const twice = hook(a, 'tool.call', async (_$, e, next) => {
+      const [first, second] = await Promise.all([next(e), next(e)])
+      return { ok: 'hook', same: first === second }
+    })
+    expect(await dispatch(request({ input: {}, core, hooks: [twice] }))).toEqual({ ok: 'hook', same: true })
+    expect(core).toHaveBeenCalledTimes(1)
+
+    const settled: string[] = []
+    const draining = vi.fn(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      settled.push('core')
+      return { ok: 'core' }
+    })
+    // The hook answers at once while the run beneath is still going; the dispatch settles after that run.
+    const eager = hook(a, 'tool.call', (_$, e, next) => {
+      void next(e)
+      return { deny: 'answered first' }
+    })
+    expect(await dispatch(request({ input: {}, core: draining, hooks: [eager] }))).toEqual({ deny: 'answered first' })
+    expect(settled).toEqual(['core'])
+  })
+
+  it('reports a run beneath that fails after the hook answered, and attributes a refused rewrite to the hook', async () => {
+    const a = mod('a')
+    const report = vi.fn()
+    const eager = hook(a, 'tool.call', (_$, e, next) => {
+      next(e).catch(() => {})
+      return { deny: 'answered first' }
+    })
+    const failing = async (): Promise<{ ok: string }> => {
+      await Promise.resolve()
+      throw new Error('core broke')
+    }
+    expect(await dispatch(request({ input: {}, core: failing, hooks: [eager], report }))).toEqual({ deny: 'answered first' })
+    expect(report).toHaveBeenCalledWith('a: tool.call: the chain beneath failed after the hook answered: core broke')
+
+    // `validateNext` throws for a rewritten input: the hook is skipped and the original input runs beneath.
+    const rewriting = hook(a, 'tool.call', (_$, e, next) => next({ ...(e as object), command: 'changed' }))
+    const core = vi.fn((e: unknown) => ({ ok: JSON.stringify(e) }))
+    const result = await dispatch(request<{ command: string }, { ok: string }>({
+      input: { command: 'original' },
+      core,
+      hooks: [rewriting],
+      report,
+      validateNext: (e) => {
+        if (e.command !== 'original') throw new RewriteRefusedError('rewrote the arguments of echo; rewrites are not served')
+      },
+    }))
+    expect(result).toEqual({ ok: '{"command":"original"}' })
+    expect(report).toHaveBeenCalledWith('a: tool.call hook skipped: rewrote the arguments of echo; rewrites are not served')
+    expect(core).toHaveBeenCalledTimes(1)
   })
 })
 

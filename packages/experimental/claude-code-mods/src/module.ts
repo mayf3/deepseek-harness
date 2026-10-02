@@ -1,16 +1,16 @@
 /**
- * Hooks-module loading: import the module Node-side, run its `register(on,
- * options)`, and keep every `on(...)` registration in one ordered registry
- * that dispatch selects from.
+ * Mod registration: run a mod's `register(on, options)` and keep every
+ * `on(...)` registration in one ordered registry that dispatch selects from.
  * @module
  */
 
-import { pathToFileURL } from 'node:url'
 import type { LoadedMod, RegisteredHook } from './chain.ts'
 import { messageOf } from './values.ts'
-import { describeMatcher, eventMatches, isEventPattern } from './matcher.ts'
-import type { ModDirectory } from './manifest.ts'
-import type { AnyHook, HooksModule, HookMatcher, ModOn, PluginOptions, HookRegistration } from './types.ts'
+import { describeMatcher, ENGINE_EVENTS, eventMatches, isEventPattern } from './matcher.ts'
+import type { AnyHook, HookMatcher, ModDefinition, ModOn, HookRegistration } from './types.ts'
+
+/** Plugin names Claude Code accepts: letters, digits, `_` and `-`. */
+const PLUGIN_NAME = /^[A-Za-z0-9_-]{1,64}$/u
 
 /** Mods ordered by load; hooks ordered by mod, then by registration. */
 export class HookRegistry {
@@ -62,6 +62,21 @@ export class HookRegistry {
     return this.hooks
       .filter(hook => (raisedBy === undefined || hook.mod.order < raisedBy.order) && eventMatches(hook.event, event))
       .sort((left, right) => left.mod.order - right.mod.order)
+  }
+
+  /**
+   * The engine events one mod hooks by exact name that the host never raises.
+   * @param mod - the loaded mod.
+   * @param served - the engine events the host raises.
+   * @returns the unserved event names in registration order, each once.
+   */
+  unserved(mod: LoadedMod, served: ReadonlySet<string>): string[] {
+    const names: string[] = []
+    for (const hook of this.hooks) {
+      if (hook.mod !== mod || !ENGINE_EVENTS.has(hook.event) || served.has(hook.event) || names.includes(hook.event)) continue
+      names.push(hook.event)
+    }
+    return names
   }
 
   /**
@@ -117,48 +132,30 @@ export function createOn(mod: LoadedMod): { on: ModOn; hooks: RegisteredHook[] }
   return { on, hooks }
 }
 
-/** Distinguishes one import of a module path from the next, so every load evaluates the module afresh. */
-let loadCounter = 0
-
 /**
- * Import one validated mod directory's hooks module and run `register`. Every
- * load evaluates the module anew, as a Claude Code reload does, so module-level
- * variables start over.
- * @param directory - the validated plugin directory.
- * @param options - the resolved `options` argument of `register`.
- * @param order - the mod's load order.
+ * Run one mod's `register` and collect its hooks. A `register` that throws
+ * fails the mod with Claude Code's wording; the caller decides whether the
+ * session continues without it.
+ * @param definition - the mod as its plugin defined it.
+ * @param order - the mod's position in the chain; earlier mods run outside later ones.
  * @returns the loaded mod and its registrations.
  */
-export async function loadHooksModule(
-  directory: ModDirectory,
-  options: PluginOptions,
-  order: number,
-): Promise<{ mod: LoadedMod; hooks: RegisteredHook[] }> {
-  const { manifest } = directory
+export async function registerMod(definition: ModDefinition, order: number): Promise<{ mod: LoadedMod; hooks: RegisteredHook[] }> {
+  if (!PLUGIN_NAME.test(definition.name)) {
+    throw new Error(`mod "${definition.name}" not loaded: a plugin name uses letters, digits, _ and - only`)
+  }
   const mod: LoadedMod = Object.freeze({
-    name: manifest.name,
-    version: manifest.version,
-    root: directory.root,
-    modulePath: directory.modulePath,
-    options,
+    name: definition.name,
+    version: definition.version,
+    root: definition.root ?? process.cwd(),
+    options: Object.freeze({ ...definition.options }),
     order,
   })
-  let namespace: unknown
-  try {
-    loadCounter += 1
-    namespace = await import(`${pathToFileURL(directory.modulePath).href}?load=${loadCounter}`)
-  } catch (error: unknown) {
-    throw new Error(`${manifest.name}: hooks module did not load: ${messageOf(error)}`, { cause: error })
-  }
-  const register = (namespace as Partial<HooksModule> | null)?.register
-  if (typeof register !== 'function') {
-    throw new Error(`${manifest.name}: hooks module did not load: ${directory.modulePath} does not export a register function`)
-  }
   const { on, hooks } = createOn(mod)
   try {
-    await register(on, options)
+    await definition.register(on, mod.options)
   } catch (error: unknown) {
-    throw new Error(`${manifest.name}: hooks module did not load: register threw ${messageOf(error)}`, { cause: error })
+    throw new Error(`${definition.name}: hooks module did not load: register threw ${messageOf(error)}`, { cause: error })
   }
   return { mod, hooks }
 }

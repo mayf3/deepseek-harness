@@ -12,14 +12,12 @@ import { messageOf } from './values.ts'
 import type { AnyHook, HookFailure, HookOrigin, HookMatcher, ModsApi, HookNext, PluginOptions } from './types.ts'
 import { matcherMatches } from './matcher.ts'
 
-/** One loaded mod: its manifest identity, module path, and resolved `register` options. */
+/** One loaded mod: its plugin identity and the `register` options it received. */
 export interface LoadedMod {
   readonly name: string
   readonly version: string | undefined
-  /** Absolute plugin directory, the one holding `.claude-plugin/plugin.json`. */
+  /** Absolute directory the mod ships in, as `$.plugin.root` reports it. */
   readonly root: string
-  /** Absolute path of the hooks module. */
-  readonly modulePath: string
   readonly options: PluginOptions
   /** Load order; hooks of an earlier mod run outside those of a later one. */
   readonly order: number
@@ -150,6 +148,20 @@ export interface DispatchRequest<E, R> {
   readonly signal: AbortSignal
   /** Receives one diagnostic line per skipped hook and failure kind. */
   readonly report: (line: string) => void
+  /**
+   * Checks the input a hook passes to `next` before anything beneath runs; a
+   * throw skips that hook as a failure of its own and the chain continues with
+   * the input the hook received.
+   */
+  readonly validateNext?: (e: E, hook: RegisteredHook) => void
+}
+
+/** Thrown by {@link DispatchRequest.validateNext}: the hook asked for a rewrite this host does not serve. */
+export class RewriteRefusedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RewriteRefusedError'
+  }
 }
 
 /** The engine's own origin. */
@@ -166,7 +178,7 @@ class NoResultError extends Error {
 /** Classify a failed hook and word the diagnostic line's tail. */
 function failureOf(error: unknown): HookFailure & { readonly line: string } {
   if (error instanceof HookTimeoutError) return { kind: 'timeout', message: error.message, line: `timeout, ${error.message}` }
-  if (error instanceof NoResultError) return { kind: 'throw', message: error.message, line: error.message }
+  if (error instanceof NoResultError || error instanceof RewriteRefusedError) return { kind: 'throw', message: error.message, line: error.message }
   const message = error instanceof Error ? `${error.name}: ${error.message}` : messageOf(error)
   return { kind: 'throw', message, line: `threw ${message}` }
 }
@@ -202,11 +214,23 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
       called: boolean
       beneath: Promise<R> | undefined
       beneathError: { readonly error: unknown } | undefined
-    } = { abandoned: false, called: false, beneath: undefined, beneathError: undefined }
+      refused: { readonly error: unknown } | undefined
+    } = { abandoned: false, called: false, beneath: undefined, beneathError: undefined, refused: undefined }
     const next = Object.assign(
       (e: E): Promise<R> => {
         state.called = true
+        // One run beneath per hook: a second call hands back the first run.
+        if (state.beneath !== undefined) return state.beneath
         if (state.abandoned) return Promise.resolve(undefined as R)
+        if (request.validateNext !== undefined) {
+          try {
+            request.validateNext(e, hook)
+          } catch (error: unknown) {
+            const refused = error instanceof Error ? error : new Error(messageOf(error))
+            state.refused = { error: refused }
+            return Promise.reject(refused)
+          }
+        }
         clock.pause()
         state.beneath = runFrom(index + 1, e)
           .catch((error: unknown) => {
@@ -233,12 +257,20 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
       running.catch(() => {})
       const result = await Promise.race([running, clock.expired])
       if (typeof result !== 'object' || result === null) throw new NoResultError()
+      // The hook answered; whatever it started beneath still runs to its end before the event settles.
+      clock.stop()
+      if (state.beneath !== undefined) {
+        await state.beneath.catch((error: unknown) => {
+          request.report(`${hook.mod.name}: ${request.event}: the chain beneath failed after the hook answered: ${messageOf(error)}`)
+        })
+      }
       return result
     } catch (error: unknown) {
       state.abandoned = true
       // The engine beneath failed, not the hook: the failure is the event's own.
       if (state.beneathError !== undefined && error === state.beneathError.error) throw error
-      const failure = failureOf(error)
+      // A refused rewrite is the hook's failure even when the hook let the rejection through unchanged.
+      const failure = failureOf(state.refused !== undefined && error === state.refused.error ? state.refused.error : error)
       if (!hook.reported.has(failure.kind)) {
         hook.reported.add(failure.kind)
         request.report(`${hook.mod.name}: ${request.event} hook skipped: ${failure.line}`)

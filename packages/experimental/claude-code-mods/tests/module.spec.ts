@@ -1,13 +1,11 @@
-import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { LoadedMod } from '../src/chain.ts'
 import { ModsEngine, OpDenied } from '../src/engine.ts'
-import { readModManifest } from '../src/manifest.ts'
-import { createOn, HookRegistry, loadHooksModule } from '../src/module.ts'
+import { createOn, HookRegistry, registerMod } from '../src/module.ts'
 import type { AnyHook, HookRegistration, ModsApi } from '../src/types.ts'
+import { register as registerFirstMod } from './fixtures/first-mod.mjs'
 
-const FIXTURES = resolve(import.meta.dirname, 'fixtures')
-const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, modulePath: '', options: {}, order })
+const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, options: {}, order })
 const noop: AnyHook = (_$, e, next) => next(e)
 
 describe('createOn', () => {
@@ -70,19 +68,19 @@ describe('HookRegistry', () => {
   })
 })
 
-describe('loadHooksModule', () => {
-  it('imports the fixture module and runs register with the resolved options', async () => {
-    const directory = readModManifest('first-mod', FIXTURES)
-    const { mod: loaded, hooks } = await loadHooksModule(directory, { greeting: 'hi' }, 3)
-    expect(loaded).toMatchObject({ name: 'first-mod', version: '0.1.0', root: directory.root, modulePath: directory.modulePath, order: 3, options: { greeting: 'hi' } })
+describe('registerMod', () => {
+  it('runs register with the mod\'s options and collects its hooks in registration order', async () => {
+    const { mod: loaded, hooks } = await registerMod({ name: 'first-mod', version: '0.1.0', root: '/mods/first', options: { greeting: 'hi' }, register: registerFirstMod }, 3)
+    expect(loaded).toEqual({ name: 'first-mod', version: '0.1.0', root: '/mods/first', order: 3, options: { greeting: 'hi' } })
     expect(hooks.map(hook => hook.event)).toEqual(['session.start', 'tool.call', 'command.run', 'ui.render'])
   })
 
-  it('reports a module without register, a register that throws, and an import that fails', async () => {
-    await expect(loadHooksModule(readModManifest('no-register', FIXTURES), {}, 0)).rejects.toThrow(/does not export a register function/)
-    await expect(loadHooksModule(readModManifest('broken-mod', FIXTURES), {}, 0)).rejects.toThrow(/register threw .*"tool.calls" is not an event/)
-    const missing = { ...readModManifest('first-mod', FIXTURES), modulePath: resolve(FIXTURES, 'first-mod/hooks/absent.js') }
-    await expect(loadHooksModule(missing, {}, 0)).rejects.toThrow(/hooks module did not load/)
+  it('reports a register that throws with Claude Code\'s wording, refuses an invalid name, and defaults the root to the cwd', async () => {
+    await expect(registerMod({ name: 'broken-mod', register: (on) => { on('tool.calls', noop) } }, 0))
+      .rejects.toThrow(/broken-mod: hooks module did not load: register threw .*"tool.calls" is not an event/)
+    await expect(registerMod({ name: 'bad name', register: noop as never }, 0)).rejects.toThrow(/a plugin name uses letters, digits, _ and - only/)
+    const { mod: loaded } = await registerMod({ name: 'bare', register: () => {} }, 0)
+    expect(loaded).toEqual({ name: 'bare', version: undefined, root: process.cwd(), options: {}, order: 0 })
   })
 })
 
@@ -105,7 +103,7 @@ describe('ModsEngine', () => {
     await first.state.set({ plugin: 'a', key: 'other' }, 'o')
     expect(await first.state.get(ref)).toEqual({ value: [1, 2] })
     expect(await second.state.get(ref)).toEqual({ value: undefined })
-    e.forgetState('s1')
+    await e.forgetSession('s1')
     expect(await first.state.get(ref)).toEqual({ value: undefined })
     await expect(e.invoke(owner, 'state.get', { plugin: 1, key: 'x' }, { key: 's1' }, new AbortController().signal))
       .rejects.toThrow(/needs \{ plugin, key \} strings/)
@@ -183,6 +181,40 @@ describe('ModsEngine', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('owns timers per session: forgetting a session closes the timers its events started and leaves the others', async () => {
+    vi.useFakeTimers()
+    try {
+      const { engine: e } = engine()
+      const owner = mod('a')
+      e.registry.add(owner, [])
+      const ticks: string[] = []
+      e.api(owner, undefined, { key: 's1' }, new AbortController().signal).clock.every(10, () => { ticks.push('s1') })
+      e.api(owner, undefined, { key: 's2' }, new AbortController().signal).clock.every(10, () => { ticks.push('s2') })
+      e.api(owner, undefined, { key: '' }, new AbortController().signal).clock.every(10, () => { ticks.push('sessionless') })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(ticks).toEqual(['s1', 's2', 'sessionless'])
+      await e.forgetSession('s1')
+      await vi.advanceTimersByTimeAsync(10)
+      expect(ticks).toEqual(['s1', 's2', 'sessionless', 's2', 'sessionless'])
+      await e.unload('a')
+      await vi.advanceTimersByTimeAsync(10)
+      expect(ticks).toHaveLength(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects clock.sleep when the event is cancelled before or while waiting', async () => {
+    const { engine: e } = engine()
+    const owner = mod('a')
+    const aborted = AbortSignal.abort(new Error('turn cancelled'))
+    await expect(e.api(owner, undefined, { key: 's' }, aborted).clock.sleep(1000)).rejects.toThrow('turn cancelled')
+    const controller = new AbortController()
+    const sleeping = e.api(owner, undefined, { key: 's' }, controller.signal).clock.sleep(1000)
+    controller.abort('stop')
+    await expect(sleeping).rejects.toThrow('$.clock.sleep cancelled: stop')
   })
 
   it('raises engine events through selected hooks with the engine origin and describes mods', async () => {

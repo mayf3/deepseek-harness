@@ -1,9 +1,0 @@
-{
-  "name": "first-mod",
-  "version": "0.1.0",
-  "description": "Counts the model's tool calls, shows the count beside the spinner, and adds a /tally command",
-  "author": { "name": "Claude Code docs" },
-  "userConfig": {
-    "greeting": { "type": "string", "default": "Claude has made" }
-  }
-}

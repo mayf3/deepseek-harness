@@ -7,6 +7,8 @@
  * @module
  */
 
+import type { UiElements, UiNode } from './elements.ts'
+
 /** Values a plugin manifest's `userConfig` fields and `register(on, options)` carry. */
 export type PluginOptionValue = string | number | boolean | readonly string[]
 
@@ -72,8 +74,22 @@ export type MatcherValue = string | number | boolean | null | RegExp | readonly 
 /** The optional second argument of `on`: top-level event fields the hook requires. */
 export type HookMatcher = Readonly<Record<string, MatcherValue>>
 
-/** The `on` function `register` receives. */
+/** The engine events this host raises, with their inputs and results, so a typed hook reads `e` without a cast. */
+export interface ModEvents {
+  'session.start': { input: SessionStartInput; result: SessionStartResult }
+  'session.end': { input: SessionEndInput; result: SessionEndResult }
+  'prompt.submit': { input: PromptSubmitInput; result: PromptSubmitResult }
+  'turn.start': { input: TurnStartInput; result: TurnStartResult }
+  'turn.complete': { input: TurnCompleteInput; result: TurnCompleteResult }
+  'tool.call': { input: ToolCallInput; result: ToolCallResult }
+  'command.run': { input: CommandRunInput; result: CommandRunResult }
+  'ui.render': { input: UiRenderInput; result: UiRenderResult }
+}
+
+/** The `on` function `register` receives: typed for the events this host raises, open for every other Claude Code event. */
 export interface ModOn {
+  <K extends keyof ModEvents>(event: K, hook: ModHook<ModEvents[K]['input'], ModEvents[K]['result']>): HookRegistration
+  <K extends keyof ModEvents>(event: K, matcher: HookMatcher, hook: ModHook<ModEvents[K]['input'], ModEvents[K]['result']>): HookRegistration
   (event: string, hook: AnyHook): HookRegistration
   (event: string, matcher: HookMatcher, hook: AnyHook): HookRegistration
 }
@@ -81,12 +97,39 @@ export interface ModOn {
 /** The function a hooks module exports. */
 export type ModRegister = (on: ModOn, options: PluginOptions) => unknown
 
-/** The module namespace a hooks module evaluates to. */
-export interface HooksModule {
-  register: ModRegister
+/**
+ * One mod as a DSH plugin hands it to the bridge: the plugin identity Claude
+ * Code reads from `plugin.json`, the `register` its hooks module exports, and
+ * the `options` that `register` receives (the mod's validated plugin config).
+ */
+export interface ModDefinition {
+  /** Plugin name: letters, digits, `_` and `-`; the `plugin` of `$.state` refs and the `mcp__<plugin>__` tool prefix. */
+  readonly name: string
+  readonly version?: string
+  /** Absolute directory the mod ships in, as `$.plugin.root` reports it; defaults to the process cwd. */
+  readonly root?: string
+  readonly options?: PluginOptions
+  readonly register: ModRegister
 }
 
 // ---- Event inputs and results ----
+
+/** `ui.render`: the host asks the mods to draw one surface; the first hook that returns a tree draws it. */
+export interface UiRenderInput {
+  /** The surface being drawn: the band above the prompt, or a pane a mod opened. */
+  component: 'AbovePrompt' | 'Pane'
+  /** Stable surface instance id: the pane id, or the component name for the band. */
+  surface: string
+  /** The pane id the mod chose in `$.ui.open`, on a `Pane`. */
+  requestId?: string
+  /** Surface-owned props: `bodyColumns`, `hasSurvey`, `isWorking`, `maxRows` on the band. */
+  props: Readonly<Record<string, unknown>>
+  /** Drawable size the host knows. */
+  viewport: { readonly columns: number; readonly rows?: number }
+}
+
+/** `ui.render` result: the tree to draw; `next(e)` yields the surface to the next mod and finally to the host, which draws nothing. */
+export type UiRenderResult = UiNode
 
 /** Where a prompt or command came from. */
 export type PromptOrigin =
@@ -96,8 +139,8 @@ export type PromptOrigin =
 /** `session.start`: once per root agent before its first prompt; every loaded mod's hook sees the same event. */
 export interface SessionStartInput {
   cwd: string
-  /** The drawing surface; this bridge draws nothing, so always `null`. */
-  surface: null
+  /** The drawing surface's name (Claude Code: `terminal`, `desktop`); this host reports `null` when no surface draws mods. */
+  surface: string | null
   /** Whether a human answerer is composed, so `$.ui.ask` can resolve. */
   isInteractive: boolean
 }
@@ -371,7 +414,8 @@ export interface ModsApi {
     close(pane: { id: string }): Promise<void>
     panes(): Promise<never[]>
     ask(question: string, options?: readonly string[] | AskOptions): Promise<string>
-    resolve(e: unknown): never
+    /** The element constructors for the surface a `ui.render` event draws; not an event itself. */
+    resolve(e: UiRenderInput): UiElements
   }
   readonly command: {
     register(command: CommandSpec): Promise<void>

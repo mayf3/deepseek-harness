@@ -346,6 +346,8 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
           ...agent === undefined ? {} : { agent },
           signal: context.signal,
         })
+        // Guidance a tool defers to the next request still reaches the model when a mod made the call.
+        if (agent !== undefined) for (const context of result.additionalContexts ?? []) agent.inject(context)
         return toolCallResultOf(result)
       } finally {
         options.callOrigins.delete(callId)
@@ -365,10 +367,8 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       const { text, asUser } = record(input)
       const body = requireString(text, '$.prompt.submit text')
       const framed = asUser === true ? body : `Message from the "${context.mod.name}" mod:\n${body}`
-      agent.followup(createUserMessage({
-        content: [{ type: 'text', text: framed }],
-        source: { kind: 'claude-code-mods' },
-      }))
+      // Claude Code submits the prompt as the user's own; the framing names the mod unless `asUser` is set.
+      agent.followup(createUserMessage({ content: [{ type: 'text', text: framed }], source: { kind: 'user' } }))
       return { text: framed }
     },
 
