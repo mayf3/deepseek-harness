@@ -452,7 +452,9 @@ export class PluginManager extends TypertRemoteService {
   setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult> {
     return this.change(result => this.configure(async () => {
       await this.selectBundle(name, enabled)
+      if (enabled) await this.refreshPackages()
       result.warnings = await this.reload(enabled ? this.bundleRows(name).map(row => row.id) : [])
+      if (!enabled && this.ownerContext.get('hmr') !== undefined) await this.refreshPackages()
     }), { stage: 'enable', target: name, enabled }, 'bundle')
   }
 
@@ -571,6 +573,7 @@ export class PluginManager extends TypertRemoteService {
       return this.configure(async () => {
         if (options?.enabled !== false) await this.selectBundle(name, true)
         if (Object.hasOwn(before, name)) return 'restart-required'
+        await this.refreshPackages()
         if (options?.enabled !== false) result.warnings = await this.reload()
       })
     }, { stage: 'install', target: spec, enabled: options?.enabled !== false }, 'install')
@@ -637,6 +640,7 @@ export class PluginManager extends TypertRemoteService {
       if (result.packageResult.exitCode !== 0 || result.packageResult.timedOut === true) {
         throw new Error(result.packageResult.output)
       }
+      await this.configure(() => this.refreshPackages())
     }, { stage: 'remove', target: name }, 'remove')
   }
 
@@ -772,6 +776,15 @@ export class PluginManager extends TypertRemoteService {
     const hmr = this.ownerContext.get('hmr')
     const apply = () => { this.abort.signal.throwIfAborted(); return operation() }
     return hmr === undefined ? apply() : hmr.runExclusive(apply)
+  }
+
+  private async refreshPackages(): Promise<void> {
+    if (this.ownerContext.get('hmr') === undefined) {
+      const selected = readProfileManifest('dsh', this.profile.dir).dsh?.profile?.bundles ?? []
+      // Deselected startup bundles still run without HMR and need the existing package table.
+      if (this.profile.startedBundles.some(name => !selected.includes(name))) return
+    }
+    await this.ownerContext.get('pluginPackages')?.refresh()
   }
 
   private async reload(requiredIds: readonly string[] = []): Promise<string[]> {
