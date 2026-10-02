@@ -202,6 +202,34 @@ it('does not replace a plugin whose dependencies have not changed', async () => 
   expect(imported).not.toHaveBeenCalled()
 })
 
+it('keeps a node_modules entry cached when it shares a runtime with a replaced source entry', async () => {
+  const { ctx, module, imports, imported, cache, reload } = await fixture()
+  const original = { apply: vi.fn() }
+  const replacement = { apply: vi.fn() }
+  const source = module('source.mjs', original)
+  const installedNamespace = { apply: original.apply }
+  const installed = module('node_modules/addon/index.mjs', installedNamespace)
+  await ctx.loader.root.update([
+    { id: 'source', name: source.url },
+    { id: 'installed', name: installed.url },
+  ])
+  await ctx.loader.await()
+  expect(ctx.loader.resolve('source').fiber?.runtime).toBe(ctx.loader.resolve('installed').fiber?.runtime)
+  imports.set(source.url, replacement)
+  imported.mockClear()
+  reload.stashed.add(source.url)
+
+  await reload.partialReload()
+
+  expect(imported).toHaveBeenCalledExactlyOnceWith(source.url, expect.any(Function))
+  expect(replacement.apply).toHaveBeenCalledOnce()
+  expect(cache.get(installed.url)).toBe(installed)
+  expect(ctx.loader.resolve('installed').moduleNamespace).toBe(installedNamespace)
+  expect(ctx.loader.resolve('installed').fiber?.runtime?.callback).toBe(original.apply)
+  expect(ctx.loader.resolve('source').fiber?.runtime?.callback).toBe(replacement.apply)
+  expect(reload.accepted).not.toContain(installed.url)
+})
+
 it('replaces a plugin when a linked dependency changes, excluding framework modules', async () => {
   const { ctx, module, imports, reload } = await fixture()
   const dependency = module('dependency.mjs')
@@ -273,14 +301,15 @@ it('leaves disposed child instances to their replacing parent', async () => {
   expect(entry.fiber?._config).toEqual({ value: 'entry' })
 })
 
-it('invalidates a disabled module without activating it', async () => {
-  const { ctx, module, imports, reload } = await fixture()
+it.each(['v1', 'v2'] as const)('invalidates a disabled %s module without activating it', async (version) => {
+  const { ctx, module, imports, resolve, reload } = await fixture(version)
   const job = module('disabled.mjs', { apply() {} })
   const id = await ctx.loader.create({ name: job.url, disabled: true })
   const apply = vi.fn()
   imports.set(job.url, { apply })
   reload.stashed.add(job.url)
   await reload.partialReload()
+  expect(resolve.mock.calls).toEqual(version === 'v1' ? [[job.url, ctx.baseUrl, {}]] : [[job.url]])
   expect(ctx.loader.resolve(id).fiber).toBeUndefined()
   expect(apply).not.toHaveBeenCalled()
 })
@@ -297,6 +326,45 @@ it('does not disturb an unchanged runtime after an earlier replacement fails', a
   reload.stashed.add(second.url)
   await expect(reload.partialReload()).rejects.toThrow('failed before second')
   expect(untouched).toHaveBeenCalledOnce()
+})
+
+it('cleans up a shared replacement runtime once when a later plugin activation fails', async () => {
+  const { ctx, module, imports, cache, reload } = await fixture()
+  const mounted: string[] = []
+  const disposed: string[] = []
+  const original = { apply(_ctx: Context, config: { label: string }) { mounted.push(config.label) } }
+  const replacement = { apply(ctx: Context, config: { label: string }) {
+    ctx.effect(() => () => { disposed.push(config.label) })
+  } }
+  const first = module('shared.mjs', original)
+  const second = module('failing.mjs', { apply() {} })
+  await ctx.loader.root.update([
+    { id: 'one', name: first.url, config: { label: 'one' } },
+    { id: 'two', name: first.url, config: { label: 'two' } },
+    { id: 'failing', name: second.url },
+  ])
+  await ctx.loader.await()
+  imports.set(first.url, replacement)
+  imports.set(second.url, { apply() { throw new Error('later activation failed') } })
+  const remove = vi.spyOn(ctx.registry, 'delete')
+  const event = vi.fn()
+  ctx.on('hmr/reload', event)
+  reload.stashed.add(first.url)
+  reload.stashed.add(second.url)
+
+  await expect(reload.partialReload()).rejects.toThrow('later activation failed')
+
+  expect(disposed.sort()).toEqual(['one', 'two'])
+  expect(mounted).toEqual(['one', 'two', 'one', 'two'])
+  expect(remove.mock.calls.filter(([plugin]) => plugin === replacement.apply)).toHaveLength(1)
+  expect(ctx.registry.get(replacement)).toBeUndefined()
+  const restored = ctx.registry.get(original)
+  expect([...restored!.fibers]).toHaveLength(2)
+  expect(ctx.loader.resolve('one').fiber?.runtime).toBe(restored)
+  expect(ctx.loader.resolve('two').fiber?.runtime).toBe(restored)
+  expect(cache.get(first.url)).toBe(first)
+  expect(cache.get(second.url)).toBe(second)
+  expect(event).not.toHaveBeenCalled()
 })
 
 it('restores the prior plugin when the replacement does not export a plugin', async () => {
