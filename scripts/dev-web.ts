@@ -187,6 +187,7 @@ export async function watchClientPlugins(
   const bundles = await build({
     cwd: root,
     workspace: [...pluginDirs],
+    configLoader: 'native',
     watch: true,
     // Workspace hooks override inline hooks; onSuccess runs after each package's build:done work.
     onSuccess: (options) => {
