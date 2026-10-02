@@ -270,9 +270,11 @@ export class ModsEngine<B> {
       signal,
       report: this.options.report,
     })
-    // Hooks that settle with anything but an object are skipped, so the result is the core's or a hook's object.
-    const answer = result as { value?: unknown; deny?: unknown }
-    if (!('value' in answer) && !('deny' in answer)) throw new Error(`${op}: a hook returned neither { value } nor { deny }`)
+    // Hooks that settle with anything but an object are skipped, so the result is the core's or a hook's object — or null.
+    const answer = result as { value?: unknown; deny?: unknown } | null
+    if (answer === null || (!('value' in answer) && !('deny' in answer))) {
+      throw new Error(`${op}: a hook returned neither { value } nor { deny }`)
+    }
     if (typeof answer.deny === 'string') throw new Error(`${op} refused: ${answer.deny}`)
     return answer.value
   }

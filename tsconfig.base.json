@@ -55,6 +55,8 @@
 
       // Claude Code's test-kit module names, served by the mods bridge's test support so the example mods' tests import them unchanged.
       "@deepseek-ai/dsh-experimental-claude-code-mods/types": ["./packages/experimental/claude-code-mods/src/types.ts"],
+      // The example mods are source-only plugin entries; a source launch resolves the package subpath here.
+      "@deepseek-ai/dsh-experimental-claude-code-mods/examples/*": ["./packages/experimental/claude-code-mods/examples/*"],
       "claude-code/testing": ["./packages/experimental/claude-code-mods/tests/support/claude-code-testing.ts"],
       "claude-code": ["./packages/experimental/claude-code-mods/tests/support/claude-code.ts"],
       "@deepseek-ai/dsh/profile-boot": ["./apps/cli/src/profile-boot.ts"],

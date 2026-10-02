@@ -8,6 +8,8 @@ const { Box, Text, Button } = uiElements()
 function table(render: SurfaceHost['render'], runAction?: SurfaceHost['runAction']) {
   const report = vi.fn()
   const surfaces = new SurfaceTable({
+    columns: 120,
+    rows: 10,
     render,
     runAction: runAction ?? (async (_session, callback) => { await callback() }),
     report,
@@ -45,6 +47,21 @@ describe('SurfaceTable', () => {
     expect((await surfaces.press('s1', 1, 'a9')).generation).toBe(1)
     expect(report).toHaveBeenCalledWith('band press ignored: a0 of generation 0 is not on the current drawing (1)')
     expect(report).toHaveBeenCalledWith('band press ignored: a9 of generation 1 is not on the current drawing (1)')
+  })
+
+  it('ends a watch when its band is forgotten, and renders no further pass for it', async () => {
+    const { surfaces } = table(() => Promise.resolve(Text({ children: 'drawn' })))
+    const seen: SurfaceSnapshot[] = []
+    const controller = new AbortController()
+    const watching = (async () => {
+      for await (const snapshot of surfaces.watch('s1', controller.signal)) seen.push(snapshot)
+    })()
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    surfaces.forget('s1')
+    await watching
+    expect(seen).toHaveLength(1)
+    await surfaces.refresh('s1')
+    expect((await surfaces.current('s1')).generation).toBe(1)
   })
 
   it('redraws when a state slot the drawing read is written, not for other slots, and on invalidation', async () => {
@@ -85,9 +102,12 @@ describe('SurfaceTable', () => {
     const a = surfaces.refresh('s1')
     const b = surfaces.refresh('s1')
     const c = surfaces.refresh('s1')
-    expect(b).toBe(a)
+    // The two refreshes asked for during the first pass share one more pass that settles after it.
+    expect(b).not.toBe(a)
+    expect(c).toBe(b)
     await Promise.all([a, b, c])
-    await vi.waitFor(() => { expect(renders).toBe(2) })
+    expect(renders).toBe(2)
+    expect((await surfaces.current('s1')).tree).toEqual([{ type: 'Text', props: {}, children: ['render 2'] }])
     mode = 'throw'
     await surfaces.refresh('s1')
     expect((await surfaces.current('s1')).tree).toBeNull()
@@ -105,6 +125,8 @@ describe('SurfaceTable', () => {
   it('reports a failing onPress through the host and still redraws', async () => {
     const report = vi.fn()
     const surfaces = new SurfaceTable({
+      columns: 120,
+      rows: 10,
       render: () => Promise.resolve(Button({ label: 'Boom', onPress: () => { throw new Error('nope') } })),
       runAction: async (_session, callback) => {
         try {

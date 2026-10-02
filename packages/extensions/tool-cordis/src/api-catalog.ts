@@ -579,12 +579,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the snapshot after the press.',
       },
       {
-        signature: 'band(sessionId: string): Promise<SurfaceSnapshot>',
-        description: 'The current drawing of one session\'s band, drawing it first when nothing was drawn yet.',
-        parameters: [{ name: 'sessionId', description: 'the session.' }],
-        returns: 'the band\'s snapshot.',
-      },
-      {
         signature: 'async add(definition: ModDefinition): Promise<() => Promise<void>>',
         description: 'Load one mod beneath every mod loaded before it: run its `register`, keep its hooks, and report which of its events this host never raises.',
         parameters: [{ name: 'definition', description: 'the mod as its plugin defined it.' }],
@@ -4732,7 +4726,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoxProps',
-    declaration: 'export interface BoxProps {\n    readonly flexDirection?: \'row\' | \'column\';\n    readonly paddingX?: number;\n    readonly paddingY?: number;\n    readonly padding?: number;\n    readonly gap?: number;\n    readonly border?: boolean | string;\n    readonly borderColor?: string;\n    readonly children?: UiNode;\n}',
+    declaration: 'export interface BoxProps {\n    readonly flexDirection?: \'row\' | \'column\' | undefined;\n    readonly paddingX?: number | undefined;\n    readonly paddingY?: number | undefined;\n    readonly padding?: number | undefined;\n    readonly gap?: number | undefined;\n    readonly border?: boolean | string | undefined;\n    readonly borderColor?: string | undefined;\n    readonly children?: UiNode | undefined;\n}',
   },
   {
     name: 'Branded',
@@ -4756,7 +4750,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ButtonProps',
-    declaration: 'export interface ButtonProps {\n    readonly label: string;\n    readonly hotkey?: string;\n    readonly disabled?: boolean;\n    readonly onPress?: () => unknown;\n}',
+    declaration: 'export interface ButtonProps {\n    readonly label: string;\n    readonly hotkey?: string | undefined;\n    readonly disabled?: boolean | undefined;\n    readonly onPress?: (() => unknown) | undefined;\n}',
   },
   {
     name: 'ChangeResult',
@@ -7732,7 +7726,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TextProps',
-    declaration: 'export interface TextProps {\n    readonly color?: string;\n    readonly bold?: boolean;\n    readonly dimColor?: boolean;\n    readonly italic?: boolean;\n    readonly underline?: boolean;\n    readonly children?: UiNode;\n}',
+    declaration: 'export interface TextProps {\n    readonly color?: string | undefined;\n    readonly bold?: boolean | undefined;\n    readonly dimColor?: boolean | undefined;\n    readonly italic?: boolean | undefined;\n    readonly underline?: boolean | undefined;\n    readonly children?: UiNode | undefined;\n}',
   },
   {
     name: 'TimedUserQuestionResult',

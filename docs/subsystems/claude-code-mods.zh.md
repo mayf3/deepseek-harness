@@ -13,7 +13,7 @@
 | 层级（`user`、`project`、`managed`）与 `next.to(e, tier)` | 每个模组都以 `user` 加载；测试中的 `tier()` 被接受并忽略；`next.to` 拒绝 | 托管设置不是 DSH 的概念 |
 | 编辑时热重载钩子模块；`claude plugin validate`、`claude plugin test`、由 `types/index.d.ts` 生成类型 | 这些命令都没有；重新挂载会在同一已求值模块上重新运行 `register`，模块级变量保留其值 | 仅按需跟进；测试工具包的 `createModTestKit` 在 Vitest 中替代 `claude plugin test` |
 | 钩子模块可以是 TypeScript | `.ts` 钩子模块只在启动器转译时可加载（源码启动可以；构建后的安装不行） | DSH 交付的是纯 Node |
-| 模组在进程内运行，`$` 是其访问宿主的唯一途径 | 钩子模块以 Node 全局对象在进程内运行，没有访问规则 | 不对模组施加沙箱 |
+| 模组在进程内运行，`$` 是其访问宿主的唯一途径 | 钩子模块以 Node 全局对象在进程内运行，没有访问规则，并拥有进程的全部权限：`$.env` 读写 harness 环境变量，`$.http.fetch` 可访问任意 URL，`$.fs` 与 `$.tool.call` 以会话的身份行动 | 不对模组施加沙箱；只挂载你愿意作为插件运行的模组 |
 | `import type { … } from 'claude-code'`、`declare module 'claude-code' { interface PluginState }` | `claude-code` 模块名只在本仓库的测试设置中解析到桥接的类型；仓库外的模组导入 `@deepseek-ai/dsh-experimental-claude-code-mods` | 类型名是桥接自己的 |
 | `hooks.json` 中的设置钩子与模组钩子并行运行 | 不运行；为它们挂载 `@deepseek-ai/dsh-hooks-claude-code` | 不同的桥接 |
 
@@ -23,9 +23,9 @@
 |---|---|---|
 | `session.start` | 每会话触发一次，在首个提示词之前 | 由根智能体的 `agent/created` 触发，在其首轮之前等待完成；不为子智能体触发 |
 | `session.end` | 每会话触发一次 | 由根智能体的 `agent/disposed` 触发；钩子结束前 `$.state` 可读 |
-| `prompt.submit` | `e.text` 是输入的提示词；`context` 条目各成一块跟在输入的提示词之后 | 相同；`e.text` 拼接已认领批次中人类自己（`user` 来源）消息的文本块，因此其他插件注入的提示词不会被提供改写 |
+| `prompt.submit` | `e.text` 是输入的提示词；`context` 条目各成一块跟在输入的提示词之后；插件提交的提示词带 `origin: { kind: 'plugin', name }` | 相同；`e.text` 拼接已认领批次中人类自己（`user` 来源）消息的文本块，仅含注入上下文的批次不触发，`$.prompt.submit` 排入的提示词以提交的模组为来源 |
 | `turn.start`、`turn.complete` | 每轮触发；子智能体的轮带 `agentId` | 相同；`turn.complete` 的 `{ text }` 到达宿主日志，而非答案下方的一行；`durationMs` 从 `turn/start` 起算 |
-| `tool.call` | 在 Claude Code 的权限检查之前运行；`next({ ...e, command })` 改写工具实际运行的参数 | 包裹 `tools/execute` 运行，在 harness 权限决定之后；改写参数的钩子会被跳过，并在报告中指向[工具前输入改写提案](../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)，因为调用参数已写入日志。`{ deny }`、`{ result }`、观察以及在 `next` 之后改写结果或 `isError` 均按描述工作 |
+| `tool.call` | 在 Claude Code 的权限检查之前运行；`next({ ...e, command })` 改写工具实际运行的参数，`next({ ...e, tool })` 把调用改派给另一工具 | 包裹 `tools/execute` 运行，在 harness 权限决定之后；改写参数或改名工具的钩子（或 `.catch` 处理器）会被跳过并报告——参数情形指向[工具前输入改写提案](../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)——因为已写入日志的调用按原样运行。`{ deny }`、`{ result }`、观察以及在 `next` 之后改写结果或 `isError` 均按描述工作 |
 | `command.run` | 为模组注册的命令运行 | 相同 |
 | `ui.render` | 为每个渲染位点触发（`AbovePrompt`、`Pane`、`ToolUse`、`AssistantMessage`、`Spinner`……） | 只为 `AbovePrompt` 触发，每次会话横幅重绘一次；`Pane` 钩子只经测试工具包的 `$.ui.mount({ component: 'Pane' })` 运行 |
 | `tool.check`、`tool.describe`、`tool.list`、`tool.register` | 塑造工具列表与权限 | 不触发；`$.tool.register` 与 `$.tool.list` 作为 `$` 调用服务 |
@@ -52,7 +52,7 @@
 | `$.ui` | `resolve`、`invalidate`、`open`、`close`、`panes`、`focus`、`log`、`toast`、`status`、`notice`、`ask`、`blit`、`copy`、`press`、`input`、`select` | `resolve`、`invalidate`、`open`、`close`、`panes`、`log`、`toast`、`status`、`ask`；`open` 带原因回答 `{ isPlaced: false }` 并重绘横幅；`log`、`toast`、`status` 到达宿主日志；其余拒绝 |
 | `$.command` | `register`、`run`、`list` | 相同；`run` 一个无人回答的命令时拒绝，并点名注册它的模组 |
 | `$.tool` | `register`、`call`、`list` | 相同；注册的工具为 `mcp__<plugin>__<tool>`；`call` 运行 harness 流水线，并把工具推迟的上下文注入会话 |
-| `$.prompt` | `submit`、`compose` | `submit`；消息为 `user` 来源，除非 `asUser` 否则套上 `Message from the "<plugin>" mod:` 框架 |
+| `$.prompt` | `submit`、`compose` | `submit`；消息为 `user` 来源，除非 `asUser` 否则套上 `Message from the "<plugin>" mod:` 框架，它触发的 `prompt.submit` 以该模组为来源 |
 | `$.session` | `id`、`cwd`、`root`、`repo`、`model`、`turns`、`messages`、`usage`、`version`、`send`、`append`、`authorize`、`compact`、`surfaces` | `id`、`cwd`、`root`、`model`、`turns`、`messages`、`usage`、`version`；`cwd` 与 `root` 都报告会话工作区；在 token 计量器得知路由窗口前 `usage.context.window` 为 `0` 且无 `percent`；`rateLimits` 为空；`version` 指明本桥接 |
 | `$.state` | 按会话，热重载后保留 | 按会话，内存中；`ui.render` 期间的读取让横幅订阅该槽位 |
 | `$.store` | 按插件，持久 | 相同，在 `claude_code_mods` 存储域中，每插件 4 MiB |
@@ -71,8 +71,8 @@
 | `Box` 属性：`flexDirection`、`padding*`、`gap`、`border*`、`width`、`height`、`overflow`、`scroll` | `flexDirection`、`padding`、`paddingX`、`paddingY`、`gap`、`border`、`borderColor`；其余会序列化，Web 横幅忽略 |
 | `Text` 属性：`color`、`bold`、`dimColor`、`italic`、`underline`、`wrap`、`truncate` | `color`（终端调色板名）、`bold`、`dimColor`、`italic`、`underline`；Web 横幅会换行 |
 | `Button` 属性：`label`、`hotkey`、`disabled`、`onPress`；单个数字键触发热键 | `label`、`hotkey`（显示为提示）、`disabled`、`onPress`（点击） |
-| 横幅是一个实例；`hasSurvey`、`isWorking`、`maxRows`、`bodyColumns` 反映终端 | 每会话一个实例，按模组加载顺序咨询；`bodyColumns` 与 `viewport.columns` 为 `120`，`hasSurvey` 为 `false`，`isWorking` 为 `false`，`maxRows` 为 `10`；Web 横幅换行而非滚动 |
-| 横幅随宿主帧重绘，并在渲染读取过的 `$.state` 值变化时重绘 | 在上次绘制读取过的 `$.state` 值被写入时、在 `$.ui.open`、`$.ui.close`、`$.ui.invalidate` 之后、在每条 `tool.call` 链与 `turn.complete` 结束后以及按下之后重绘；在其他时刻改变模块级状态的模组在下一次触发时绘出 |
+| 横幅是一个实例；`hasSurvey`、`isWorking`、`maxRows`、`bodyColumns` 反映终端 | 每会话一个实例，按模组加载顺序咨询；`bodyColumns` 与 `viewport.columns` 取桥接的 `bandColumns`（默认 `120`），`maxRows` 取 `bandRows`（默认 `10`），`hasSurvey` 与 `isWorking` 为 `false`；Web 横幅换行而非滚动 |
+| 横幅随宿主帧重绘，并在渲染读取过的 `$.state` 值变化时重绘 | 在 `session.start` 之后、上次绘制读取过的 `$.state` 值被写入时、在 `$.ui.open`、`$.ui.close`、`$.ui.invalidate` 之后、在每条 `tool.call` 链与 `turn.complete` 结束后以及按下之后重绘；在其他时刻改变模块级状态的模组在下一次触发时绘出。按下运行 `onPress` 时没有时间限制 |
 | 带 `focus`、`scroll`、停靠在对话旁的 `Pane` | 没有面板：`$.ui.open` 回答 `{ isPlaced: false }`，模组回退到横幅；测试工具包直接挂载 `Pane` 钩子 |
 | 热键、`TextInput`、焦点、滚动、`ui.press`、`ui.input`、`ui.select` | 不服务；后续工作 |
 
@@ -129,13 +129,6 @@ The bridge service: loaded mods, their hooks, and the harness listeners that rai
  * @returns the snapshot after the press.
  */
 @Remote pressBand(agent: Agent, generation: number, actionId: string): Promise<SurfaceSnapshot>
-
-/**
- * The current drawing of one session's band, drawing it first when nothing was drawn yet.
- * @param sessionId - the session.
- * @returns the band's snapshot.
- */
-band(sessionId: string): Promise<SurfaceSnapshot>
 
 /**
  * Load one mod beneath every mod loaded before it: run its `register`,

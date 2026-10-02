@@ -341,6 +341,27 @@ describe('dispatch: .catch handlers', () => {
     viaNext.catchHandler = (_$, e, next) => next(e)
     expect(await dispatch(request({ input: {}, core: () => ({ ok: 1 }), hooks: [viaNext], report }))).toEqual({ ok: 1 })
 
+    // A handler's next makes the same rewrite check as the hook's: a rewrite is refused and the handler is skipped.
+    const rewritingHandler = hook(a, 'tool.call', () => { throw new Error('boom') })
+    rewritingHandler.catchHandler = (_$, e, next) => next({ ...(e as object), command: 'changed' })
+    const core = vi.fn((e: unknown) => ({ ok: JSON.stringify(e) }))
+    expect(await dispatch(request<{ command: string }, { ok: string }>({
+      input: { command: 'original' },
+      core,
+      hooks: [rewritingHandler],
+      report,
+      validateNext: (e) => {
+        if (e.command !== 'original') throw new RewriteRefusedError('rewrites are not served')
+      },
+    }))).toEqual({ ok: '{"command":"original"}' })
+    expect(report).toHaveBeenCalledWith('a: tool.call .catch handler skipped: rewrites are not served')
+    const bareHandler = hook(a, 'tool.call', () => { throw new Error('boom') })
+    bareHandler.catchHandler = (_$, e, next) => next({ ...(e as object), command: 'other' })
+    await dispatch(request<{ command: string }, { ok: string }>({
+      input: { command: 'original' }, core, hooks: [bareHandler], report, validateNext: () => { throw 'refused as text' },
+    }))
+    expect(report).toHaveBeenCalledWith('a: tool.call .catch handler skipped: threw Error: refused as text')
+
     // A handler that ran beneath and then returned nothing: what it ran stands, nothing runs again.
     const ranBeneath = hook(a, 'tool.call', () => { throw new Error('boom') })
     ranBeneath.catchHandler = async (_$, e, next) => {

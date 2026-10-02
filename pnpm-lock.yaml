@@ -253,12 +253,6 @@ importers:
       '@deepseek-ai/dsh-experimental-auto-review':
         specifier: workspace:*
         version: link:../../packages/experimental/auto-review
-      '@deepseek-ai/dsh-experimental-claude-code-mods':
-        specifier: workspace:*
-        version: link:../../packages/experimental/claude-code-mods
-      '@deepseek-ai/dsh-experimental-client-ui-claude-code-mods':
-        specifier: workspace:*
-        version: link:../../packages/experimental/client-ui-claude-code-mods
       '@deepseek-ai/dsh-experimental-inspector-profile':
         specifier: workspace:*
         version: link:../../packages/experimental/inspector-profile
@@ -7809,9 +7803,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-api-gateway':
-        specifier: workspace:*
-        version: link:../../api/gateway
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:*
         version: link:../../api/remotes

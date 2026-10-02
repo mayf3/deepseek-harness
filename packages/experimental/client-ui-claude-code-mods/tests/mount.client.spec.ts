@@ -154,8 +154,17 @@ it('logs a stream that fails while watched, but not one ended by disposal', asyn
   f.injected('s1')
   const handle = f.streams.get('s1')
   if (handle === undefined) throw new Error('no stream')
+  const stale = f.injected('s1').hooks.band
   handle.fail(new Error('connection lost'))
   await vi.waitFor(() => { expect(f.warn).toHaveBeenCalledWith('claude-code-mods band: watch of s1 ended: connection lost') })
+  // The ended watch is dropped: the next subscriber opens a fresh stream instead of reading the stale store.
+  await vi.waitFor(() => { expect(f.injected('s1').hooks.band).not.toBe(stale) })
+  expect(f.watchBand).toHaveBeenCalledTimes(2)
+  // A stream the Host closes without failing is dropped the same way, without a report.
+  f.streams.get('s1')?.close()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  f.injected('s1')
+  expect(f.watchBand).toHaveBeenCalledTimes(3)
   f.injected('s2')
   f.streams.get('s2')?.fail('text failure')
   await vi.waitFor(() => { expect(f.warn).toHaveBeenCalledWith('claude-code-mods band: watch of s2 ended: text failure') })

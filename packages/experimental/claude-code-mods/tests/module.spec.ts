@@ -107,6 +107,12 @@ describe('ModsEngine', () => {
     expect(await first.state.get(ref)).toEqual({ value: undefined })
     await expect(e.invoke(owner, 'state.get', { plugin: 1, key: 'x' }, { key: 's1' }, new AbortController().signal))
       .rejects.toThrow(/needs \{ plugin, key \} strings/)
+    // `$` is read-only, and a member outside the served table rejects by name.
+    expect(() => { (first as { env: unknown }).env = {} }).toThrow(TypeError)
+    expect(() => { Object.defineProperty(first, 'extra', { value: 1 }) }).toThrow(TypeError)
+    expect(() => { delete (first as { env?: unknown }).env }).toThrow(TypeError)
+    const reaching = first as ModsApi & { model?: { complete: () => Promise<unknown> } }
+    await expect(reaching.model?.complete()).rejects.toThrow('a: no implementation for model.complete')
     const before = Date.now()
     expect(await first.clock.now()).toBeGreaterThanOrEqual(before)
     await first.clock.sleep(1)
@@ -127,6 +133,7 @@ describe('ModsEngine', () => {
       const input = event as { path: string }
       if (input.path === '/secret') return { deny: 'policy: no secrets' }
       if (input.path === '/junk') return { nonsense: true }
+      if (input.path === '/null') return null
       return next({ ...input, path: input.path + '.redirected' })
     })
     e.registry.add(policy, onPolicy.hooks)
@@ -137,6 +144,7 @@ describe('ModsEngine', () => {
     expect(calls).toEqual(['{"path":"/notes.redirected","as":"text"}'])
     await expect($.fs.read('/secret')).rejects.toThrow('fs.read refused: policy: no secrets')
     await expect($.fs.read('/junk')).rejects.toThrow(/returned neither \{ value \} nor \{ deny \}/)
+    await expect($.fs.read('/null')).rejects.toThrow(/returned neither \{ value \} nor \{ deny \}/)
     await expect($.fs.write('/x', 'y')).rejects.toThrow('fs.write refused: read-only deployment')
     const $policy = e.api(policy, undefined, { key: 's' }, signal)
     expect(await $policy.fs.read('/secret')).toBe('contents')

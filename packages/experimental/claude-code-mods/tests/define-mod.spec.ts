@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import ClaudeCodeMods, { defineMod } from '../src/index.ts'
 
@@ -39,6 +39,23 @@ describe('defineMod', () => {
     ])
     await fiber.dispose()
     expect(ctx.claudeCodeMods.mods).toEqual([])
+  })
+
+  it('removes a mod whose plugin was disposed while register was still running', async () => {
+    let release: (() => void) | undefined
+    const slow = defineMod({
+      name: 'slow',
+      register: () => new Promise<void>((resolve) => { release = resolve }),
+    })
+    const ctx = new Context()
+    fibers.push(ctx.fiber)
+    await ctx.plugin(ClaudeCodeMods, {})
+    const fiber = ctx.plugin(slow, {})
+    await vi.waitFor(() => { expect(release).toBeDefined() })
+    const disposing = fiber.dispose()
+    release?.()
+    await disposing
+    await vi.waitFor(() => { expect(ctx.claudeCodeMods.mods).toEqual([]) })
   })
 
   it('leaves version and root to the host when the spec names none, and fails the mount when register throws', async () => {

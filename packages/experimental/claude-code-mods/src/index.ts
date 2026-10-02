@@ -43,7 +43,6 @@ declare module '@deepseek-ai/cordis' {
 
 export type * from './types.ts'
 export type { BoxProps, ButtonProps, TextProps, UiElement, UiElements, UiNode } from './elements.ts'
-export { BAND_COLUMNS } from './surfaces.ts'
 export { defineMod, type ModConfig, type ModPlugin, type ModSpec } from './define-mod.ts'
 export { DEFAULT_TOOL_ALIASES } from './tool-names.ts'
 export { KNOWN_EVENTS } from './matcher.ts'
@@ -59,6 +58,10 @@ export interface Config {
   processTimeoutMs?: number
   /** Claude Code tool name → harness tool name entries added to the built-in alias table. */
   toolAliases?: Record<string, string>
+  /** Columns the band above the prompt reports to `ui.render` as `bodyColumns` and `viewport.columns`. */
+  bandColumns?: number
+  /** Rows the band reports as `maxRows`. */
+  bandRows?: number
 }
 
 /** Engine events this host raises; a hook on any other known event registers and is reported as unserved. */
@@ -162,8 +165,13 @@ class DetachedRuns {
     void settled.finally(() => { this.pending.delete(settled) })
   }
 
-  async drain(): Promise<void> {
+  /** Abort every run's signal; `drain` then waits for them to settle. */
+  cancel(): void {
     this.controller.abort(new Error('claude-code-mods disposed'))
+  }
+
+  async drain(): Promise<void> {
+    this.cancel()
     await Promise.allSettled([...this.pending])
   }
 }
@@ -195,6 +203,8 @@ export class ClaudeCodeMods extends TypertRemoteService {
     catchTimeoutMs: z.number().default(1_000),
     processTimeoutMs: z.number().default(30_000),
     toolAliases: z.dict(z.string()),
+    bandColumns: z.number().default(120),
+    bandRows: z.number().default(10),
   })
 
   // Every harness service is read through `ctx.get` when a mod's call needs it,
@@ -207,12 +217,13 @@ export class ClaudeCodeMods extends TypertRemoteService {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'claudeCodeMods', { namespace: 'claudeCodeMods' })
-    const hookTimeoutMs = config.hookTimeoutMs ?? 10_000
-    const catchTimeoutMs = config.catchTimeoutMs ?? 1_000
-    const processTimeoutMs = config.processTimeoutMs ?? 30_000
+    // The schema supplies every default; a direct construction passes the fields it needs.
+    const { hookTimeoutMs = 10_000, catchTimeoutMs = 1_000, processTimeoutMs = 30_000, bandColumns = 120, bandRows = 10 } = config
     assertPositive('hookTimeoutMs', hookTimeoutMs)
     assertPositive('catchTimeoutMs', catchTimeoutMs)
     assertPositive('processTimeoutMs', processTimeoutMs)
+    assertPositive('bandColumns', bandColumns)
+    assertPositive('bandRows', bandRows)
     const aliases = createToolNameAliases(config.toolAliases)
     const callOrigins = new Map<string, LoadedMod>()
     const modCommands = new Set<string>()
@@ -221,8 +232,11 @@ export class ClaudeCodeMods extends TypertRemoteService {
     const agentOf = (sessionId: string): Agent | undefined => ctx.get('agents')?.get(SessionId(sessionId))
     const detached = new DetachedRuns(report)
     const surfaces = new SurfaceTable({
+      columns: bandColumns,
+      rows: bandRows,
       render: (sessionId, input) => {
         const agent = agentOf(sessionId)
+        /* v8 ignore next -- agent/disposed forgets the band before the registry drops the agent; a redraw racing it draws nothing */
         if (agent === undefined) return Promise.resolve(null)
         return engine.raise<UiRenderInput, UiRenderResult>('ui.render', input, () => null, {
           binding: { agent }, signal: detached.controller.signal,
@@ -244,8 +258,10 @@ export class ClaudeCodeMods extends TypertRemoteService {
         if (agentOf(sessionId) !== undefined) void surfaces.refresh(sessionId)
       }, 0).unref()
     }
+    const modSubmissions = new Map<string, string>()
     const ops = createHostOps({
       ctx, aliases, processTimeoutMs, registrations: this.registrations, callOrigins, modCommands, modTools, redraw,
+      submitted: (messageId, mod) => { modSubmissions.set(messageId, mod) },
     })
     const engine: ModsEngine<AgentBinding> = new ModsEngine<AgentBinding>({
       ops: op => ops[op],
@@ -259,6 +275,8 @@ export class ClaudeCodeMods extends TypertRemoteService {
     this.engine = engine
     const registrations = this.registrations
     ctx.effect(() => async () => {
+      // Cancel first: a timer callback waiting inside a `$` call ends on this signal, and engine.dispose awaits it.
+      detached.cancel()
       surfaces.dispose()
       for (const owned of registrations.values()) for (const dispose of owned) dispose()
       registrations.clear()
@@ -328,12 +346,14 @@ export class ClaudeCodeMods extends TypertRemoteService {
       const prompt = promptMessages(messages)
       const text = textOf(prompt.flatMap(message => message.content))
       let submitted: PromptSubmitResult = { text }
-      if (messages.length > 0) {
-        const sourceKind = messages[0]?.source.kind
+      // A batch of injected context alone is not a prompt: Claude Code raises prompt.submit for typed prompts.
+      if (prompt.length > 0) {
+        const submitter = prompt.map(message => modSubmissions.get(message.id)).find(name => name !== undefined)
+        for (const message of prompt) modSubmissions.delete(message.id)
         const input: PromptSubmitInput = {
           text,
           wait: false,
-          origin: sourceKind === undefined || sourceKind === 'user' ? { kind: 'composer' } : { kind: 'plugin', name: sourceKind },
+          origin: submitter === undefined ? { kind: 'composer' } : { kind: 'plugin', name: submitter },
         }
         submitted = acceptPromptSubmit(await engine.raise<PromptSubmitInput, PromptSubmitResult>(
           'prompt.submit', input, e => ({ text: e.text, ...e.context === undefined ? {} : { context: e.context } }), { binding, signal },
@@ -378,7 +398,10 @@ export class ClaudeCodeMods extends TypertRemoteService {
         signal: exec.signal,
         // The call is logged before policy runs, so the arguments a hook passes down must be the logged ones.
         validateNext: (e) => {
-          const { tool: _tool, tool_use_id: _id, agentId: _agentId, ...rest } = e
+          const { tool, tool_use_id: _id, agentId: _agentId, ...rest } = e
+          if (tool !== modName) {
+            throw new RewriteRefusedError(`rerouted the call from ${modName} to ${tool}; the logged call runs the tool it named`)
+          }
           if (JSON.stringify(rest) !== logged) {
             throw new RewriteRefusedError(`rewrote the arguments of ${modName}; argument rewrites need the pre-tool input rewrite mechanism (${REWRITE_NOTE})`)
           }
@@ -447,8 +470,9 @@ export class ClaudeCodeMods extends TypertRemoteService {
         isAborted: reason.kind === 'aborted',
         reason: reason.kind === 'aborted' ? 'aborted' : reason.kind === 'error' ? 'error' : 'answer',
         ...agentIdOf(agent),
-        ...folded?.usage === undefined ? {} : { usage: folded.usage },
+        ...folded?.usage === undefined ? {} : { usage: { ...folded.usage } },
       }
+      if (folded !== undefined) turns.delete(session.id)
       detached.track('turn.complete', engine.raise<TurnCompleteInput, TurnCompleteResult>(
         'turn.complete', input, () => ({ text: '' }), { binding: { agent }, signal: detached.controller.signal },
       ).then((result) => {
@@ -482,14 +506,6 @@ export class ClaudeCodeMods extends TypertRemoteService {
     return this.surfaces.press(agent.session.id, generation, actionId)
   }
 
-  /**
-   * The current drawing of one session's band, drawing it first when nothing was drawn yet.
-   * @param sessionId - the session.
-   * @returns the band's snapshot.
-   */
-  band(sessionId: string): Promise<SurfaceSnapshot> {
-    return this.surfaces.current(sessionId)
-  }
 
   /**
    * Load one mod beneath every mod loaded before it: run its `register`,

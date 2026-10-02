@@ -60,7 +60,8 @@ export function createModsApi(binding: ApiBinding): ModsApi {
     })
   }
 
-  return Object.freeze({
+  // Not frozen: the proxy below returns a wrapped namespace, which a frozen target's invariant would forbid.
+  const served: ModsApi = {
     plugin: Object.freeze({ name: mod.name, root: mod.root }),
     ui: Object.freeze({
       log(text: string, options?: UiLogOptions): void {
@@ -169,5 +170,50 @@ export function createModsApi(binding: ApiBinding): ModsApi {
       get: (name: string): Promise<string | undefined> => call('env.get', { name }),
       set: (name: string, value: string | undefined): Promise<void> => call('env.set', { name, ...value === undefined ? {} : { value } }),
     }),
+  }
+  return withUnservedMembers(served, mod.name)
+}
+
+/** The method namespaces Claude Code's `$` has; `plugin` holds facts, not methods, and stays as served. */
+const METHOD_NAMESPACES: ReadonlySet<string> = new Set([
+  'ui', 'command', 'tool', 'prompt', 'session', 'state', 'store', 'clock', 'fs', 'process', 'http', 'env',
+  'model', 'agent', 'config', 'settings', 'mcp', 'audio', 'telemetry', 'turn',
+])
+
+/**
+ * Give `$` Claude Code's full namespace set: a served member is itself; any
+ * other member of a method namespace is a function whose call rejects with
+ * `no implementation for <namespace>.<member>`, so a mod that reaches past
+ * this host fails with the gap named, not with a TypeError.
+ * @param served - the frozen object of served namespaces.
+ * @param modName - the mod the `$` belongs to, for the rejection text.
+ * @returns the `$` a hook receives.
+ */
+function withUnservedMembers(served: ModsApi, modName: string): ModsApi {
+  const namespaces = new Map<string, object>()
+  const namespaceOf = (name: string, base: object): object => {
+    let wrapped = namespaces.get(name)
+    if (wrapped === undefined) {
+      wrapped = new Proxy(base, {
+        get(target, member, receiver) {
+          const own: unknown = Reflect.get(target, member, receiver)
+          if (own !== undefined || typeof member !== 'string' || member === 'then') return own
+          return () => Promise.reject(new Error(`${modName}: no implementation for ${name}.${member}`))
+        },
+      })
+      namespaces.set(name, wrapped)
+    }
+    return wrapped
+  }
+  return new Proxy(served, {
+    get(target, namespace, receiver) {
+      const own: unknown = Reflect.get(target, namespace, receiver)
+      if (typeof namespace !== 'string' || !METHOD_NAMESPACES.has(namespace)) return own
+      return namespaceOf(namespace, typeof own === 'object' && own !== null ? own : Object.freeze({}))
+    },
+    // `$` is read-only, as the frozen object was.
+    set: () => false,
+    defineProperty: () => false,
+    deleteProperty: () => false,
   })
 }

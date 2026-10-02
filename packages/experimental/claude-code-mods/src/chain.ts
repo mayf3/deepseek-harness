@@ -306,6 +306,14 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
       (e: E): Promise<R> => {
         if (state.beneath !== undefined) return state.beneath
         if (handlerAbandoned) return Promise.resolve(undefined as R)
+        if (request.validateNext !== undefined) {
+          // The same check the hook's own next makes: a handler cannot pass a rewrite beneath either.
+          try {
+            request.validateNext(e, hook)
+          } catch (error: unknown) {
+            return Promise.reject(error instanceof Error ? error : new Error(messageOf(error)))
+          }
+        }
         clock.pause()
         state.beneath = runFrom(index + 1, e).finally(() => { clock.resume() })
         return state.beneath

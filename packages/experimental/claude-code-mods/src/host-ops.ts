@@ -99,6 +99,8 @@ export interface HostOpsOptions {
   readonly modTools: Set<string>
   /** Redraw a session's band after a `$.ui` call that changes what it shows; absent when no surface is drawn. */
   readonly redraw?: (sessionId: string) => void
+  /** Note a prompt a mod submitted, so the `prompt.submit` it raises carries the mod as its origin. */
+  readonly submitted?: (messageId: string, mod: string) => void
 }
 
 function requireAgent(context: OpContext<AgentBinding>, op: string): Agent {
@@ -379,7 +381,9 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       const body = requireString(text, '$.prompt.submit text')
       const framed = asUser === true ? body : `Message from the "${context.mod.name}" mod:\n${body}`
       // Claude Code submits the prompt as the user's own; the framing names the mod unless `asUser` is set.
-      agent.followup(createUserMessage({ content: [{ type: 'text', text: framed }], source: { kind: 'user' } }))
+      const message = createUserMessage({ content: [{ type: 'text', text: framed }], source: { kind: 'user' } })
+      options.submitted?.(message.id, context.mod.name)
+      agent.followup(message)
       return { text: framed }
     },
 
@@ -525,9 +529,8 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       response.headers.forEach((value, name) => {
         headers[name] = value
       })
-      const body = await response.arrayBuffer()
-      if (body.byteLength > HTTP_MAX_BYTES) throw new Error(`$.http.fetch: the response body is larger than ${HTTP_MAX_BYTES} bytes`)
-      return { status: response.status, ok: response.ok, headers, text: new TextDecoder().decode(body) } satisfies HttpResponse
+      const body = await readBounded(response, HTTP_MAX_BYTES)
+      return { status: response.status, ok: response.ok, headers, text: body } satisfies HttpResponse
     },
 
     // ---- environment of this process ----
@@ -542,3 +545,22 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
 }
 
 export type { ModsEngine }
+
+/** Read a response body up to the bound, cancelling the stream at the first byte past it. */
+async function readBounded(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (reader === undefined) return ''
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new Error(`$.http.fetch: the response body is larger than ${maxBytes} bytes`)
+    }
+    chunks.push(value)
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks))
+}

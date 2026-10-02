@@ -259,19 +259,40 @@ describe('ticket-mod: a mod-registered tool, prompt context, and a turn.complete
 describe('prompt.submit: rewrite and drop', () => {
   it('rewrites the prompt text the model sees and drops a prompt with a reason', async () => {
     const mod = writeMod('prompt-mod', `
+      const origins = []
+      let submitted = false
       export function register(on) {
+        on('session.start', async ($, e, next) => { await $.command.register({ name: 'origins', description: 'origins seen' }); return next(e) })
+        on('command.run', { command: 'origins' }, async ($) => {
+          if (!submitted) {
+            submitted = true
+            await $.prompt.submit({ text: 'from the mod' })
+          }
+          return { text: JSON.stringify(origins) }
+        })
         on('prompt.submit', async ($, e, next) => {
+          origins.push(e.origin)
           if (e.text.includes('secret')) return { drop: 'secrets stay out' }
           if (e.text.includes('junk')) return { text: 7, context: ['kept context', 5] }
+          if (e.text.includes('reach')) {
+            // Members this host does not serve reject by name instead of being undefined.
+            const gaps = []
+            await $.model.complete({ messages: [] }).catch(error => gaps.push(error.message))
+            await $.fs.ancestors('x').catch(error => gaps.push(error.message))
+            await $.ui.notice('x').catch(error => gaps.push(error.message))
+            return next({ ...e, context: gaps })
+          }
           return next({ ...e, text: e.text.trim().toUpperCase() })
         })
       }
     `)
-    const adapter = new MockAdapter([textResponse('ok'), textResponse('junk ok')])
+    const adapter = new MockAdapter([textResponse('ok'), textResponse('junk ok'), textResponse('reached'), textResponse('mod prompt ok')])
     const h = await harness([mod], adapter)
     const agent = await h.agent()
+    // Injected context alone is not a prompt: no prompt.submit is raised for it.
+    agent.inject(createUserMessage({ content: [{ type: 'text', text: 'injected only' }], source: { kind: 'user-question-reply', callId: ToolCallIdOf('q0'), outcome: 'answered' } }))
     await h.turn(agent, '  hello there  ')
-    const entered = events(agent).find(e => e.type === 'user/message')
+    const entered = events(agent).find(e => e.type === 'user/message' && e.data.source.kind === 'user')
     expect(entered?.type === 'user/message' && entered.data.content).toEqual([{ type: 'text', text: 'HELLO THERE' }])
     expect(JSON.stringify(adapter.requests[0]?.messages)).toContain('HELLO THERE')
 
@@ -285,6 +306,24 @@ describe('prompt.submit: rewrite and drop', () => {
     await h.turn(agent, 'some junk')
     const last = adapter.requests[1]?.messages.filter(message => message.role === 'user') ?? []
     expect(last.at(-1)?.content).toEqual([{ type: 'text', text: 'some junk' }, { type: 'text', text: 'kept context' }])
+
+    await h.turn(agent, 'reach past the host')
+    const reached = adapter.requests[2]?.messages.filter(message => message.role === 'user') ?? []
+    expect(reached.at(-1)?.content).toEqual([
+      { type: 'text', text: 'reach past the host' },
+      { type: 'text', text: 'prompt-mod: no implementation for model.complete' },
+      { type: 'text', text: 'prompt-mod: no implementation for fs.ancestors' },
+      { type: 'text', text: 'prompt-mod: no implementation for ui.notice' },
+    ])
+
+    // A prompt the mod submitted reaches prompt.submit with the mod as its origin; typed prompts are the composer's.
+    const signal = new AbortController().signal
+    await h.ctx.commands.execute(agent, '/origins', [], signal)
+    await agent.whenIdle()
+    const origins = await h.ctx.commands.execute(agent, '/origins', [], signal)
+    expect(JSON.parse(String(origins?.result.text).replace(/^prompt-mod: /u, ''))).toEqual([
+      { kind: 'composer' }, { kind: 'composer' }, { kind: 'composer' }, { kind: 'composer' }, { kind: 'plugin', name: 'prompt-mod' },
+    ])
   })
 })
 
@@ -314,6 +353,12 @@ describe('tool.call: answers and rewrites', () => {
         })
       }
     `)
+    // A second mod, so its first skip report is the reroute (a hook's reports are one per failure kind).
+    const rerouter = writeMod('reroute-mod', `
+      export function register(on) {
+        on('tool.call', { tool: 'echo' }, ($, e, next) => e.command === 'reroute' ? next({ ...e, tool: 'Read', file_path: 'x' }) : next(e))
+      }
+    `)
     const ran: string[] = []
     const adapter = new MockAdapter([
       toolCallResponse('c1', 'echo', { command: 'skip' }), textResponse('one'),
@@ -324,8 +369,9 @@ describe('tool.call: answers and rewrites', () => {
       toolCallResponse('c6', 'echo', { command: 'tweak' }), textResponse('five'),
       toolCallResponse('c7', 'echo', { command: 'empty' }), textResponse('six'),
       toolCallResponse('c8', 'echo', { command: 'error' }), textResponse('seven'),
+      toolCallResponse('c9', 'echo', { command: 'reroute' }), textResponse('eight'),
     ])
-    const h = await harness([mod], adapter)
+    const h = await harness([mod, rerouter], adapter)
     h.ctx.tools.register(echoTool('echo', ran))
     // A tool whose output schema admits a string: a mod's string answer is its ordinary result.
     h.ctx.tools.register({
@@ -348,8 +394,9 @@ describe('tool.call: answers and rewrites', () => {
     await h.turn(agent, 'tweak it')
     await h.turn(agent, 'empty answer')
     await h.turn(agent, 'error answer')
+    await h.turn(agent, 'reroute it')
     // The rewrite is refused: the hook is skipped once per kind and the call runs with its logged arguments.
-    expect(ran).toEqual(['redact', 'redact', 'fail', 'tweak'])
+    expect(ran).toEqual(['redact', 'redact', 'fail', 'tweak', 'reroute'])
     const results = events(agent).filter(e => e.type === 'tool/result')
       .map(e => e.type === 'tool/result' && [e.data.message.isError === true, e.data.message.content[0]])
     expect(results.slice(1)).toEqual([
@@ -360,7 +407,11 @@ describe('tool.call: answers and rewrites', () => {
       [false, { type: 'text', text: 'tweaked' }],
       [true, { type: 'text', text: '' }],
       [true, { type: 'text', text: 'refused outright' }],
+      [false, { type: 'text', text: 'ran reroute' }],
     ])
+    expect(h.warn).toHaveBeenCalledWith(
+      'claude-code-mods: reroute-mod: tool.call hook skipped: rerouted the call from echo to Read; the logged call runs the tool it named',
+    )
     // A call without an agent (a host-side execute) is answered by the same schema rule.
     const direct = await h.ctx.tools.execute({ callId: ToolCallIdOf('direct'), name: 'greet', arguments: {}, signal: new AbortController().signal })
     expect(direct.isError).toBe(false)
@@ -416,6 +467,7 @@ describe('the mods API over harness services', () => {
           out.http = { status: response.status, ok: response.ok, text: response.text, echoed: response.headers['x-echo'] }
           out.get = (await $.http.fetch(e.args)).headers['x-echo']
           out.httpBig = await $.http.fetch(e.args + 'big').then(() => 'read', error => error.message)
+          out.httpNone = await $.http.fetch(e.args + 'none')
           out.commands = (await $.command.list()).map(command => command.name + '/' + command.source)
           out.tools = (await $.tool.list()).map(tool => tool.name)
           out.call = await $.tool.call({ tool: 'echo', command: 'from mod' })
@@ -436,6 +488,11 @@ describe('the mods API over harness services', () => {
     const server = createServer((request, response) => {
       if (request.url === '/big') {
         response.end(Buffer.alloc(4 * 1024 * 1024 + 1, 120))
+        return
+      }
+      if (request.url === '/none') {
+        response.statusCode = 204
+        response.end()
         return
       }
       let body = ''
@@ -484,6 +541,7 @@ describe('the mods API over harness services', () => {
       expect(out.http).toEqual({ status: 200, ok: true, text: 'pong', echoed: 'POST api-mod ping' })
       expect(out.get).toBe('GET undefined ')
       expect(out.httpBig).toMatch(/larger than 4194304 bytes/)
+      expect(out.httpNone).toMatchObject({ status: 204, ok: true, text: '' })
       expect(out.commands).toEqual(['probe/plugin'])
       expect(out.tools).toContain('echo')
       expect(out.call).toEqual({ result: 'ran from mod' })
@@ -848,6 +906,26 @@ describe('loading diagnostics and configuration', () => {
     expect(() => new ClaudeCodeMods(fresh(), { hookTimeoutMs: 0 })).toThrow(/hookTimeoutMs must be a positive number/)
     expect(() => new ClaudeCodeMods(fresh(), { catchTimeoutMs: -1 })).toThrow(/catchTimeoutMs must be a positive number/)
     expect(() => new ClaudeCodeMods(fresh(), { processTimeoutMs: Number.NaN })).toThrow(/processTimeoutMs must be a positive number/)
+    expect(() => new ClaudeCodeMods(fresh(), { bandColumns: 0 })).toThrow(/bandColumns must be a positive number/)
+    expect(() => new ClaudeCodeMods(fresh(), { bandRows: -1 })).toThrow(/bandRows must be a positive number/)
+  })
+
+  it('disposes while a timer callback waits inside a $ call: the wait is cancelled and disposal settles', async () => {
+    const mod = writeMod('sleeper-mod', `
+      export function register(on) {
+        on('session.start', async ($, e, next) => {
+          $.clock.after(1, async () => { await $.clock.sleep(60_000) })
+          return next(e)
+        })
+      }
+    `)
+    const h = await harness([mod], new MockAdapter([]))
+    await h.agent()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const started = Date.now()
+    await h.mods.dispose()
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(h.warn).toHaveBeenCalledWith('claude-code-mods: sleeper-mod: timer callback failed: claude-code-mods disposed')
   })
 
   it('mounts a mod plugin through the Loader-visible plugin shape and unmounts it with its hooks', async () => {
@@ -985,6 +1063,7 @@ describe('the band above the prompt', () => {
     ])
     // One band instance, consulted in load order: the guard that yields when idle goes before the readout that always draws.
     const h = await harness([boom, blastRadius, tokenWeather], adapter, {
+      config: { bandColumns: 100, bandRows: 6 },
       services: async (ctx, workspace) => {
         await ctx.plugin(TokenMeter)
         await ctx.plugin(LocalFileSystem, { cwd: workspace })
@@ -994,15 +1073,14 @@ describe('the band above the prompt', () => {
     h.ctx.tools.register(echoTool('bash', ran))
     const agent = await h.agent()
     const mods = h.ctx.claudeCodeMods
-    // Before a turn, Token Weather has no reading and Blast Radius holds nothing: the band is empty; so is an unknown session's.
-    expect((await mods.band(agent.session.id)).tree).toBeNull()
-    expect((await mods.band('no-such-session')).tree).toBeNull()
-
     const seen: unknown[] = []
     const watching = new AbortController()
     const watcher = (async () => {
       for await (const snapshot of mods.watchBand(agent, watching.signal)) seen.push(snapshot)
     })()
+    // Before a turn, Token Weather has no reading and Blast Radius holds nothing: the band is empty.
+    await waitFor(() => seen.length === 1)
+    expect(seen[0]).toEqual({ generation: 1, tree: null })
     await h.turn(agent, 'hello')
     // turn.complete wrote the reading Token Weather's render reads: the band redraws without an invalidate.
     await waitFor(() => JSON.stringify(seen.at(-1)).includes('of context'))

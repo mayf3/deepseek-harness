@@ -47,8 +47,12 @@ class BandStore {
   }
 }
 
-/** Keep one session's band store fed from the Host's `watchBand` stream until disposed. */
-function watchSession(ctx: Context, sessionId: SessionId): { store: BandStore; dispose: () => void } {
+/**
+ * Keep one session's band store fed from the Host's `watchBand` stream until
+ * disposed or until the stream ends; `onEnd` runs then, so the next
+ * subscriber opens a fresh stream instead of reading a stale store.
+ */
+function watchSession(ctx: Context, sessionId: SessionId, onEnd: () => void): { store: BandStore; dispose: () => void } {
   const store = new BandStore()
   const controller = new AbortController()
   const handle = ctx.remote.claudeCodeMods.watchBand(sessionId, controller.signal)
@@ -57,6 +61,8 @@ function watchSession(ctx: Context, sessionId: SessionId): { store: BandStore; d
       for await (const snapshot of handle) store.set(snapshot)
     } catch (error: unknown) {
       if (!controller.signal.aborted) ctx.logger.warn(`claude-code-mods band: watch of ${sessionId} ended: ${messageOf(error)}`)
+    } finally {
+      onEnd()
     }
   })()
   return {
@@ -78,7 +84,10 @@ function registerUi(ctx: Context): void {
   const watchOf = (sessionId: SessionId): ReturnType<typeof watchSession> => {
     let watch = watches.get(sessionId)
     if (watch === undefined) {
-      watch = watchSession(ctx, sessionId)
+      const opened: ReturnType<typeof watchSession> = watchSession(ctx, sessionId, () => {
+        if (watches.get(sessionId) === opened) watches.delete(sessionId)
+      })
+      watch = opened
       watches.set(sessionId, watch)
     }
     return watch

@@ -32,7 +32,7 @@ export interface ModPlugin {
   readonly Config: z<ModConfig>
   /** The mod as the bridge and the test kit load it, with `userConfig` as its options. */
   readonly definition: ModDefinition
-  apply(ctx: Context, config: ModConfig): Promise<void>
+  apply(ctx: Context, config: ModConfig): Promise<() => Promise<void>>
 }
 
 const optionValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])
@@ -57,9 +57,9 @@ export function defineMod(spec: ModSpec): ModPlugin {
     Config: z.dict(optionValue).default({}),
     definition,
     // A `register` that throws fails this plugin's mount, as any misconfigured plugin does; the rest of the composition continues.
-    async apply(ctx: Context, config: ModConfig): Promise<void> {
-      const dispose = await ctx.claudeCodeMods.add({ ...definition, options: Object.freeze({ ...userConfig, ...config }) })
-      ctx.effect(() => dispose, `claude-code-mods: mod ${spec.name}`)
+    // The disposer is the return value, which Cordis collects even when the plugin was removed while `register` ran.
+    apply(ctx: Context, config: ModConfig): Promise<() => Promise<void>> {
+      return ctx.claudeCodeMods.add({ ...definition, options: Object.freeze({ ...userConfig, ...config }) })
     },
   }
 }
