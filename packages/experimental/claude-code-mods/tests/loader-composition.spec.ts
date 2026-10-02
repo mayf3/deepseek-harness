@@ -56,13 +56,9 @@ it('loads from cordis.yml, counts the model\'s tool calls, and answers /tally th
   context.baseUrl = pathToFileURL(root).href + '/'
   await context.plugin(Loader)
   context.loader.builtins.include = Include
-  context.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`Unexpected fixture module: ${specifier}`)
-      return modules.get(specifier)
-    },
-  } as unknown as NonNullable<typeof context.loader.internal>
+  // Without a Node internal loader the Loader imports bare names through this
+  // test runner's module graph, which resolves workspace packages to `src`.
+  context.loader.internal = undefined
   await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await context.loader.await()
   for (const entry of context.loader.entries()) await entry.fiber?.await()

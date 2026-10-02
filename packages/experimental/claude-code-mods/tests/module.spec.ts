@@ -4,7 +4,7 @@ import type { LoadedMod } from '../src/chain.ts'
 import { ModsEngine, OpDenied } from '../src/engine.ts'
 import { readModManifest } from '../src/manifest.ts'
 import { createOn, HookRegistry, loadHooksModule } from '../src/module.ts'
-import type { AnyHook, ModsApi } from '../src/types.ts'
+import type { AnyHook, HookRegistration, ModsApi } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dirname, 'fixtures')
 const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, modulePath: '', options: {}, order })
@@ -25,15 +25,18 @@ describe('createOn', () => {
 
   it('refuses what claude plugin validate refuses', () => {
     const { on } = createOn(mod('a'))
+    // A JavaScript mod can pass anything, so the checks are exercised through an untyped call.
+    const loose = on as (...args: unknown[]) => HookRegistration
     expect(() => on('tool.call', noop)).not.toThrow()
-    expect(() => on(42 as unknown as string, noop)).toThrow(/not a string literal/)
+    expect(() => loose(42, noop)).toThrow(/not a string literal/)
     expect(() => on('tool.calls', noop)).toThrow(/"tool.calls" is not an event/)
     expect(() => on('session.start', noop)).not.toThrow()
     expect(() => on('session.start', noop)).toThrow(/on\("session.start"\) is registered twice without a matcher/)
     expect(() => on('session.start', { cwd: '/x' }, noop)).not.toThrow()
-    expect(() => on('turn.start', 'nope' as unknown as AnyHook)).toThrow(/needs a hook function/)
-    expect(() => on('turn.start', 'nope' as unknown as Record<string, string>, noop)).toThrow(/matcher must be an object/)
-    expect(() => { on('turn.complete', noop).catch('nope' as unknown as AnyHook) }).toThrow(/needs a handler function/)
+    expect(() => loose('turn.start', 'nope')).toThrow(/needs a hook function/)
+    expect(() => loose('turn.start', 'nope', noop)).toThrow(/matcher must be an object/)
+    const attach = on('turn.complete', noop).catch as (handler: unknown) => void
+    expect(() => { attach('nope') }).toThrow(/needs a handler function/)
   })
 })
 
@@ -103,7 +106,8 @@ describe('ModsEngine', () => {
     expect(await second.state.get(ref)).toEqual({ value: undefined })
     e.forgetState('s1')
     expect(await first.state.get(ref)).toEqual({ value: undefined })
-    await expect(first.state.get({ plugin: 1 as unknown as string, key: 'x' })).rejects.toThrow(/needs \{ plugin, key \} strings/)
+    await expect(e.invoke(owner, 'state.get', { plugin: 1, key: 'x' }, { key: 's1' }, new AbortController().signal))
+      .rejects.toThrow(/needs \{ plugin, key \} strings/)
     const before = Date.now()
     expect(await first.clock.now()).toBeGreaterThanOrEqual(before)
     await first.clock.sleep(1)

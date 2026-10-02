@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Message } from '@deepseek-ai/dsh-llm'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
@@ -44,9 +45,22 @@ function setup(ctx = new Context()) {
   return { ctx, ops, engine, context, call, registrations }
 }
 
+/** The members of an Agent the host ops read; a real Agent is assignable to it, which is what the assertion below relies on. */
+interface AgentFacts {
+  readonly id: string
+  readonly ctx: Context
+  readonly options: { readonly model?: string }
+  readonly session: {
+    readonly id: string
+    readonly header: { readonly id: string; readonly createdAt: number; readonly cwd?: string }
+    requestHeader(): { readonly config: { readonly provider: string; readonly model: string } } | undefined
+    deriveMessages(): Message[]
+  }
+}
+
 /** A fake agent with the session facts the ops read; its scoped ctx is the root ctx. */
 function fakeAgent(ctx: Context, overrides: { cwd?: string; model?: string; requestModel?: string } = {}): Agent {
-  return {
+  const facts: AgentFacts = {
     id: 'fake',
     ctx,
     options: overrides.model === undefined ? {} : { model: overrides.model },
@@ -54,9 +68,10 @@ function fakeAgent(ctx: Context, overrides: { cwd?: string; model?: string; requ
       id: 'fake',
       header: { id: 'fake', createdAt: 1, ...overrides.cwd === undefined ? {} : { cwd: overrides.cwd } },
       requestHeader: () => overrides.requestModel === undefined ? undefined : { config: { provider: 'p', model: overrides.requestModel } },
-      deriveMessages: () => [],
+      deriveMessages: (): Message[] => [],
     },
-  } as unknown as Agent
+  }
+  return facts as Agent
 }
 
 describe('values', () => {

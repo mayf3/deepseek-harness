@@ -124,7 +124,8 @@ function readJson(path: string): unknown {
     throw new Error(`${path}: cannot read: ${messageOf(error)}`)
   }
   try {
-    return JSON.parse(text) as unknown
+    const parsed: unknown = JSON.parse(text)
+    return parsed
   } catch (error: unknown) {
     throw new Error(`${path}: invalid JSON: ${messageOf(error)}`)
   }

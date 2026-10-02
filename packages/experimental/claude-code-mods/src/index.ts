@@ -17,7 +17,6 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, ContentBlock, ContextFormed, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { ModsEngine } from './engine.ts'
 import { createHostOps, toolCallResultOf } from './host-ops.ts'
 import type { AgentBinding } from './host-ops.ts'
@@ -307,8 +306,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return beneath
     }
     if (modTools.has(exec.name) && answer.isError !== true) {
-      const content: ContentBlock[] = [{ type: 'text', text }]
-      return { isError: false, value: content as unknown as JsonValue, content }
+      return { isError: false, value: text, content: [{ type: 'text', text }] }
     }
     // A built-in tool's success value must satisfy its own output schema, so a
     // mod's answer in its place is reported as an error-shaped result.

@@ -293,9 +293,9 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
         description,
         parameters: inputSchema,
         output: {
-          // The answering hook's text, already rendered as content blocks.
-          schema: { type: 'array' },
-          render: (_args, value) => value as unknown as ContentBlock[],
+          // The answering hook's result text.
+          schema: { type: 'string' },
+          render: (_args, value) => [{ type: 'text', text: String(value) }],
         },
         execute() {
           return Promise.reject(new Error(`${mod.name} registered ${fullName} but no tool.call hook answered it; add on('tool.call', { tool: '${fullName}' }, hook)`))

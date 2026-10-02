@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BudgetClock, dispatch, ENGINE_ORIGIN, HookTimeoutError } from '../src/chain.ts'
 import type { DispatchRequest, LoadedMod, RegisteredHook } from '../src/chain.ts'
+import { createModsApi } from '../src/api.ts'
 import type { AnyHook, HookMatcher, ModsApi } from '../src/types.ts'
 
 const mod = (name: string, order = 0): LoadedMod => ({ name, version: undefined, root: '/mods/' + name, modulePath: '', options: {}, order })
@@ -212,17 +213,16 @@ describe('dispatch: failures', () => {
       core: () => new Promise((resolve) => { setTimeout(() => { resolve({ result: 'slow core' }) }, 60) }),
       report,
       budgetMs: 25,
-      api: (_hook, clock) => ({
-        clock: {
-          async sleepOutside(ms: number) {
-            clock.pause()
-            await new Promise(resolve => setTimeout(resolve, ms))
-            clock.resume()
-          },
-        },
-      }) as unknown as ModsApi,
+      // A real `$` whose every call takes 60 ms to answer: the clock pauses for the call.
+      api: (hooked, clock) => createModsApi({
+        mod: hooked.mod,
+        clock,
+        invoke: () => new Promise((resolve) => { setTimeout(() => { resolve('contents') }, 60) }),
+        timers: { after: () => ({ cancel() {} }), every: () => ({ cancel() {} }) },
+        report: () => {},
+      }),
       hooks: [hook(a, 'tool.call', async ($, e, next) => {
-        await ($ as unknown as { clock: { sleepOutside(ms: number): Promise<void> } }).clock.sleepOutside(60)
+        expect(await $.fs.read('notes.md')).toBe('contents')
         return next(e)
       })],
     }))
