@@ -28,9 +28,10 @@ Run [Claude Code mods](https://code.claude.com/docs/en/plugins/mods/overview) in
 A mod is a plugin. `defineMod` takes the mod's `register` function with the identity `plugin.json` would hold and returns a Cordis plugin whose config is the `options` object `register` receives, overlaid on the `userConfig` defaults you name. Mount the bridge first, then the mods in chain order.
 
 ```ts
-// mods/token-weather/index.ts
-import { defineMod } from '@deepseek-ai/dsh-experimental-claude-code-mods'
-import { register } from './hooks/token-weather.mjs'
+// mods/token-weather/index.ts — `register` is the mod's own hooks module (`./hooks/token-weather.mjs`).
+import { defineMod, type ModOn } from '@deepseek-ai/dsh-experimental-claude-code-mods'
+
+declare const register: (on: ModOn, options: Readonly<Record<string, unknown>>) => void
 
 export default defineMod({ name: 'token-weather', version: '0.1.0', root: import.meta.dirname, register })
 ```

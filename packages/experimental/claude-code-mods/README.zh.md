@@ -28,9 +28,10 @@ kind: "package-reference"
 模组就是插件。`defineMod` 接收模组的 `register` 函数以及 `plugin.json` 本应承载的身份，返回一个 Cordis 插件：其配置就是 `register` 收到的 `options` 对象，覆盖在你给出的 `userConfig` 默认值之上。先挂载桥接，再按链顺序挂载各模组。
 
 ```ts
-// mods/token-weather/index.ts
-import { defineMod } from '@deepseek-ai/dsh-experimental-claude-code-mods'
-import { register } from './hooks/token-weather.mjs'
+// mods/token-weather/index.ts — `register` is the mod's own hooks module (`./hooks/token-weather.mjs`).
+import { defineMod, type ModOn } from '@deepseek-ai/dsh-experimental-claude-code-mods'
+
+declare const register: (on: ModOn, options: Readonly<Record<string, unknown>>) => void
 
 export default defineMod({ name: 'token-weather', version: '0.1.0', root: import.meta.dirname, register })
 ```
