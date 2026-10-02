@@ -1,0 +1,6 @@
+{
+  "modules": ["./register.js"],
+  "hooks": {
+    "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo settings hooks are not this bridge's job" }] }]
+  }
+}

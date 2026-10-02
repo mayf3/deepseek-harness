@@ -1,0 +1,5 @@
+{
+  "name": "guard-mod",
+  "version": "0.1.0",
+  "description": "Refuses risky Bash commands and fails closed when the guard itself breaks"
+}

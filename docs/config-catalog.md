@@ -941,6 +941,36 @@ export interface StagehandModelConfig {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-browser-use-stagehand-native -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-claude-code-mods -->
+<a id="deepseek-aidsh-experimental-claude-code-mods"></a>
+
+## `@deepseek-ai/dsh-experimental-claude-code-mods`
+
+- `source`: [`packages/experimental/claude-code-mods/src/index.ts:58`](../packages/experimental/claude-code-mods/src/index.ts)
+
+```ts config-catalog
+/** Plugin config: which mod directories to load and the limits their hooks run under. */
+export interface Config {
+  /**
+   * Plugin directories to load, each holding `.claude-plugin/plugin.json` and
+   * `hooks/hooks.json`, as `claude --plugin-dir` takes them. A relative path
+   * resolves against the process launch cwd. Load order is chain order.
+   */
+  pluginDirs: string[]
+  /** `register` option values by plugin name, overlaid on the manifest's `userConfig` defaults. */
+  options?: Record<string, Record<string, string | number | boolean | string[]>>
+  /** A hook's own running-time limit in milliseconds (Claude Code: 10 seconds). */
+  hookTimeoutMs?: number
+  /** A `.catch` handler's running-time limit in milliseconds (Claude Code: 1 second). */
+  catchTimeoutMs?: number
+  /** Default `$.process.run` and `$.http.fetch` timeout in milliseconds (Claude Code: 30 seconds). */
+  processTimeoutMs?: number
+  /** Claude Code tool name → harness tool name entries added to the built-in alias table. */
+  toolAliases?: Record<string, string>
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-claude-code-mods -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp -->
 <a id="deepseek-aidsh-experimental-computer-use-cua-driver-mcp"></a>
 
