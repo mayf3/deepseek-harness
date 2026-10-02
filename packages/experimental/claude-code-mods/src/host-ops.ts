@@ -31,6 +31,7 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { record, requireString, stringify } from './values.ts'
 import { z as zod } from 'zod'
+import type { LoadedMod } from './chain.ts'
 import type { ModsEngine, OpContext, OpTable } from './engine.ts'
 import type { ToolNameAliases } from './tool-names.ts'
 import type {
@@ -54,6 +55,9 @@ export const STORE_MAX_BYTES = 4 * 1024 * 1024
 
 /** Largest stdout or stderr `$.process.run` keeps. */
 const PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024
+
+/** Largest response body `$.http.fetch` returns. */
+export const HTTP_MAX_BYTES = 4 * 1024 * 1024
 
 /**
  * Full name the model sees for a mod-registered tool: Claude Code's MCP-style spelling.
@@ -81,8 +85,14 @@ export interface HostOpsOptions {
   readonly aliases: ToolNameAliases
   /** Default `$.process.run` timeout in milliseconds. */
   readonly processTimeoutMs: number
-  /** Collects disposers of registrations made on agents' scoped registries, so bridge disposal can undo them. */
-  readonly registrations: Set<() => void>
+  /**
+   * Disposers of registrations mods made, keyed by the session they were scoped to
+   * (`''` for global ones), so bridge disposal undoes them and a disposed agent's
+   * entries can be dropped.
+   */
+  readonly registrations: Map<string, Set<() => void>>
+  /** The mod that raised each in-flight `$.tool.call`, by call id, so the pipeline raises `tool.call` from it. */
+  readonly callOrigins: Map<string, LoadedMod>
   /** Names of commands mods registered, for `$.command.list` sources. */
   readonly modCommands: Set<string>
   /** Full names of tools mods registered, whose calls a `tool.call` hook may answer with a successful result. */
@@ -175,8 +185,24 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
     return service
   }
 
-  function track(dispose: () => void): void {
-    options.registrations.add(dispose)
+  function track(dispose: () => void, agent: Agent | undefined): void {
+    const key = agent?.session.id ?? ''
+    let owned = options.registrations.get(key)
+    if (owned === undefined) {
+      owned = new Set()
+      options.registrations.set(key, owned)
+    }
+    owned.add(dispose)
+  }
+
+  /** Per-plugin write chains: `$.store` read-modify-write runs one at a time per plugin. */
+  const storeWrites = new Map<string, Promise<void>>()
+
+  function serializeStore(plugin: string, write: () => Promise<void>): Promise<void> {
+    const previous = storeWrites.get(plugin) ?? Promise.resolve()
+    const next = previous.then(write, write)
+    storeWrites.set(plugin, next.catch(() => undefined))
+    return next
   }
 
   /** One projection's state, or undefined when the registry or the projection's owning plugin is not composed. */
@@ -250,7 +276,7 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       }
       const dispose = registry.register(definition)
       options.modCommands.add(lowered)
-      track(dispose)
+      track(dispose, binding.agent)
     },
     'command.run': async (input, context) => {
       const agent = requireAgent(context, 'command.run')
@@ -301,7 +327,7 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
           return Promise.reject(new Error(`${mod.name} registered ${fullName} but no tool.call hook answered it; add on('tool.call', { tool: '${fullName}' }, hook)`))
         },
       }
-      track(registry.register(definition))
+      track(registry.register(definition), binding.agent)
       options.modTools.add(fullName)
     },
     'tool.call': async (input, context) => {
@@ -309,14 +335,21 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       const registry = ctx.get('tools')
       if (registry === undefined) throw new Error('$.tool.call needs a tool registry (dsh-tools), which this deployment did not compose')
       const { tool, tool_use_id: _ignored, agentId: _agent, ...args } = record(input)
-      const result = await registry.execute({
-        callId: ToolCallId(`mod-${randomUUID()}`),
-        name: aliases.toHarness(requireString(tool, '$.tool.call tool')),
-        arguments: args,
-        ...agent === undefined ? {} : { agent },
-        signal: context.signal,
-      })
-      return toolCallResultOf(result)
+      const callId = ToolCallId(`mod-${randomUUID()}`)
+      // The pipeline raises `tool.call` for this call from the calling mod, so only earlier mods see it.
+      options.callOrigins.set(callId, context.mod)
+      try {
+        const result = await registry.execute({
+          callId,
+          name: aliases.toHarness(requireString(tool, '$.tool.call tool')),
+          arguments: args,
+          ...agent === undefined ? {} : { agent },
+          signal: context.signal,
+        })
+        return toolCallResultOf(result)
+      } finally {
+        options.callOrigins.delete(callId)
+      }
     },
     'tool.list': (_input, context) => {
       const registry = ctx.get('tools')
@@ -341,6 +374,7 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
 
     // ---- session facts ----
     'session.id': (_input, context) => requireAgent(context, 'session.id').session.id,
+    // The harness keeps one directory per session, so the running directory and the project root coincide.
     'session.cwd': (_input, context) => requireAgent(context, 'session.cwd').session.header.cwd ?? process.cwd(),
     'session.root': (_input, context) => requireAgent(context, 'session.root').session.header.cwd ?? process.cwd(),
     'session.model': (_input, context) => {
@@ -376,19 +410,25 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
     'store.set': async (input, { mod }) => {
       const { key, value } = record(input)
       const name = requireString(key, '$.store.set key')
-      const table = (await store()).table('store')
-      const next = { ...table.get(mod.name), [name]: value as JsonValue }
-      const encoded = stringify(next)
-      if (encoded === undefined || encoded.length > STORE_MAX_BYTES) throw new Error(`$.store.set: ${mod.name}'s store would exceed ${STORE_MAX_BYTES} bytes of JSON`)
-      await table.put(mod.name, JSON.parse(encoded) as Record<string, JsonValue>)
+      await serializeStore(mod.name, async () => {
+        const table = (await store()).table('store')
+        const next = { ...table.get(mod.name), [name]: value as JsonValue }
+        const encoded = stringify(next)
+        if (encoded === undefined || Buffer.byteLength(encoded, 'utf8') > STORE_MAX_BYTES) {
+          throw new Error(`$.store.set: ${mod.name}'s store would exceed ${STORE_MAX_BYTES} bytes of JSON`)
+        }
+        await table.put(mod.name, JSON.parse(encoded) as Record<string, JsonValue>)
+      })
     },
     'store.delete': async (input, { mod }) => {
       const name = requireString(record(input).key, '$.store.delete key')
-      const table = (await store()).table('store')
-      const current = table.get(mod.name)
-      if (current === undefined || !(name in current)) return undefined
-      const { [name]: _removed, ...rest } = current
-      await table.put(mod.name, rest)
+      await serializeStore(mod.name, async () => {
+        const table = (await store()).table('store')
+        const current = table.get(mod.name)
+        if (current === undefined || !(name in current)) return
+        const { [name]: _removed, ...rest } = current
+        await table.put(mod.name, rest)
+      })
     },
     'store.keys': async (_input, { mod }) => Object.keys((await store()).table('store').get(mod.name) ?? {}),
 
@@ -474,7 +514,9 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       response.headers.forEach((value, name) => {
         headers[name] = value
       })
-      return { status: response.status, ok: response.ok, headers, text: await response.text() } satisfies HttpResponse
+      const body = await response.arrayBuffer()
+      if (body.byteLength > HTTP_MAX_BYTES) throw new Error(`$.http.fetch: the response body is larger than ${HTTP_MAX_BYTES} bytes`)
+      return { status: response.status, ok: response.ok, headers, text: new TextDecoder().decode(body) } satisfies HttpResponse
     },
 
     // ---- environment of this process ----

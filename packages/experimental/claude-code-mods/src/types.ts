@@ -93,7 +93,7 @@ export type PromptOrigin =
   | { kind: 'composer' }
   | { kind: 'plugin'; name: string }
 
-/** `session.start`: before the first prompt of a root agent, and again for every loaded mod. */
+/** `session.start`: once per root agent before its first prompt; every loaded mod's hook sees the same event. */
 export interface SessionStartInput {
   cwd: string
   /** The drawing surface; this bridge draws nothing, so always `null`. */

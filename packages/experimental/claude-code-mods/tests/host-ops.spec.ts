@@ -34,9 +34,15 @@ const mod: LoadedMod = { name: 'unit-mod', version: undefined, root: '/mods/unit
 
 function setup(ctx = new Context()) {
   contexts.push(ctx)
-  const registrations = new Set<() => void>()
+  const registrations = new Map<string, Set<() => void>>()
   const ops = createHostOps({
-    ctx, aliases: createToolNameAliases(), processTimeoutMs: 5_000, registrations, modCommands: new Set(), modTools: new Set(),
+    ctx,
+    aliases: createToolNameAliases(),
+    processTimeoutMs: 5_000,
+    registrations,
+    callOrigins: new Map(),
+    modCommands: new Set(),
+    modTools: new Set(),
   })
   const engine = new ModsEngine<AgentBinding>({ ops: op => ops[op], stateKey: () => 's', budgetMs: 1000, catchBudgetMs: 100, report: () => {} })
   const context = (agent?: Agent): OpContext<AgentBinding> => ({ mod, binding: { agent }, signal: new AbortController().signal, engine })
@@ -209,6 +215,16 @@ describe('the store limit', () => {
     await call('store.set', { key: 'ok', value: 1 })
     expect(await call('store.keys', {})).toEqual(['ok'])
     await expect(call('store.set', { key: 'big', value: 'x'.repeat(STORE_MAX_BYTES) })).rejects.toThrow(/would exceed/)
+    // The limit counts UTF-8 bytes: 1.5 Mi CJK characters are 4.5 MiB of JSON.
+    await expect(call('store.set', { key: 'cjk', value: '中'.repeat(1.5 * 1024 * 1024) })).rejects.toThrow(/would exceed/)
+    expect(await call('store.set', { key: 'ascii', value: 'y'.repeat(1.5 * 1024 * 1024) })).toBeUndefined()
+    await call('store.delete', { key: 'ascii' })
+    // Concurrent writes to one plugin's record are serialized, so neither update is lost.
+    await Promise.all([call('store.set', { key: 'a', value: 1 }), call('store.set', { key: 'b', value: 2 }), call('store.delete', { key: 'ok' })])
+    expect(await call('store.keys', {})).toEqual(['a', 'b'])
+    await call('store.set', { key: 'ok', value: 1 })
+    await call('store.delete', { key: 'a' })
+    await call('store.delete', { key: 'b' })
     expect(await call('store.get', { key: 'ok' })).toBe(1)
     expect(await call('store.get', { key: 'missing' })).toBeUndefined()
     await call('store.delete', { key: 'ok' })
@@ -228,9 +244,10 @@ describe('registrations outside a session', () => {
     expect((await call('tool.list', {}) as { name: string }[]).map(tool => tool.name)).toContain('mcp__unit-mod__global_tool')
     const agent = fakeAgent(ctx)
     expect((await call('command.list', {}, agent) as { name: string; source: string }[])).toEqual([{ name: 'global', description: 'global command', source: 'plugin' }])
-    expect(registrations.size).toBe(2)
+    expect([...registrations.keys()]).toEqual([''])
+    expect(registrations.get('')?.size).toBe(2)
     void engine
-    for (const dispose of registrations) dispose()
+    for (const dispose of registrations.get('') ?? []) dispose()
     expect(ctx.tools.schemas().map(tool => tool.name)).not.toContain('mcp__unit-mod__global_tool')
   })
 })

@@ -53,14 +53,14 @@ kind: "package-reference"
 
 | 事件 | 触发自 | 钩子可以 |
 |---|---|---|
-| `session.start` | 根 agent 的 `agent/created`，在其第一个轮次前等待完成 | 观察；注册命令与工具 |
-| `prompt.submit` | 带有已认领消息的 `agent/pre-step` | 改写 `text`、添加模型在提示词之后读取的 `context`，或用 `{ drop }` 丢弃提示词 |
+| `session.start` | 根 agent 的 `agent/created`，在其第一个轮次前等待完成；取消创建会放弃仍在等待的钩子 | 观察；注册命令与工具 |
+| `prompt.submit` | 带有已认领消息的 `agent/pre-step`；`e.text` 拼接的是用户自己（来源为 `user`）消息的文本块，改写也只触及这些消息 | 改写 `text`、添加模型在提示词之后读取的 `context`，或用 `{ drop }` 丢弃提示词 |
 | `turn.start` | 一个轮次的第一个 `agent/pre-step` | 观察 |
-| `tool.call` | `tools/execute` waterfall（瀑布式事件），在 harness 权限决策之后 | 在前后观察、`{ deny }`、用 `{ result }` 应答，或在 `next` 之后改写结果 |
+| `tool.call` | `tools/execute` waterfall（瀑布式事件），在 harness 权限决策之后；模组通过 `$.tool.call` 发起的调用只到达更早加载的模组，并归因于调用方 | 在前后观察、`{ deny }`、用 `{ result }` 应答，或在 `next` 之后改写结果或其 `isError` |
 | `turn.complete` | `turn/end` 会话事件 | 观察；返回 `{ text }` 在 host 日志中写一行 |
 | `command.run` | 用户输入了模组通过 `$.command.register` 注册的命令 | 用 `{ text }` 或 `{}` 应答 |
-| `session.end` | 根 agent 的 `agent/disposed` | 观察 |
-| `<namespace>.<method>` | 另一个模组的 `$` 调用 | 观察、改写或 `{ deny }` 该调用 |
+| `session.end` | 根 agent 的 `agent/disposed`；`$.state` 在钩子结算前仍可读取 | 观察 |
+| `<namespace>.<method>` | 更晚加载的模组的 `$` 调用（`tool.call` 改经工具流水线到达） | 观察、改写或 `{ deny }` 该调用 |
 
 harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使用 Claude Code 的名称（`Bash` ↔ `bash`、`Read` ↔ `read`、`Edit` ↔ `edit`、`Write` ↔ `write`、`Glob` ↔ `glob`、`Grep` ↔ `grep`、`WebFetch` ↔ `web_fetch`、`WebSearch` ↔ `web_search`、`Task` ↔ `subagent`、`TodoWrite` ↔ `todo_write`、`AskUserQuestion` ↔ `ask_user_question`、`ExitPlanMode` ↔ `exit_plan_mode`、`Skill` ↔ `skill`）；其余工具保持 harness 名称。subagent 事件携带 `e.agentId`。其他每个 Claude Code 事件名都能无错注册，但永远不会触发。
 
@@ -73,14 +73,14 @@ harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使�
 | `$.command` | `register`、`run`、`list` | `ctx.commands`，作用域为事件所属的 agent |
 | `$.tool` | `register`、`call`、`list` | `ctx.tools`；注册的工具命名为 `mcp__<plugin>__<tool>` |
 | `$.prompt` | `submit` | `agent.followup()`，除非 `asUser`，否则框定为来自模组的消息 |
-| `$.session` | `id`、`cwd`、`root`、`model`、`turns`、`messages`、`usage`、`version` | agent 的 Session 以及 `turnBoundary` 与 `contextPressure` 投影 |
-| `$.state` | `get`、`set` | 为该会话保留的内存 |
+| `$.session` | `id`、`cwd`、`root`、`model`、`turns`、`messages`、`usage`、`version` | agent 的 Session 以及 `turnBoundary` 与 `contextPressure` 投影；`cwd` 与 `root` 都报告会话工作区，harness 每个会话只有一个目录 |
+| `$.state` | `get`、`set` | 为该会话保留的内存，按模组给出的 `{ plugin, key }` 寻址 |
 | `$.store` | `get`、`set`、`delete`、`keys` | `claude_code_mods` storage domain，每个插件一个 JSON 对象，上限 4 MiB |
 | `$.clock` | `now`、`sleep`、`after`、`every` | 桥接在卸载时取消的定时器 |
 | `$.fs` | `read`、`write`、`list`、`exists`、`stat` | `ctx.fs`，相对会话工作区解析，单文件上限 4 MiB |
 | `$.process` | `run` | `ctx.subprocess`，argv 不经 shell |
-| `$.http` | `fetch` | 本进程的 `fetch` |
-| `$.env` | `get`、`set` | 本进程的环境变量 |
+| `$.http` | `fetch` | 本进程的 `fetch`，响应体上限 4 MiB |
+| `$.env` | `get`、`set` | 本进程的环境变量，由所有会话与插件共享 |
 
 所需服务未组合时，调用会以缺失服务的包名拒绝；表外的命名空间或方法以 `no implementation for <namespace>.<method>` 拒绝。
 
@@ -181,11 +181,11 @@ Message from the "<plugin>" mod:
 这些限制描述 Claude Code 模组经由本桥接时行为不同之处。它们是当前包约束，而非任务积压。
 
 - **没有绘制表面**——`ui.render`、`ui.press`、`ui.input`、`ui.select`、`ui.resolve`、面板、提示框上方的横带以及元素树均未提供：`ui.render` 钩子永不运行，`$.ui.open` 应答 `{ isPlaced: false }`，`$.ui.log`、`$.ui.toast` 与 `$.ui.status` 写入 host 日志而非 transcript（文本记录）。可以承载它们的 Web GUI slot（横带对应 `conversation.input.dock`，toast 对应 `shell.overlay`，状态对应 `conversation.composer.dock`，日志行对应一个仅记录的会话事件加 Chat 节点）已经存在，但尚无客户端插件渲染模组树。
-- **未提供的事件**——`tool.check`、`tool.describe`、`turn.step`、其余 `prompt.*` 事件、`command.describe`、`config.*`、`session.compact`、`session.receive`、`session.send`、`session.append`、`session.attach`、`session.detach`、`session.measure`、`agent.*`、`plugin.register`、`engine.create`、`telemetry.*` 与 `classic.*` 可以注册但永不触发。
+- **未提供的事件**——`tool.check`、`tool.describe`、`turn.step`、其余 `prompt.*` 事件、`command.describe`、`config.*`、`session.compact`、`session.receive`、`session.send`、`session.append`、`session.attach`、`session.detach`、`session.measure`、`agent.*`、`plugin.register`、`engine.create` 与 `telemetry.*` 可以注册但永不触发；`classic.*` 名称与其他未知事件一样在 `register` 时被拒绝。
 - **未提供的 `$` 命名空间**——`$.model`、`$.agent`、`$.config`、`$.settings`、`$.mcp`、`$.audio`、`$.telemetry`、`$.turn`、`$.ui.notice`、`$.ui.blit`、`$.ui.copy`、`$.fs.ancestors`、`$.process.spawn`，以及 `$.session.repo`、`send`、`append`、`authorize`、`compact`、`surfaces` 以 `no implementation` 拒绝。`$.model.complete` 等待一个记录副请求的会话事件，使模组的模型调用仍可从会话日志重建。
 - **`tool.call` 在权限决策之后运行**——Claude Code 在其权限检查之前运行模组的 `tool.call` 钩子；这里 harness 的 `tools/pre-execute` waterfall（包括审批）先行落定。传给 `next` 的参数改写不被采纳，因为调用参数已被记录；桥接按工具各警告一次。
 - **代替内置工具应答**——代替内置工具运行的 `{ result }` 以携带该文本的错误形态结果到达模型，因为成功值必须满足该工具的输出 schema。
-- **一个进程，多个会话**——模组的模块级变量由进程内的所有会话共享，而 Claude Code 每个进程只运行一个会话；按会话的值请放在 `$.state`。`session.start` 与 `session.end` 只为根 agent 触发。
+- **一个进程，多个会话**——模组的模块级变量与 `$.env.set` 的写入由进程内的所有会话与插件共享，而 Claude Code 每个进程只运行一个会话；按会话的值请放在 `$.state`。`session.start` 与 `session.end` 只为根 agent 触发。
 - **没有沙箱、静态分析与热重载**——hooks module 在进程内以 Node 全局对象运行；仅经 `$` 访问的规则、`claude plugin validate`、类型生成、`--plugin-dir` 监视以及会话内模组编写流程均未实现。模组的 `.ts` 模块只在 Node 剥离类型或启动器转译时才能加载。
 - **`turn.complete` 文本**——钩子返回的 `{ text }` 写入 host 日志，而非答案下方的一行；`durationMs` 从该轮次的 `turn/start` 起计。
 - **`$.session.usage`**——在路由的上下文窗口与 provider 用量报告经 token meter 可知之前，`window` 为 `0` 且没有 `percent`；`rateLimits` 始终为空。`$.fs.stat` 报告 `mtimeMs: 0`。

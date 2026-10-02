@@ -53,14 +53,14 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 | Event | Raised from | A hook can |
 |---|---|---|
-| `session.start` | `agent/created` of a root agent, awaited before its first turn | observe; register commands and tools |
-| `prompt.submit` | `agent/pre-step` with claimed messages | rewrite `text`, add `context` the model reads after the prompt, or `{ drop }` the prompt |
+| `session.start` | `agent/created` of a root agent, awaited before its first turn; cancelling the creation abandons a waiting hook | observe; register commands and tools |
+| `prompt.submit` | `agent/pre-step` with claimed messages; `e.text` joins the text blocks of the human's own (`user`-sourced) messages, and a rewrite touches only those | rewrite `text`, add `context` the model reads after the prompt, or `{ drop }` the prompt |
 | `turn.start` | the first `agent/pre-step` of a turn | observe |
-| `tool.call` | the `tools/execute` waterfall, after the harness permission decision | observe before and after, `{ deny }`, answer with `{ result }`, or rewrite the result after `next` |
+| `tool.call` | the `tools/execute` waterfall, after the harness permission decision; a call a mod raised with `$.tool.call` reaches only the mods loaded before it, attributed to the caller | observe before and after, `{ deny }`, answer with `{ result }`, or rewrite the result or its `isError` after `next` |
 | `turn.complete` | the `turn/end` session event | observe; return `{ text }` for a line in the host log |
 | `command.run` | a command the mod registered with `$.command.register` is typed | answer with `{ text }` or `{}` |
-| `session.end` | `agent/disposed` of a root agent | observe |
-| `<namespace>.<method>` | another mod's `$` call | observe, rewrite, or `{ deny }` it |
+| `session.end` | `agent/disposed` of a root agent; `$.state` stays readable until the hooks settle | observe |
+| `<namespace>.<method>` | a later-loaded mod's `$` call (`tool.call` arrives through the tool pipeline instead) | observe, rewrite, or `{ deny }` it |
 
 `e.tool` and `tool` matchers use Claude Code's names where a harness tool has one (`Bash` ↔ `bash`, `Read` ↔ `read`, `Edit` ↔ `edit`, `Write` ↔ `write`, `Glob` ↔ `glob`, `Grep` ↔ `grep`, `WebFetch` ↔ `web_fetch`, `WebSearch` ↔ `web_search`, `Task` ↔ `subagent`, `TodoWrite` ↔ `todo_write`, `AskUserQuestion` ↔ `ask_user_question`, `ExitPlanMode` ↔ `exit_plan_mode`, `Skill` ↔ `skill`); every other tool keeps its harness name. Subagent events carry `e.agentId`. Every other Claude Code event name registers without error and never fires.
 
@@ -73,14 +73,14 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 | `$.command` | `register`, `run`, `list` | `ctx.commands`, scoped to the agent whose event is running |
 | `$.tool` | `register`, `call`, `list` | `ctx.tools`; a registered tool is named `mcp__<plugin>__<tool>` |
 | `$.prompt` | `submit` | `agent.followup()`, framed as a message from the mod unless `asUser` |
-| `$.session` | `id`, `cwd`, `root`, `model`, `turns`, `messages`, `usage`, `version` | the agent's Session and the `turnBoundary` and `contextPressure` projections |
-| `$.state` | `get`, `set` | memory held for the session |
+| `$.session` | `id`, `cwd`, `root`, `model`, `turns`, `messages`, `usage`, `version` | the agent's Session and the `turnBoundary` and `contextPressure` projections; `cwd` and `root` both report the session workspace, the harness's one directory per session |
+| `$.state` | `get`, `set` | memory held for the session, addressed by the `{ plugin, key }` a mod names |
 | `$.store` | `get`, `set`, `delete`, `keys` | the `claude_code_mods` storage domain, one JSON object per plugin, 4 MiB |
 | `$.clock` | `now`, `sleep`, `after`, `every` | timers the bridge cancels on unload |
 | `$.fs` | `read`, `write`, `list`, `exists`, `stat` | `ctx.fs`, relative to the session workspace, 4 MiB per file |
 | `$.process` | `run` | `ctx.subprocess`, argv without a shell |
-| `$.http` | `fetch` | the process's `fetch` |
-| `$.env` | `get`, `set` | this process's environment |
+| `$.http` | `fetch` | the process's `fetch`, bodies up to 4 MiB |
+| `$.env` | `get`, `set` | this process's environment, shared by every session and plugin |
 
 A call whose service is not composed rejects with the missing service's package name; a namespace or method outside this table rejects with `no implementation for <namespace>.<method>`.
 
@@ -181,11 +181,11 @@ Tool results append after the reusable prefix; a dropped prompt invalidates noth
 These limits describe where a Claude Code mod behaves differently through this bridge. They are current package constraints, not a task backlog.
 
 - **No drawing surface** — `ui.render`, `ui.press`, `ui.input`, `ui.select`, `ui.resolve`, panes, the band above the prompt, and element trees are not served: `ui.render` hooks never run, `$.ui.open` answers `{ isPlaced: false }`, and `$.ui.log`, `$.ui.toast`, and `$.ui.status` reach the host log, not the transcript. The Web GUI slots that could carry them (`conversation.input.dock` for the band, `shell.overlay` for toasts, `conversation.composer.dock` for status, a log-only session event with a Chat node for log lines) exist but no client plugin renders mod trees yet.
-- **Unserved events** — `tool.check`, `tool.describe`, `turn.step`, the other `prompt.*` events, `command.describe`, `config.*`, `session.compact`, `session.receive`, `session.send`, `session.append`, `session.attach`, `session.detach`, `session.measure`, `agent.*`, `plugin.register`, `engine.create`, `telemetry.*`, and `classic.*` register and never fire.
+- **Unserved events** — `tool.check`, `tool.describe`, `turn.step`, the other `prompt.*` events, `command.describe`, `config.*`, `session.compact`, `session.receive`, `session.send`, `session.append`, `session.attach`, `session.detach`, `session.measure`, `agent.*`, `plugin.register`, `engine.create`, and `telemetry.*` register and never fire; `classic.*` names are refused at `register` like any unknown event.
 - **Unserved `$` namespaces** — `$.model`, `$.agent`, `$.config`, `$.settings`, `$.mcp`, `$.audio`, `$.telemetry`, `$.turn`, `$.ui.notice`, `$.ui.blit`, `$.ui.copy`, `$.fs.ancestors`, `$.process.spawn`, and `$.session.repo`, `send`, `append`, `authorize`, `compact`, `surfaces` reject with `no implementation`. `$.model.complete` waits on a logged side-request event so a mod's model call stays reconstructable from the Session log.
 - **`tool.call` runs after the permission decision** — Claude Code runs mod `tool.call` hooks before its permission check; here the harness `tools/pre-execute` waterfall, including approval, settles first. Argument rewrites passed to `next` are not honored because the call's arguments are already logged; the bridge warns once per tool.
 - **Answering a built-in tool** — a `{ result }` in place of a built-in tool's run reaches the model as an error-shaped result carrying the text, because a successful value must satisfy that tool's output schema.
-- **One process, many sessions** — a mod's module-level variables are shared by every session in the process, where Claude Code runs one session per process; keep per-session values in `$.state`. `session.start` and `session.end` fire for root agents only.
+- **One process, many sessions** — a mod's module-level variables and `$.env.set` writes are shared by every session and plugin in the process, where Claude Code runs one session per process; keep per-session values in `$.state`. `session.start` and `session.end` fire for root agents only.
 - **No sandbox, no static analysis, no hot reload** — the hooks module runs in-process with Node's globals; the `$`-only access rule, `claude plugin validate`, type generation, `--plugin-dir` watching, and the in-session mod authoring flow are not implemented. A mod's `.ts` module loads only where Node strips types or the launcher transpiles.
 - **`turn.complete` text** — the `{ text }` a hook returns reaches the host log, not a line under the answer; `durationMs` counts from the turn's `turn/start`.
 - **`$.session.usage`** — `window` is `0` and `percent` absent until the route's context window and a provider usage report are known through the token meter; `rateLimits` is always empty. `$.fs.stat` reports `mtimeMs: 0`.

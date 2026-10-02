@@ -22,7 +22,7 @@ describe('createModTestKit: the tutorial mod', () => {
       expect(kit.mods.map(mod => mod.name)).toEqual(['first-mod'])
       expect(kit.reports).toEqual([])
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 
@@ -39,7 +39,7 @@ describe('createModTestKit: the tutorial mod', () => {
       expect((await kit.$.command.run({ command: 'tally', args: '' })).text).toBe('The model made 0 tool calls since this mod loaded')
       expect(await kit.$.command.run({ command: 'other', args: '' })).toEqual({})
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 })
@@ -69,7 +69,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       await new Promise(resolve => setTimeout(resolve, 0))
       expect(kit.reports).toEqual(['stateful: $.ui.toast failed: no implementation for ui.toast', 'stateful: $.ui.toast failed: no implementation for ui.toast'])
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 
@@ -87,7 +87,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       await expect(kit.$.tool.call({ tool: 'Bash', command: 'ls' })).rejects.toThrow('no implementation for tool.call')
       expect(kit.reports).toEqual(['reader: tool.call hook skipped: threw Error: no implementation for store.set'])
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 
@@ -113,7 +113,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       kit.on('fs.read', () => ({ nothing: true }))
       expect((await kit.$.command.run({ command: 'grade', args: 'x' })).text).toMatch(/returned neither \{ value \} nor \{ deny \}/)
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 
@@ -143,7 +143,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       expect(saved.get('prefix')).toBe('note:')
       expect(env).toEqual({ HOME_DIR: '/home/me', NOTES_HOME: '/home/me', GONE: undefined })
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 
@@ -172,7 +172,7 @@ describe('createModTestKit: stubs, defaults, and inline mods', () => {
       await expect(kit.$.turn.complete({ turnId: '3', answer: '', durationMs: 0, isAborted: false, reason: 'answer' })).rejects.toThrow('the stub returned no result')
       expect(seen).toEqual(['1', '1', 'hello', 'plain', 's1', 'undefined', '2', '3'])
     } finally {
-      kit.dispose()
+      await kit.dispose()
     }
   })
 })

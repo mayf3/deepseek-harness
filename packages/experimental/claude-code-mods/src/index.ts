@@ -17,6 +17,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, ContentBlock, ContextFormed, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import type { PostToolDecision, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type { LoadedMod } from './chain.ts'
 import { ModsEngine } from './engine.ts'
 import { createHostOps, toolCallResultOf } from './host-ops.ts'
 import type { AgentBinding } from './host-ops.ts'
@@ -92,26 +93,43 @@ function textOf(blocks: readonly ContentBlock[]): string {
   return blocks.filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text').map(block => block.text).join('')
 }
 
+/** The human's own messages among a claim: the prompt a `prompt.submit` hook sees and may rewrite. */
+function promptMessages(claimed: readonly UserMessage[]): UserMessage[] {
+  return claimed.filter(message => message.source.kind === 'user')
+}
+
 /**
- * Replace the prompt text across the claimed messages with one rewritten
+ * Replace the prompt text across the human's messages with one rewritten
  * text: the first text block carries it, other text blocks go, every
- * non-text block stays in place.
+ * non-text block stays in place. A prompt without any text block, such as an
+ * image alone, gains the text after its blocks.
  */
-function rewritePromptText(claimed: readonly UserMessage[], text: string): UserMessage[] {
-  let placed = false
-  return claimed.map((message) => {
+function rewritePromptText(prompt: readonly UserMessage[], text: string): UserMessage[] {
+  // Written inside the map callback, so the flag lives on an object the later read sees current.
+  const placement = { placed: false }
+  const rewritten = prompt.map((message) => {
     if (!message.content.some(block => block.type === 'text')) return message
     const content: ContentBlock[] = []
     for (const block of message.content) {
       if (block.type !== 'text') {
         content.push(block)
-      } else if (!placed) {
-        placed = true
+      } else if (!placement.placed) {
+        placement.placed = true
         content.push({ type: 'text', text })
       }
     }
     return { ...message, content }
   })
+  const first = rewritten[0]
+  if (placement.placed || text.length === 0 || first === undefined) return rewritten
+  return [{ ...first, content: [...first.content, { type: 'text', text }] }, ...rewritten.slice(1)]
+}
+
+/** Keep only the fields of a `prompt.submit` result a mod may set, each with its declared type. */
+function acceptPromptSubmit(result: PromptSubmitResult, original: string): PromptSubmitResult {
+  if (typeof result.drop === 'string') return { drop: result.drop }
+  const context = Array.isArray(result.context) ? result.context.filter((line): line is string => typeof line === 'string') : []
+  return { text: typeof result.text === 'string' ? result.text : original, ...context.length === 0 ? {} : { context } }
 }
 
 /** What the bridge folds from one session's event stream about its open turn. */
@@ -137,14 +155,18 @@ function foldAssistantMessage(turnRecord: TurnRecord, data: { message: Assistant
   turnRecord.usage = usage
 }
 
-/** Detached mod runs the bridge tracks so disposal can await them. */
+/** Detached mod runs the bridge tracks so disposal can await them; a rejection is reported, never unhandled. */
 class DetachedRuns {
   private readonly pending = new Set<Promise<unknown>>()
   readonly controller = new AbortController()
 
-  track(run: Promise<unknown>): void {
-    this.pending.add(run)
-    void run.finally(() => { this.pending.delete(run) })
+  constructor(private readonly report: (line: string) => void) {}
+
+  track(label: string, run: Promise<unknown>): void {
+    /* v8 ignore next -- the engine behaviors beneath these runs are total; the report guards a future rejecting one */
+    const settled = run.then(() => undefined, (error: unknown) => { this.report(`${label} failed: ${messageOf(error)}`) })
+    this.pending.add(settled)
+    void settled.finally(() => { this.pending.delete(settled) })
   }
 
   async drain(): Promise<void> {
@@ -161,11 +183,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   assertPositive('catchTimeoutMs', catchTimeoutMs)
   assertPositive('processTimeoutMs', processTimeoutMs)
   const aliases = createToolNameAliases(config.toolAliases)
-  const registrations = new Set<() => void>()
+  const registrations = new Map<string, Set<() => void>>()
+  const callOrigins = new Map<string, LoadedMod>()
   const modCommands = new Set<string>()
   const modTools = new Set<string>()
   const report = (line: string): void => { ctx.logger.warn(`claude-code-mods: ${line}`) }
-  const ops = createHostOps({ ctx, aliases, processTimeoutMs, registrations, modCommands, modTools })
+  const ops = createHostOps({ ctx, aliases, processTimeoutMs, registrations, callOrigins, modCommands, modTools })
   const engine = new ModsEngine<AgentBinding>({
     ops: op => ops[op],
     stateKey: binding => binding.agent?.session.id ?? '',
@@ -173,11 +196,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     catchBudgetMs: catchTimeoutMs,
     report,
   })
-  const detached = new DetachedRuns()
+  const detached = new DetachedRuns(report)
   ctx.effect(() => async () => {
-    for (const dispose of registrations) dispose()
+    for (const owned of registrations.values()) for (const dispose of owned) dispose()
     registrations.clear()
-    engine.dispose()
+    await engine.dispose()
     await detached.drain()
   }, 'claude-code-mods: unload mods')
 
@@ -199,8 +222,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
   }
 
-  const agents = ctx.get('agents')
-  const isRoot = (agent: Agent): boolean => agents === undefined || agents.roots().includes(agent)
+  // Read at each use: the registry may mount after this plugin in a composition.
+  const isRoot = (agent: Agent): boolean => {
+    const agents = ctx.get('agents')
+    return agents === undefined || agents.roots().includes(agent)
+  }
   /** Root agents that received `session.start`; the registry no longer lists an agent once it is disposed. */
   const startedRoots = new Set<string>()
   const agentIdOf = (agent: Agent | undefined): { agentId: string } | Record<never, never> =>
@@ -208,14 +234,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   /** Per-session fold of the open turn, keyed by session id. */
   const turns = new Map<string, TurnRecord>()
-  /** `<session>:<turn>` keys whose first pre-step already raised `turn.start`. */
-  const startedTurns = new Set<string>()
+  /** Turns whose first pre-step already raised `turn.start`, by session id. */
+  const startedTurns = new Map<string, Set<number>>()
   /** Rewritten tool results the post-execute listener installs as content. */
   const replacements = new Map<ToolExecutionToken, string>()
   /** Tools whose argument rewrite was already reported. */
   const rewritesReported = new Set<string>()
 
-  ctx.on('agent/created', async ({ agent }) => {
+  ctx.on('agent/created', async ({ agent, signal }) => {
     if (!isRoot(agent)) return
     startedRoots.add(agent.session.id)
     const input: SessionStartInput = {
@@ -223,33 +249,51 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       surface: null,
       isInteractive: ctx.get('userQuestions') !== undefined,
     }
+    // Cancelling the agent's creation abandons a hook still waiting, such as one inside `$.ui.ask`.
+    /* v8 ignore next -- the loop always supplies an initialization signal; the payload type keeps it optional */
+    const abandon = signal === undefined ? detached.controller.signal : AbortSignal.any([signal, detached.controller.signal])
     await engine.raise<SessionStartInput, SessionStartResult>(
-      'session.start', input, e => ({ cwd: e.cwd }), { binding: { agent }, signal: detached.controller.signal },
+      'session.start', input, e => ({ cwd: e.cwd }), { binding: { agent }, signal: abandon },
     )
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
-    turns.delete(agent.session.id)
-    engine.forgetState(agent.session.id)
-    if (!startedRoots.delete(agent.session.id)) return
-    const input: SessionEndInput = { reason: 'other', sessionId: agent.session.id }
-    detached.track(engine.raise<SessionEndInput, SessionEndResult>(
+    const sessionId = agent.session.id
+    turns.delete(sessionId)
+    startedTurns.delete(sessionId)
+    // The agent's scoped registrations unwound with its context; only the bookkeeping remains.
+    registrations.delete(sessionId)
+    const forget = (): void => { engine.forgetState(sessionId) }
+    if (!startedRoots.delete(sessionId)) {
+      forget()
+      return
+    }
+    const input: SessionEndInput = { reason: 'other', sessionId }
+    // `$.state` stays readable until the mods' `session.end` hooks have settled.
+    detached.track('session.end', engine.raise<SessionEndInput, SessionEndResult>(
       'session.end', input, e => ({ sessionId: e.sessionId }), { binding: { agent }, signal: detached.controller.signal },
-    ))
+    ).finally(forget))
   })
 
   ctx.on('agent/pre-step', async ({ agent, messages, turn, signal }, next): Promise<PreStepDecision> => {
     const binding: AgentBinding = { agent }
-    const turnKey = `${agent.session.id}:${turn}`
-    const first = !startedTurns.has(turnKey)
-    startedTurns.add(turnKey)
-    const text = textOf(messages.flatMap(message => message.content))
+    const started = startedTurns.get(agent.session.id) ?? new Set<number>()
+    startedTurns.set(agent.session.id, started)
+    const first = !started.has(turn)
+    started.add(turn)
+    const prompt = promptMessages(messages)
+    const text = textOf(prompt.flatMap(message => message.content))
     let submitted: PromptSubmitResult = { text }
     if (messages.length > 0) {
-      const input: PromptSubmitInput = { text, wait: false, origin: { kind: 'composer' } }
-      submitted = await engine.raise<PromptSubmitInput, PromptSubmitResult>(
+      const sourceKind = messages[0]?.source.kind
+      const input: PromptSubmitInput = {
+        text,
+        wait: false,
+        origin: sourceKind === undefined || sourceKind === 'user' ? { kind: 'composer' } : { kind: 'plugin', name: sourceKind },
+      }
+      submitted = acceptPromptSubmit(await engine.raise<PromptSubmitInput, PromptSubmitResult>(
         'prompt.submit', input, e => ({ text: e.text, ...e.context === undefined ? {} : { context: e.context } }), { binding, signal },
-      )
+      ), text)
       if (submitted.drop !== undefined) {
         ctx.logger.info(`claude-code-mods: prompt dropped: ${submitted.drop}`)
         return { kind: 'reject' }
@@ -263,8 +307,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (downstream.kind !== 'enter' || messages.length === 0) return downstream
     let entered = downstream.messages
     if (submitted.text !== text) {
-      const claimed = new Set<UserMessage>(messages)
-      entered = [...rewritePromptText(messages, submitted.text), ...downstream.messages.filter(message => !claimed.has(message))]
+      const rewritten = new Map<UserMessage, UserMessage>()
+      rewritePromptText(prompt, submitted.text).forEach((message, index) => { rewritten.set(prompt[index] as UserMessage, message) })
+      entered = entered.map(message => rewritten.get(message) ?? message)
     }
     const context = submitted.context ?? []
     if (context.length > 0) {
@@ -277,12 +322,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   })
 
   ctx.on('tools/execute', async (exec, next): Promise<ToolExecutionResult> => {
-    if (engine.registry.select('tool.call').length === 0) return next()
+    // A call a mod raised through `$.tool.call` reaches only the mods loaded before it, never itself.
+    const raisedBy = callOrigins.get(exec.callId)
+    const hooks = engine.registry.select('tool.call', raisedBy)
+    if (hooks.length === 0) return next()
     const agent = exec.agent
     const callArguments = record(exec.arguments)
     const input: ToolCallInput = { ...callArguments, tool: aliases.toMod(exec.name), tool_use_id: exec.callId, ...agentIdOf(agent) }
     let beneath: ToolExecutionResult | undefined
-    const answer = await engine.raise<ToolCallInput, ToolCallResult>('tool.call', input, async (e) => {
+    const answer = await engine.raiseWith<ToolCallInput, ToolCallResult>('tool.call', hooks, raisedBy, input, async (e) => {
       const { tool: _tool, tool_use_id: _id, agentId: _agentId, ...rewritten } = e
       if (JSON.stringify(rewritten) !== JSON.stringify(callArguments) && !rewritesReported.has(exec.name)) {
         rewritesReported.add(exec.name)
@@ -302,6 +350,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (beneath !== undefined) {
       const mapped = toolCallResultOf(beneath)
       if (mapped.result === answer.result && mapped.isError === answer.isError) return beneath
+      // A success the hook marked as failed becomes a failure; a failure stays one, with the hook's text.
+      if (answer.isError === true && !beneath.isError) {
+        return { isError: true, error: { message: text, info: { name: 'ModAnswered', code: 'MOD_ANSWERED' } }, content: [{ type: 'text', text }] }
+      }
       replacements.set(exec.token, text)
       return beneath
     }
@@ -312,6 +364,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     // mod's answer in its place is reported as an error-shaped result.
     return { isError: true, error: { message: text, info: { name: 'ModAnswered', code: 'MOD_ANSWERED' } }, content: [{ type: 'text', text }] }
   })
+
+  // A call that never reaches post-execute (an earlier listener answered, or a pipeline failure) still clears its entry.
+  ctx.on('tools/result', (exec) => { replacements.delete(exec.token) })
 
   ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
     const replacement = replacements.get(exec.token)
@@ -338,8 +393,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     if (event.type !== 'turn/end') return
     const { turn, reason } = event.data
-    startedTurns.delete(`${session.id}:${turn}`)
-    const agent = agents?.get(session.id)
+    startedTurns.get(session.id)?.delete(turn)
+    const agent = ctx.get('agents')?.get(session.id)
     if (agent === undefined) return
     const turnRecord = turns.get(session.id)
     const folded = turnRecord?.turn === turn ? turnRecord : undefined
@@ -352,10 +407,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       ...agentIdOf(agent),
       ...folded?.usage === undefined ? {} : { usage: folded.usage },
     }
-    detached.track(engine.raise<TurnCompleteInput, TurnCompleteResult>(
+    detached.track('turn.complete', engine.raise<TurnCompleteInput, TurnCompleteResult>(
       'turn.complete', input, () => ({ text: '' }), { binding: { agent }, signal: detached.controller.signal },
     ).then((result) => {
-      if (result.text.length > 0) ctx.logger.info(`claude-code-mods: ${result.text}`)
+      if (typeof result.text === 'string' && result.text.length > 0) ctx.logger.info(`claude-code-mods: ${result.text}`)
     }))
   })
 }

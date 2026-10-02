@@ -73,8 +73,11 @@ export interface ModTestKit {
   readonly reports: string[]
   /** The loaded mods in chain order. */
   readonly mods: readonly LoadedMod[]
-  /** Cancel every mod timer and drop every registration. */
-  dispose(): void
+  /**
+   * Drop every registration and close every mod timer.
+   * @returns settles once running timer callbacks have finished.
+   */
+  dispose(): Promise<void>
 }
 
 /** Stubs that answer a whole namespace from memory. */
@@ -230,7 +233,7 @@ export async function createModTestKit(options: ModTestKitOptions = {}): Promise
       return engine.registry.list()
     },
     dispose() {
-      engine.dispose()
+      return engine.dispose()
     },
   }
 }

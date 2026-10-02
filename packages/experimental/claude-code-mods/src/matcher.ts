@@ -55,7 +55,6 @@ export const KNOWN_EVENTS: ReadonlySet<string> = new Set([
   'process.run', 'process.spawn',
   'mcp.call', 'mcp.connect',
   'audio.play', 'audio.speak',
-  'telemetry.log', 'telemetry.mark',
 ])
 
 /**
@@ -87,6 +86,8 @@ export function eventMatches(pattern: string, event: string): boolean {
 
 function valueMatches(expected: MatcherValue, actual: unknown): boolean {
   if (expected instanceof RegExp) {
+    // A global or sticky expression remembers where its last test stopped; every event starts fresh.
+    expected.lastIndex = 0
     return (typeof actual === 'string' || typeof actual === 'number') && expected.test(String(actual))
   }
   if (Array.isArray(expected)) return expected.some(candidate => candidate === actual)

@@ -227,11 +227,12 @@ describe('prompt.submit: rewrite and drop', () => {
       export function register(on) {
         on('prompt.submit', async ($, e, next) => {
           if (e.text.includes('secret')) return { drop: 'secrets stay out' }
+          if (e.text.includes('junk')) return { text: 7, context: ['kept context', 5] }
           return next({ ...e, text: e.text.trim().toUpperCase() })
         })
       }
     `)
-    const adapter = new MockAdapter([textResponse('ok')])
+    const adapter = new MockAdapter([textResponse('ok'), textResponse('junk ok')])
     const h = await harness([mod], adapter)
     const agent = await h.agent()
     await h.turn(agent, '  hello there  ')
@@ -244,6 +245,14 @@ describe('prompt.submit: rewrite and drop', () => {
     const turns = events(agent).filter(e => e.type === 'turn/end').map(e => e.type === 'turn/end' && e.data.reason.kind)
     expect(turns).toEqual(['completed', 'blocked'])
     expect(h.info).toHaveBeenCalledWith('claude-code-mods: prompt dropped: secrets stay out')
+
+    // A result with the wrong types keeps the original text and only the string context lines.
+    await h.turn(agent, 'some junk')
+    const last = adapter.requests[1]?.messages.filter(message => message.role === 'user') ?? []
+    expect(last.slice(-2).map(message => message.role === 'user' && message.content)).toEqual([
+      [{ type: 'text', text: 'some junk' }],
+      [{ type: 'text', text: 'kept context' }],
+    ])
   })
 })
 
@@ -257,6 +266,10 @@ describe('tool.call: answers and rewrites', () => {
             const r = await next({ ...e, command: 'rewritten' })
             return { ...r, result: String(r.result).replace('ran', 'RAN') }
           }
+          if (e.command === 'fail') {
+            const r = await next(e)
+            return { ...r, result: 'marked failed', isError: true }
+          }
           return next(e)
         })
       }
@@ -266,6 +279,7 @@ describe('tool.call: answers and rewrites', () => {
       toolCallResponse('c1', 'echo', { command: 'skip' }), textResponse('one'),
       toolCallResponse('c2', 'echo', { command: 'redact' }), textResponse('two'),
       toolCallResponse('c3', 'echo', { command: 'redact' }), textResponse('three'),
+      toolCallResponse('c4', 'echo', { command: 'fail' }), textResponse('four'),
     ])
     const h = await harness([mod], adapter)
     h.ctx.tools.register(echoTool('echo', ran))
@@ -278,9 +292,15 @@ describe('tool.call: answers and rewrites', () => {
 
     await h.turn(agent, 'redact it')
     await h.turn(agent, 'redact again')
-    expect(ran).toEqual(['redact', 'redact'])
-    const results = events(agent).filter(e => e.type === 'tool/result').map(e => e.type === 'tool/result' && e.data.message.content[0])
-    expect(results.slice(1)).toEqual([{ type: 'text', text: 'RAN redact' }, { type: 'text', text: 'RAN redact' }])
+    await h.turn(agent, 'fail it')
+    expect(ran).toEqual(['redact', 'redact', 'fail'])
+    const results = events(agent).filter(e => e.type === 'tool/result')
+      .map(e => e.type === 'tool/result' && [e.data.message.isError === true, e.data.message.content[0]])
+    expect(results.slice(1)).toEqual([
+      [false, { type: 'text', text: 'RAN redact' }],
+      [false, { type: 'text', text: 'RAN redact' }],
+      [true, { type: 'text', text: 'marked failed' }],
+    ])
     expect(h.warn.mock.calls.filter(call => String(call[0]).includes('rewrote the arguments of echo'))).toHaveLength(1)
   })
 
@@ -328,6 +348,7 @@ describe('the mods API over harness services', () => {
           const response = await $.http.fetch(e.args, { method: 'POST', headers: { 'x-mod': 'api-mod' }, body: 'ping', timeoutMs: 2000 })
           out.http = { status: response.status, ok: response.ok, text: response.text, echoed: response.headers['x-echo'] }
           out.get = (await $.http.fetch(e.args)).headers['x-echo']
+          out.httpBig = await $.http.fetch(e.args + 'big').then(() => 'read', error => error.message)
           out.commands = (await $.command.list()).map(command => command.name + '/' + command.source)
           out.tools = (await $.tool.list()).map(tool => tool.name)
           out.call = await $.tool.call({ tool: 'echo', command: 'from mod' })
@@ -346,6 +367,10 @@ describe('the mods API over harness services', () => {
       }
     `)
     const server = createServer((request, response) => {
+      if (request.url === '/big') {
+        response.end(Buffer.alloc(4 * 1024 * 1024 + 1, 120))
+        return
+      }
       let body = ''
       request.on('data', (chunk: Buffer) => { body += chunk.toString() })
       request.on('end', () => {
@@ -391,6 +416,7 @@ describe('the mods API over harness services', () => {
       expect(out.envGone).toBeUndefined()
       expect(out.http).toEqual({ status: 200, ok: true, text: 'pong', echoed: 'POST api-mod ping' })
       expect(out.get).toBe('GET undefined ')
+      expect(out.httpBig).toMatch(/larger than 4194304 bytes/)
       expect(out.commands).toEqual(['probe/plugin'])
       expect(out.tools).toContain('echo')
       expect(out.call).toEqual({ result: 'ran from mod' })
@@ -617,8 +643,9 @@ describe('subagents, programmatic calls, and malformed tool arguments', () => {
     ])
     const direct = await h.ctx.tools.execute({ callId: ToolCallIdOf('direct'), name: 'echo', arguments: { command: 'direct' }, signal: new AbortController().signal })
     expect(direct.isError).toBe(false)
+    // The nested `$.tool.call` reaches only mods loaded before watch-mod, so its own hook is not re-entered.
     expect(h.info).toHaveBeenCalledWith('watch-mod: direct saw echo and {"result":"ran nested"}')
-    expect(h.info.mock.calls.filter(call => String(call[0]).includes('agent=root n='))).toHaveLength(3)
+    expect(h.info.mock.calls.filter(call => String(call[0]).includes('agent=root n='))).toHaveLength(2)
   })
 })
 
@@ -753,6 +780,7 @@ describe('post-execute interplay and prompt rewrites with images', () => {
     const adapter = new MockAdapter([
       toolCallResponse('c1', 'echo', { command: 'a' }), textResponse('one'),
       toolCallResponse('c2', 'echo', { command: 'b' }), textResponse('two'),
+      textResponse('three'), textResponse('four'),
     ])
     const h = await harness([mod], adapter)
     h.ctx.tools.register(echoTool('echo'))
@@ -764,13 +792,13 @@ describe('post-execute interplay and prompt rewrites with images', () => {
     })
     const agent = await h.agent()
     const image = { type: 'image' as const, attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } as ImageAttachmentRef }
-    // Injected context is claimed with the waking prompt, so one pre-step sees both messages.
-    agent.inject(createUserMessage({ content: [image], source: { kind: 'user' } }))
+    // Injected context from another plugin is claimed with the waking prompt; only the human's message is the prompt.
+    agent.inject(createUserMessage({ content: [{ type: 'text', text: 'injected by a plugin' }], source: { kind: 'claude-code-mods' } }))
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'first' }, image, { type: 'text', text: 'second' }], source: { kind: 'user' } }))
     await agent.whenIdle()
-    const entered = events(agent).filter(e => e.type === 'user/message').map(e => e.type === 'user/message' && e.data.content)
-    expect(entered).toContainEqual([image])
-    expect(entered).toContainEqual([{ type: 'text', text: 'rewritten: firstsecond' }, image])
+    const entered = () => events(agent).filter(e => e.type === 'user/message').map(e => e.type === 'user/message' && e.data.content)
+    expect(entered()).toContainEqual([{ type: 'text', text: 'injected by a plugin' }])
+    expect(entered()).toContainEqual([{ type: 'text', text: 'rewritten: firstsecond' }, image])
     expect(toolResult(agent)).toEqual({ isError: true, text: 'blocked downstream' })
 
     block = false
@@ -778,5 +806,49 @@ describe('post-execute interplay and prompt rewrites with images', () => {
     const results = events(agent).filter(e => e.type === 'tool/result').map(e => e.type === 'tool/result' && e.data.message.content[0])
     expect(results[1]).toEqual({ type: 'text', text: 'REPLACED' })
     expect(JSON.stringify(adapter.requests[3]?.messages)).toContain('downstream context')
+
+    // An image-only prompt gains the rewritten text; a prompt without any human message is left alone.
+    agent.followup(createUserMessage({ content: [image], source: { kind: 'user' } }))
+    await agent.whenIdle()
+    expect(entered().at(-1)).toEqual([image, { type: 'text', text: 'rewritten: ' }])
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'from a plugin' }], source: { kind: 'claude-code-mods' } }))
+    await agent.whenIdle()
+    expect(entered().at(-1)).toEqual([{ type: 'text', text: 'from a plugin' }])
+  })
+})
+
+describe('a mod\'s $.tool.call reaches the mods loaded before it', () => {
+  it('runs the earlier mod\'s tool.call hook once, attributed to the caller, and never the caller\'s own', async () => {
+    const observer = writeMod('observer-mod', `
+      export function register(on) {
+        on('tool.call', async ($, e, next) => {
+          $.ui.log('saw ' + e.tool + ' from ' + next.origin.plugin + '/' + next.origin.tier + ' id=' + (e.tool_use_id.startsWith('mod-') ? 'mod' : 'model'))
+          return next(e)
+        })
+      }
+    `)
+    const caller = writeMod('caller-mod', `
+      export function register(on) {
+        on('session.start', async ($, e, next) => {
+          await $.command.register({ name: 'nest', description: 'Call a tool from the mod' })
+          return next(e)
+        })
+        on('tool.call', async ($, e, next) => {
+          $.ui.log('caller saw ' + e.tool)
+          return next(e)
+        })
+        on('command.run', { command: 'nest' }, async ($) => {
+          const result = await $.tool.call({ tool: 'echo', command: 'nested' })
+          return { text: JSON.stringify(result) }
+        })
+      }
+    `)
+    const h = await harness([observer, caller], new MockAdapter([]))
+    h.ctx.tools.register(echoTool('echo'))
+    const agent = await h.agent()
+    const run = await h.ctx.commands.execute(agent, '/nest', [], new AbortController().signal)
+    expect(run?.result).toEqual({ kind: 'success', text: 'caller-mod: {"result":"ran nested"}' })
+    const lines = h.info.mock.calls.map(call => String(call[0])).filter(line => /^(observer|caller)-mod: /.test(line))
+    expect(lines).toEqual(['observer-mod: saw echo from caller-mod/user id=mod'])
   })
 })

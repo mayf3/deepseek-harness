@@ -74,13 +74,20 @@ function stateSlot(plugin: unknown, key: unknown): string {
   return `${plugin}\u0000${key}`
 }
 
-/** Timers owned by the engine on mods' behalf; disposal cancels them all. */
+/**
+ * Timers owned by the engine on one mod's behalf. Closing cancels every
+ * scheduled timer, refuses new ones, and waits for the callbacks already
+ * running, so a mod cannot reschedule itself or touch the host after unload.
+ */
 class TimerSet implements TimerHost {
   private readonly active = new Set<ReturnType<typeof setTimeout>>()
+  private readonly running = new Set<Promise<void>>()
+  private closed = false
 
   constructor(private readonly report: (line: string) => void, private readonly owner: string) {}
 
   after(ms: number, fn: () => unknown): ModTimer {
+    if (this.closed) return { cancel() {} }
     const handle = setTimeout(() => {
       this.active.delete(handle)
       this.run(fn)
@@ -91,22 +98,30 @@ class TimerSet implements TimerHost {
   }
 
   every(ms: number, fn: () => unknown): ModTimer {
+    if (this.closed) return { cancel() {} }
     const handle = setInterval(() => { this.run(fn) }, ms)
     handle.unref()
     this.active.add(handle)
     return { cancel: () => { clearInterval(handle); this.active.delete(handle) } }
   }
 
-  /** Cancel every timer still scheduled. */
-  clear(): void {
+  /**
+   * Cancel every scheduled timer, refuse new ones, and settle once the
+   * callbacks already running have finished.
+   */
+  async close(): Promise<void> {
+    this.closed = true
     for (const handle of this.active) clearTimeout(handle)
     this.active.clear()
+    await Promise.all(this.running)
   }
 
   private run(fn: () => unknown): void {
-    Promise.resolve().then(fn).catch((error: unknown) => {
+    const settled = Promise.resolve().then(fn).then(() => undefined, (error: unknown) => {
       this.report(`${this.owner}: timer callback failed: ${messageOf(error)}`)
     })
+    this.running.add(settled)
+    void settled.finally(() => { this.running.delete(settled) })
   }
 }
 
@@ -132,13 +147,36 @@ export class ModsEngine<B> {
    * @returns the result as the outermost hook returned it.
    */
   raise<E, R>(event: string, input: E, core: (e: E) => Promise<R> | R, options: RaiseOptions<B>): Promise<R> {
+    return this.raiseWith(event, this.registry.select(event), undefined, input, core, options)
+  }
+
+  /**
+   * Raise one event through hooks the caller already selected, attributed to
+   * the mod that caused it: the engine, or a mod whose `$` call the host turned
+   * back into this event.
+   * @param event - the event name.
+   * @param hooks - the selected hooks, outermost first.
+   * @param raisedBy - the mod the event is attributed to, or undefined for the engine.
+   * @param input - the event input; frozen before a hook sees it.
+   * @param core - the engine behavior beneath every hook.
+   * @param options - the binding events of this agent share, and its cancellation.
+   * @returns the result as the outermost hook returned it.
+   */
+  raiseWith<E, R>(
+    event: string,
+    hooks: readonly RegisteredHook[],
+    raisedBy: LoadedMod | undefined,
+    input: E,
+    core: (e: E) => Promise<R> | R,
+    options: RaiseOptions<B>,
+  ): Promise<R> {
     const signal = options.signal ?? NEVER_ABORTS
     return dispatch<E, R>({
       event,
       input,
       core,
-      origin: ENGINE_ORIGIN,
-      hooks: this.registry.select(event),
+      origin: raisedBy === undefined ? ENGINE_ORIGIN : { plugin: raisedBy.name, tier: 'user' },
+      hooks,
       api: (hook, clock) => this.api(hook.mod, clock, options.binding, signal),
       budgetMs: this.options.budgetMs,
       catchBudgetMs: this.options.catchBudgetMs,
@@ -162,6 +200,8 @@ export class ModsEngine<B> {
     const result = await dispatch<unknown, unknown>({
       event: op,
       input,
+      // `tool.call` reaches the earlier mods once the host raises it from the tool pipeline, not here as well.
+      hooks: op === 'tool.call' ? [] : this.registry.select(op, mod),
       core: async (e): Promise<OpResult> => {
         try {
           return { value: await this.opCore(op, e, { mod, binding, signal, engine: this }) }
@@ -171,7 +211,6 @@ export class ModsEngine<B> {
         }
       },
       origin: { plugin: mod.name, tier: 'user' },
-      hooks: this.registry.select(op, mod),
       api: (hook, clock) => this.api(hook.mod, clock, binding, signal),
       budgetMs: this.options.budgetMs,
       catchBudgetMs: this.options.catchBudgetMs,
@@ -221,18 +260,24 @@ export class ModsEngine<B> {
   }
 
   /**
-   * Drop one mod: its hooks stop receiving events and its timers are cancelled.
+   * Drop one mod: its hooks stop receiving events, its timers are cancelled,
+   * and its running timer callbacks are awaited.
    * @param name - the plugin name.
+   * @returns settles once the mod's timer callbacks have finished.
    */
-  unload(name: string): void {
+  async unload(name: string): Promise<void> {
     this.registry.remove(name)
-    this.timers.get(name)?.clear()
+    const timers = this.timers.get(name)
     this.timers.delete(name)
+    await timers?.close()
   }
 
-  /** Cancel every mod's timers and drop every registration. */
-  dispose(): void {
-    for (const mod of [...this.registry.list()]) this.unload(mod.name)
+  /**
+   * Drop every registration and close every mod's timers.
+   * @returns settles once every timer callback has finished.
+   */
+  async dispose(): Promise<void> {
+    await Promise.all([...this.registry.list()].map(mod => this.unload(mod.name)))
     this.state.clear()
   }
 

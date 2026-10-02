@@ -269,6 +269,16 @@ describe('dispatch: .catch handlers', () => {
     viaNext.catchHandler = (_$, e, next) => next(e)
     expect(await dispatch(request({ input: {}, core: () => ({ ok: 1 }), hooks: [viaNext], report }))).toEqual({ ok: 1 })
 
+    // A handler that ran beneath and then returned nothing: what it ran stands, nothing runs again.
+    const ranBeneath = hook(a, 'tool.call', () => { throw new Error('boom') })
+    ranBeneath.catchHandler = async (_$, e, next) => {
+      await next(e)
+      return undefined
+    }
+    const onceCore = vi.fn(() => ({ ok: 'once' }))
+    expect(await dispatch(request({ input: {}, core: onceCore, hooks: [ranBeneath], report }))).toEqual({ ok: 'once' })
+    expect(onceCore).toHaveBeenCalledTimes(1)
+
     const silent = hook(a, 'tool.call', () => { throw new Error('boom') })
     silent.catchHandler = () => undefined
     expect(await dispatch(request({ input: {}, core: () => ({ ok: 2 }), hooks: [silent], report }))).toEqual({ ok: 2 })
@@ -288,12 +298,18 @@ describe('dispatch: .catch handlers', () => {
     expect(await dispatch(request({ input: {}, core: () => ({ ok: 5 }), hooks: [inspecting], report }))).toEqual({ deny: 'inspected' })
 
     const slow = hook(a, 'tool.call', () => { throw new Error('boom') })
-    slow.catchHandler = async (_$, e) => {
+    let lateNext: Promise<unknown> | undefined
+    slow.catchHandler = async (_$, e, next) => {
       await new Promise(resolve => setTimeout(resolve, 60))
-      return { deny: 'late ' + String(e) }
+      lateNext = next(e)
+      return { deny: 'late' }
     }
-    expect(await dispatch(request({ input: {}, core: () => ({ ok: 4 }), hooks: [slow], report, catchBudgetMs: 15 }))).toEqual({ ok: 4 })
+    const slowCore = vi.fn(() => ({ ok: 4 }))
+    expect(await dispatch(request({ input: {}, core: slowCore, hooks: [slow], report, catchBudgetMs: 15 }))).toEqual({ ok: 4 })
     expect(report).toHaveBeenCalledWith('a: tool.call .catch handler skipped: timeout, ran past its 15 ms limit')
+    await new Promise(resolve => setTimeout(resolve, 60))
+    await expect(lateNext).resolves.toBeUndefined()
+    expect(slowCore).toHaveBeenCalledTimes(1)
   })
 })
 

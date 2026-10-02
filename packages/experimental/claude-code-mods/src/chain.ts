@@ -244,26 +244,38 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
         request.report(`${hook.mod.name}: ${request.event} hook skipped: ${failure.line}`)
       }
       if (hook.catchHandler !== undefined) {
-        const answered = await runCatch(hook, index, frozen, { kind: failure.kind, message: failure.message }, state.called, state.beneath)
+        const answered = await runCatch(hook, index, frozen, { kind: failure.kind, message: failure.message }, state)
         if (answered !== undefined) return answered
       }
-      if (state.called && state.beneath !== undefined) return await state.beneath
+      // Whatever ran beneath, for the hook or its handler, ran once; its result stands.
+      if (state.beneath !== undefined) return await state.beneath
       return await runFrom(index + 1, input)
     } finally {
       clock.stop()
     }
   }
 
+  /**
+   * Run the failed hook's `.catch` handler. It shares the hook's beneath state:
+   * what the hook already ran is handed back, what the handler runs is recorded
+   * for the skip path, so nothing beneath runs twice.
+   */
   async function runCatch(
-    hook: RegisteredHook, index: number, input: E, failure: HookFailure, called: boolean, beneath: Promise<R> | undefined,
+    hook: RegisteredHook,
+    index: number,
+    input: E,
+    failure: HookFailure,
+    state: { abandoned: boolean; called: boolean; beneath: Promise<R> | undefined },
   ): Promise<R | undefined> {
     const clock = new BudgetClock(request.catchBudgetMs)
+    let handlerAbandoned = false
     const next = Object.assign(
       (e: E): Promise<R> => {
-        if (beneath !== undefined) return beneath
+        if (state.beneath !== undefined) return state.beneath
+        if (handlerAbandoned) return Promise.resolve(undefined as R)
         clock.pause()
-        beneath = runFrom(index + 1, e).finally(() => { clock.resume() })
-        return beneath
+        state.beneath = runFrom(index + 1, e).finally(() => { clock.resume() })
+        return state.beneath
       },
       {
         signal: request.signal,
@@ -271,7 +283,7 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
         budget: { ms: request.catchBudgetMs, get remainingMs(): number { return clock.remainingMs } },
         to(): Promise<R> { return Promise.reject(new Error('next.to is not available in a .catch handler')) },
         error: failure,
-        called,
+        called: state.called,
       },
     ) as HookNext<E, R>
     const api = request.api(hook, clock)
@@ -282,13 +294,14 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
         .then(() => handler(api, input, next as HookNext<unknown, unknown>) as R | undefined | Promise<R | undefined>)
       running.catch(() => {})
       const result = await Promise.race([running, clock.expired])
-      return typeof result === 'object' && result !== null ? result : undefined
+      if (typeof result === 'object' && result !== null) return result
     } catch (error: unknown) {
       request.report(`${hook.mod.name}: ${request.event} .catch handler skipped: ${failureOf(error).line}`)
-      return undefined
     } finally {
+      handlerAbandoned = true
       clock.stop()
     }
+    return undefined
   }
 
   return runFrom(0, request.input)
