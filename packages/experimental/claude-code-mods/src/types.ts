@@ -112,6 +112,28 @@ export interface ModDefinition {
   readonly register: ModRegister
 }
 
+// ---- Drawn surfaces, as a Client receives them ----
+
+/** A serialized element: callbacks replaced by the action id the host holds for them. */
+export interface SerializedElement {
+  readonly type: 'Box' | 'Text' | 'Button'
+  readonly props: Readonly<Record<string, string | number | boolean>>
+  readonly children: readonly SerializedNode[]
+  /** Set on a `Button` whose `onPress` the host holds. */
+  readonly actionId?: string
+}
+
+/** A serialized tree node: an element or a run of text. */
+export type SerializedNode = SerializedElement | string
+
+/** One drawn generation of a session's band above the prompt. */
+export interface SurfaceSnapshot {
+  /** Increases with every redraw; a press names the generation it saw. */
+  readonly generation: number
+  /** The serialized tree, or null when no mod drew. */
+  readonly tree: readonly SerializedNode[] | null
+}
+
 // ---- Event inputs and results ----
 
 /** `ui.render`: the host asks the mods to draw one surface; the first hook that returns a tree draws it. */

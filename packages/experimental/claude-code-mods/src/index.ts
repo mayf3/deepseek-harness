@@ -27,13 +27,12 @@ import { createHostOps, toolCallResultOf } from './host-ops.ts'
 import type { AgentBinding } from './host-ops.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { SurfaceTable } from './surfaces.ts'
-import type { SurfaceSnapshot } from './surfaces.ts'
 import { createToolNameAliases } from './tool-names.ts'
 import { messageOf, record, stringify } from './values.ts'
 import type {
   ModDefinition, PromptSubmitInput, PromptSubmitResult, SessionEndInput, SessionEndResult, SessionStartInput,
   SessionStartResult, ToolCallInput, ToolCallResult, TurnCompleteInput, TurnCompleteResult, TurnStartInput,
-  TurnStartResult, TurnUsage, UiRenderInput, UiRenderResult,
+  SurfaceSnapshot, TurnStartResult, TurnUsage, UiRenderInput, UiRenderResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -43,8 +42,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export type * from './types.ts'
-export type { BoxProps, ButtonProps, SerializedElement, SerializedNode, TextProps, UiElement, UiElements, UiNode } from './elements.ts'
-export type { SurfaceSnapshot } from './surfaces.ts'
+export type { BoxProps, ButtonProps, TextProps, UiElement, UiElements, UiNode } from './elements.ts'
 export { BAND_COLUMNS } from './surfaces.ts'
 export { defineMod, type ModConfig, type ModPlugin, type ModSpec } from './define-mod.ts'
 export { DEFAULT_TOOL_ALIASES } from './tool-names.ts'

@@ -6,6 +6,8 @@
  * @module
  */
 
+import type { SerializedNode } from './types.ts'
+
 /** One element a constructor returns; `props` are the constructor's argument, frozen. */
 export interface UiElement {
   readonly type: 'Box' | 'Text' | 'Button'
@@ -52,17 +54,7 @@ export interface UiElements {
   readonly Button: (props: ButtonProps) => UiElement
 }
 
-/** A serialized element: callbacks replaced by the action id the host holds for them. */
-export interface SerializedElement {
-  readonly type: 'Box' | 'Text' | 'Button'
-  readonly props: Readonly<Record<string, string | number | boolean>>
-  readonly children: readonly SerializedNode[]
-  /** Set on a `Button` whose `onPress` the host holds. */
-  readonly actionId?: string
-}
-
-/** A serialized tree node: an element or a run of text. */
-export type SerializedNode = SerializedElement | string
+export type { SerializedElement, SerializedNode } from './types.ts'
 
 /** What a serialized tree may carry per prop: scalars only. */
 function scalarProps(props: Readonly<Record<string, unknown>>): Record<string, string | number | boolean> {

@@ -7,20 +7,14 @@
  */
 
 import { serializeTree, treeProblem } from './elements.ts'
-import type { SerializedNode, UiNode } from './elements.ts'
+import type { UiNode } from './elements.ts'
 import { messageOf } from './values.ts'
-import type { UiRenderInput } from './types.ts'
+import type { SerializedNode, SurfaceSnapshot, UiRenderInput } from './types.ts'
+
+export type { SurfaceSnapshot } from './types.ts'
 
 /** The band's width the host reports to `ui.render` as `bodyColumns` and `viewport.columns`. */
 export const BAND_COLUMNS = 120
-
-/** One drawn generation of a session's band. */
-export interface SurfaceSnapshot {
-  /** Increases with every redraw; a press names the generation it saw. */
-  readonly generation: number
-  /** The serialized tree, or null when no mod drew. */
-  readonly tree: readonly SerializedNode[] | null
-}
 
 /** What the table needs from the host. */
 export interface SurfaceHost {
