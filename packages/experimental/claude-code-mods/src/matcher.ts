@@ -29,26 +29,7 @@ export const ENGINE_EVENTS: ReadonlySet<string> = new Set([
  * fails at load rather than registering a hook that never runs.
  */
 export const KNOWN_EVENTS: ReadonlySet<string> = new Set([
-  // tools
-  'tool.call', 'tool.check', 'tool.describe',
-  // prompts and what the model reads
-  'prompt.submit', 'prompt.fill', 'prompt.suggest', 'prompt.edit', 'prompt.compose', 'prompt.section',
-  'prompt.context', 'prompt.attachment', 'skill.prompt', 'attribution.text',
-  // commands and configuration
-  'command.run', 'command.describe', 'config.set', 'config.describe',
-  // turns
-  'turn.start', 'turn.step', 'turn.complete',
-  // session
-  'session.start', 'session.end', 'session.compact', 'session.receive', 'session.send', 'session.append',
-  'session.attach', 'session.detach', 'session.measure',
-  // subagents
-  'agent.offer', 'agent.spawn',
-  // interface
-  'ui.render', 'ui.resolve', 'ui.press', 'ui.input', 'ui.select', 'ui.focus', 'ui.scroll', 'ui.close', 'ui.message',
-  // other mods
-  'plugin.register', 'engine.create',
-  // telemetry
-  'telemetry.log', 'telemetry.mark',
+  ...ENGINE_EVENTS,
   // mods API calls
   'ui.log', 'ui.toast', 'ui.status', 'ui.notice', 'ui.invalidate', 'ui.open', 'ui.panes', 'ui.blit', 'ui.ask', 'ui.copy',
   'command.register', 'command.list',
