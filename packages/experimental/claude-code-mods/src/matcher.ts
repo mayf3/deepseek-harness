@@ -7,12 +7,6 @@
 
 import type { HookMatcher, MatcherValue } from './types.ts'
 
-/**
- * Every event name a mod may hook, in Claude Code's reference order: engine
- * events, then every mods API method as `<namespace>.<method>`. `on` refuses a
- * name outside this list with Claude Code's own wording, so a misspelling
- * fails at load rather than registering a hook that never runs.
- */
 /** The events the engine raises on its own, as opposed to the `<namespace>.<method>` events a mods API call raises. */
 export const ENGINE_EVENTS: ReadonlySet<string> = new Set([
   'tool.call', 'tool.check', 'tool.describe',
@@ -28,6 +22,12 @@ export const ENGINE_EVENTS: ReadonlySet<string> = new Set([
   'telemetry.log', 'telemetry.mark',
 ])
 
+/**
+ * Every event name a mod may hook, in Claude Code's reference order: engine
+ * events, then every mods API method as `<namespace>.<method>`. `on` refuses a
+ * name outside this list with Claude Code's own wording, so a misspelling
+ * fails at load rather than registering a hook that never runs.
+ */
 export const KNOWN_EVENTS: ReadonlySet<string> = new Set([
   // tools
   'tool.call', 'tool.check', 'tool.describe',

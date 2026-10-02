@@ -948,19 +948,11 @@ export interface StagehandModelConfig {
 
 ## `@deepseek-ai/dsh-experimental-claude-code-mods`
 
-- `source`: [`packages/experimental/claude-code-mods/src/index.ts:58`](../packages/experimental/claude-code-mods/src/index.ts)
+- `source`: [`packages/experimental/claude-code-mods/src/index.ts:53`](../packages/experimental/claude-code-mods/src/index.ts)
 
 ```ts config-catalog
-/** Plugin config: which mod directories to load and the limits their hooks run under. */
+/** Plugin config: the limits mod hooks run under. */
 export interface Config {
-  /**
-   * Plugin directories to load, each holding `.claude-plugin/plugin.json` and
-   * `hooks/hooks.json`, as `claude --plugin-dir` takes them. A relative path
-   * resolves against the process launch cwd. Load order is chain order.
-   */
-  pluginDirs: string[]
-  /** `register` option values by plugin name, overlaid on the manifest's `userConfig` defaults. */
-  options?: Record<string, Record<string, string | number | boolean | string[]>>
   /** A hook's own running-time limit in milliseconds (Claude Code: 10 seconds). */
   hookTimeoutMs?: number
   /** A `.catch` handler's running-time limit in milliseconds (Claude Code: 1 second). */
@@ -4418,6 +4410,7 @@ export interface Config {
 | `@deepseek-ai/dsh-deepseek-llm-api-extensions` | — | [`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-auto-review` | `approval` · `llm` · `permissionPresets` · `sessions` · `tools` | [`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | — | [`packages/experimental/client-ui-claude-code-mods/src/index.ts`](../packages/experimental/client-ui-claude-code-mods/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-inspector` | — | [`packages/experimental/session-inspector/src/index.ts`](../packages/experimental/session-inspector/src/index.ts) |

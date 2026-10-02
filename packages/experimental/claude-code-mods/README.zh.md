@@ -1,5 +1,5 @@
 ---
-description: "实验性桥接：加载 Claude Code 模组（hooks module），把它们的钩子链运行在 harness 扩展点上，供挂载模组的用户与扩展映射的维护者阅读。"
+description: "实验性桥接：把 Claude Code 模组作为 DSH 插件运行——其 register(on, options) 钩子可守卫工具调用、改写提示词、添加命令与工具并在提示框上方绘制；面向挂载模组的用户与扩展映射的维护者。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 agent（智能体）运行中运行 [Claude Code 模组（mod）](https://code.claude.com/docs/en/plugins/mods/overview)：把 `pluginDirs` 指向模组目录，它们的 `register(on, options)` 钩子就能通过同一条 `$`、`e`、`next` 链守护工具调用、改写提示词、添加命令与工具并读取会话事实。在模组行动之前挂载没有成本；每个 `$` 调用都基于一个已组合的 harness 服务。需要原样试用现有模组时选择本包；它是 alpha 质量的接口兼容性演示，未提供的事件与 `$` 成员会以指明缺口的消息失败，也不会在 GUI 中绘制任何内容。
+在智能体运行中执行 [Claude Code 模组](https://code.claude.com/docs/en/plugins/mods/overview)：用 `defineMod` 包装模组的 `register(on, options)`，在本桥接之后作为插件挂载，其钩子即可通过同一套 `$`、`e`、`next` 链守卫工具调用、改写提示词、添加命令与工具、读取会话事实，并在提示框上方绘制一条横幅。挂载本身没有开销，直到模组行动；每次 `$` 调用都落在一个已组合的 harness 服务上。它是 alpha 阶段的接口兼容性演示：未服务的事件在加载时报告，未服务的 `$` 成员以指明缺口的消息失败，[兼容性页面](../../../docs/subsystems/claude-code-mods.zh.md) 列出了全部差异。
 
 ## 目录
 
@@ -25,68 +25,78 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-挂载本包并给出要加载的插件目录，用法与 `claude --plugin-dir` 相同。每个目录包含 `.claude-plugin/plugin.json` 以及恰好有一个 `modules` 条目的 `hooks/hooks.json`。
+模组就是插件。`defineMod` 接收模组的 `register` 函数以及 `plugin.json` 本应承载的身份，返回一个 Cordis 插件：其配置就是 `register` 收到的 `options` 对象，覆盖在你给出的 `userConfig` 默认值之上。先挂载桥接，再按链顺序挂载各模组。
+
+```ts
+// mods/token-weather/index.ts
+import { defineMod } from '@deepseek-ai/dsh-experimental-claude-code-mods'
+import { register } from './hooks/token-weather.mjs'
+
+export default defineMod({ name: 'token-weather', version: '0.1.0', root: import.meta.dirname, register })
+```
 
 ```yaml
 - name: '@deepseek-ai/dsh-experimental-claude-code-mods'
+- name: './mods/blast-radius/index.ts'
+- name: './mods/token-weather/index.ts'
   config:
-    pluginDirs:
-      - ./mods/token-weather
-      - ./mods/blast-radius
-    options:
-      token-weather:
-        history: 12
+    history: 12
 ```
 
-| 字段 | 默认值 | 含义 |
+| 桥接字段 | 默认值 | 含义 |
 |---|---|---|
-| `pluginDirs` | 必填 | 按链顺序排列的插件目录；相对路径相对于进程启动 cwd 解析 |
-| `options` | — | 按插件名给出的 `register` 选项值，叠加在 manifest（元数据清单）的 `userConfig` 默认值之上 |
-| `hookTimeoutMs` | `10000` | 一个钩子每个事件的自身运行时间（Claude Code 的限制）；在 `next` 或 `$` 调用内的时间不计 |
+| `hookTimeoutMs` | `10000` | 钩子每个事件自身的运行时间（Claude Code 的限制）；`next` 或 `$` 调用内部的时间不计入 |
 | `catchTimeoutMs` | `1000` | `.catch` 处理器的运行时间 |
 | `processTimeoutMs` | `30000` | `$.process.run` 与 `$.http.fetch` 的默认超时 |
-| `toolAliases` | — | 追加到内置表的「Claude Code 工具名 → harness 工具名」条目 |
+| `toolAliases` | — | 追加到内置表的 Claude Code 工具名 → harness 工具名条目 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-experimental-claude-code-mods)是每个可接受字段的权威来源。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-experimental-claude-code-mods)是所有可接受字段的完整来源。[examples](examples/) 目录以插件目录的形式收录了 Anthropic [Getting started with Claude Code mods](https://claude.dev/blog/getting-started-with-claude-code-mods/) 一文中的三个模组，它们同样可在 `claude --plugin-dir` 下运行：Token Weather 的已发布模块、类型与测试原样保留，Blast Radius 与 Replay Theater 则由已发布片段补全。[可选叠加层](../../../apps/cli/config/examples/claude-code-mods.overlay.yml)把桥接、三个模组与 [Web 横幅](../client-ui-claude-code-mods/README.zh.md)组合起来用于源码启动。
 
 ### 你的模组会收到哪些事件
 
 | 事件 | 触发自 | 钩子可以 |
 |---|---|---|
-| `session.start` | 根 agent 的 `agent/created`，在其第一个轮次前等待完成；取消创建会放弃仍在等待的钩子 | 观察；注册命令与工具 |
-| `prompt.submit` | 带有已认领消息的 `agent/pre-step`；`e.text` 拼接的是用户自己（来源为 `user`）消息的文本块，改写也只触及这些消息 | 改写 `text`、添加模型在提示词之后读取的 `context`，或用 `{ drop }` 丢弃提示词 |
-| `turn.start` | 一个轮次的第一个 `agent/pre-step` | 观察 |
-| `tool.call` | `tools/execute` waterfall（瀑布式事件），在 harness 权限决策之后；模组通过 `$.tool.call` 发起的调用只到达更早加载的模组，并归因于调用方 | 在前后观察、`{ deny }`、用 `{ result }` 应答，或在 `next` 之后改写结果或其 `isError` |
-| `turn.complete` | `turn/end` 会话事件 | 观察；返回 `{ text }` 在 host 日志中写一行 |
-| `command.run` | 用户输入了模组通过 `$.command.register` 注册的命令 | 用 `{ text }` 或 `{}` 应答 |
-| `session.end` | 根 agent 的 `agent/disposed`；`$.state` 在钩子结算前仍可读取 | 观察 |
-| `<namespace>.<method>` | 更晚加载的模组的 `$` 调用（`tool.call` 改经工具流水线到达） | 观察、改写或 `{ deny }` 该调用 |
+| `session.start` | 根智能体的 `agent/created`，在其首轮之前等待完成；取消创建会放弃等待中的钩子 | 观察；注册命令与工具 |
+| `prompt.submit` | 带有已认领消息的 `agent/pre-step`；`e.text` 拼接人类自己（`user` 来源）消息的文本块，改写也只触及这些块 | 改写 `text`、在输入的提示词之后追加 `context` 块，或 `{ drop }` 掉提示词 |
+| `turn.start` | 一轮中的首个 `agent/pre-step` | 观察 |
+| `tool.call` | `tools/execute` 瀑布流，在 harness 权限决定之后；模组用 `$.tool.call` 发起的调用只到达在它之前加载的模组，并归属于调用方 | 前后观察、`{ deny }`、以 `{ result }` 作答，或在 `next` 之后改写结果或其 `isError` |
+| `turn.complete` | `turn/end` 会话事件 | 观察；返回 `{ text }` 在宿主日志中写一行 |
+| `command.run` | 模组用 `$.command.register` 注册的命令被输入 | 以 `{ text }` 或 `{}` 作答 |
+| `ui.render` | 提示框上方的横幅重绘：`{ component: 'AbovePrompt' }`，带 `bodyColumns`、`hasSurvey`、`isWorking`、`maxRows` 属性 | 从 `$.ui.resolve(e)` 返回 `Box`/`Text`/`Button` 树，或 `next(e)` 让出横幅 |
+| `session.end` | 根智能体的 `agent/disposed`；钩子结束前 `$.state` 仍可读 | 观察 |
+| `<namespace>.<method>` | 更晚加载的模组的 `$` 调用（`tool.call` 则经由工具流水线到达） | 观察、改写或 `{ deny }` |
 
-harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使用 Claude Code 的名称（`Bash` ↔ `bash`、`Read` ↔ `read`、`Edit` ↔ `edit`、`Write` ↔ `write`、`Glob` ↔ `glob`、`Grep` ↔ `grep`、`WebFetch` ↔ `web_fetch`、`WebSearch` ↔ `web_search`、`Task` ↔ `subagent`、`TodoWrite` ↔ `todo_write`、`AskUserQuestion` ↔ `ask_user_question`、`ExitPlanMode` ↔ `exit_plan_mode`、`Skill` ↔ `skill`）；其余工具保持 harness 名称。subagent 事件携带 `e.agentId`。其他每个 Claude Code 事件名都能无错注册，但永远不会触发。
+`e.tool` 与 `tool` 匹配器在 harness 工具有对应名时使用 Claude Code 的名字（`Bash` ↔ `bash`、`Read` ↔ `read`、`Edit` ↔ `edit`、`Write` ↔ `write`、`Glob` ↔ `glob`、`Grep` ↔ `grep`、`WebFetch` ↔ `web_fetch`、`WebSearch` ↔ `web_search`、`Task` ↔ `subagent`、`TodoWrite` ↔ `todo_write`、`AskUserQuestion` ↔ `ask_user_question`、`ExitPlanMode` ↔ `exit_plan_mode`、`Skill` ↔ `skill`）；其余工具保留 harness 名。子智能体事件带 `e.agentId`。其他所有 Claude Code 事件名都能注册而不报错，但永不触发，并在模组加载时以警告点名。
 
-### 你的模组能调用哪些 `$` 成员
+<a id="the-band-above-the-prompt"></a>
+### 提示框上方的横幅
 
-| 命名空间 | 已提供 | 基于 |
+横幅每个会话一个实例，由加载顺序中第一个 `ui.render` 钩子返回树的模组绘制；调用 `next(e)` 的钩子把横幅让给下一个模组，因此把只在持有事项时才绘制的模组（Blast Radius、Replay Theater）放在只要有读数就绘制的模组（Token Weather）之前。横幅在上次绘制读取过的 `$.state` 值被写入时、在 `$.ui.open`、`$.ui.close`、`$.ui.invalidate` 之后、在每条 `tool.call` 链与 `turn.complete` 结束之后以及按钮按下之后重绘。`Button` 的 `onPress` 留在宿主中；Web 横幅把点击连同它看到的代数发回，针对更早绘制的点击会被报告并忽略。`$.ui.open` 回答 `{ isPlaced: false }`：没有面板被放置，降级到横幅的模组就在横幅中绘制。[测试工具包](#test-a-mod)的 `$.ui.mount` 不需要 Client 就能渲染同样的钩子。
+
+### 你的模组可以调用哪些 `$` 成员
+
+| 命名空间 | 已服务 | 基于 |
 |---|---|---|
-| `$.plugin` | `name`、`root` | manifest |
-| `$.ui` | `log`、`toast`、`status`、`invalidate`、`open`、`close`、`panes`、`ask` | `ask` 基于 `ctx.userQuestions`；其余写入 host 日志，`open` 应答 `{ isPlaced: false }` |
-| `$.command` | `register`、`run`、`list` | `ctx.commands`，作用域为事件所属的 agent |
-| `$.tool` | `register`、`call`、`list` | `ctx.tools`；注册的工具命名为 `mcp__<plugin>__<tool>` |
-| `$.prompt` | `submit` | `agent.followup()`，除非 `asUser`，否则框定为来自模组的消息 |
-| `$.session` | `id`、`cwd`、`root`、`model`、`turns`、`messages`、`usage`、`version` | agent 的 Session 以及 `turnBoundary` 与 `contextPressure` 投影；`cwd` 与 `root` 都报告会话工作区，harness 每个会话只有一个目录 |
-| `$.state` | `get`、`set` | 为该会话保留的内存，按模组给出的 `{ plugin, key }` 寻址 |
-| `$.store` | `get`、`set`、`delete`、`keys` | `claude_code_mods` storage domain，每个插件一个 JSON 对象，上限 4 MiB |
-| `$.clock` | `now`、`sleep`、`after`、`every` | 桥接在卸载时取消的定时器 |
-| `$.fs` | `read`、`write`、`list`、`exists`、`stat` | `ctx.fs`，相对会话工作区解析，单文件上限 4 MiB |
-| `$.process` | `run` | `ctx.subprocess`，argv 不经 shell |
-| `$.http` | `fetch` | 本进程的 `fetch`，响应体上限 4 MiB |
-| `$.env` | `get`、`set` | 本进程的环境变量，由所有会话与插件共享 |
+| `$.plugin` | `name`、`root` | `defineMod` 的规格 |
+| `$.ui` | `resolve`、`invalidate`、`open`、`close`、`panes`、`log`、`toast`、`status`、`ask` | `resolve` 交出元素构造器；`invalidate`、`open`、`close` 重绘横幅；`ask` 基于 `ctx.userQuestions`；`log`、`toast`、`status` 到达宿主日志 |
+| `$.command` | `register`、`run`、`list` | `ctx.commands`，限定在事件所属的智能体 |
+| `$.tool` | `register`、`call`、`list` | `ctx.tools`；注册的工具名为 `mcp__<plugin>__<tool>`；工具推迟到下一请求的上下文会注入会话 |
+| `$.prompt` | `submit` | `agent.followup()`，作为 `user` 来源的消息，除非 `asUser` 否则套上"来自模组"的框架 |
+| `$.session` | `id`、`cwd`、`root`、`model`、`turns`、`messages`、`usage`、`version` | 智能体的 Session 及 `turnBoundary`、`contextPressure` 投影；`cwd` 与 `root` 都报告会话工作区，即 harness 每会话一个目录 |
+| `$.state` | `get`、`set` | 为会话持有的内存，以模组命名的 `{ plugin, key }` 寻址；`ui.render` 期间的读取会让横幅订阅 |
+| `$.store` | `get`、`set`、`delete`、`keys` | `claude_code_mods` 存储域，每插件一个 JSON 对象，4 MiB |
+| `$.clock` | `now`、`sleep`、`after`、`every` | 由安排它们的事件所属会话拥有的定时器；事件取消时 `sleep` 拒绝 |
+| `$.fs` | `read`、`write`、`list`、`exists`、`stat` | `ctx.fs`，相对于会话工作区，每文件 4 MiB |
+| `$.process` | `run` | `ctx.subprocess`，不经 shell 的 argv |
+| `$.http` | `fetch` | 进程的 `fetch`，正文最多 4 MiB |
+| `$.env` | `get`、`set` | 本进程的环境变量，所有会话与插件共享 |
 
-所需服务未组合时，调用会以缺失服务的包名拒绝；表外的命名空间或方法以 `no implementation for <namespace>.<method>` 拒绝。
+所需服务未组合的调用以缺失服务的包名拒绝；表外的命名空间或方法以 `no implementation for <namespace>.<method>` 拒绝。
 
+<a id="test-a-mod"></a>
 ### 测试模组
 
-`createModTestKit` 从目录或内联模块加载模组，并以 `claude-code/testing` 的形态在它们之下放置 stub 后触发事件：`kit.on('tool.call', () => ({ result: 'ok' }))` 代替引擎应答，`kit.$.tool.call({ tool: 'Bash', command: 'ls' })` 触发事件，`mock.store(kit.on)` 用内存应答 `$.store`。[测试工具包 spec](tests/testing.spec.ts) 对 fixture（测试前置数据）模组原样运行 Claude Code 自己的 `first-mod` 教程测试。
+来自 `@deepseek-ai/dsh-experimental-claude-code-mods/testing` 的 `createModTestKit` 加载 `defineMod` 插件或裸定义，并以桩在底层回答的方式让事件穿过它们，形态与 `claude-code/testing` 相同：`kit.on('tool.call', () => ({ result: 'ok' }))` 代替引擎作答，`kit.$.tool.call({ tool: 'Bash', command: 'ls' })` 触发事件，`kit.$.ui.mount({ component: 'AbovePrompt' })` 渲染横幅并查找或按下其元素，`mock.store(kit.on)` 从内存回答 `$.store`。在本仓库内，`claude-code/testing` 解析为该工具包加上 Vitest 的 `describe`、`test`、`expect`，因此[示例模组的测试](examples/token-weather/tests/token-weather.test.ts)按为 `claude plugin test` 编写的原样运行。
 
 -----
 
@@ -94,32 +104,33 @@ harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使�
 ## 理解实现
 
 <details>
-<summary>实现内部细节——点击展开</summary>
+<summary>实现内部 — 点击展开</summary>
 
 ### 加载
 
-[`manifest.ts`](src/manifest.ts) 读取并校验 `plugin.json` 与 `hooks.json`；无法按模组解读的目录会使插件加载失败，因为那是部署错误。[`module.ts`](src/module.ts) 通过 Node 导入 hooks module，并附带每次加载唯一的 query，使重新加载重新求值模块；随后运行 `register`，把每个 `on(...)` 收集进 `HookRegistry`；`on` 以 Claude Code 的措辞拒绝未知事件名以及同一事件第二次无 matcher 的注册。导入失败或 `register` 抛错的模块会被跳过并给出警告，会话照常继续，与 Claude Code 一致。
+[`define-mod.ts`](src/define-mod.ts) 把规格变成一个 Cordis 插件：挂载时调用 `ctx.claudeCodeMods.add(definition)`，卸载时移除模组。[`module.ts`](src/module.ts) 运行 `register` 并把每个 `on(...)` 收集进 `HookRegistry`；`on` 以 Claude Code 的措辞拒绝未知事件名和同一事件第二次无匹配器的注册，`register` 抛出则使模组插件挂载失败。模组顺序即挂载顺序，所以 cordis.yml 的顺序就是链顺序。
 
 ### 链
 
-[`chain.ts`](src/chain.ts) 让一个事件依次经过选中的钩子（最外层在前），底部是引擎行为。每个钩子的 `next` 委托给下层；抛错、超时或未以结果对象结束的钩子会被跳过，并按失败种类各报告一次；若它已经调用过 `next`，下层的结果保持有效；`.catch` 处理器可以代替它应答。预算时钟只计钩子自身的运行时间：在 `next` 内以及除 `$.clock.sleep` 外的每个 `$` 调用内暂停。[`engine.ts`](src/engine.ts) 拥有注册表、按会话的 `$.state`、模组定时器以及两个派发方向：引擎事件到达每个选中的钩子，而某个模组发起的 `$` 调用只到达在它之前加载的模组。
+[`chain.ts`](src/chain.ts) 让一个事件穿过选中的钩子，最外层在前，引擎行为在底部。每个钩子的 `next` 只向下委托一次：第二次调用返回第一次的运行结果，钩子已启动的下层运行会在其自身答案落定前被等待。抛出、超时或没有结果就结束的钩子会被跳过并按失败类型报告一次，若它已调用 `next` 则下层结果生效，`.catch` 处理器可代为作答。预算时钟只计钩子自身的运行时间：在 `next` 内与除 `$.clock.sleep` 外的每个 `$` 调用内暂停。[`engine.ts`](src/engine.ts) 拥有注册表、按会话的 `$.state`、按会话与模组键控的定时器，以及两个分发方向：引擎事件到达所有选中的钩子，而一个模组发起的 `$` 调用只到达在它之前加载的模组。
 
 ### 映射到 harness
 
-[`index.ts`](src/index.ts) 注册监听器。`tool.call` 围绕 `tools/execute` 运行，因此 harness 权限决策先于这条链；`{ deny }` 变成带原因的错误结果，模组注册工具的 `{ result }` 变成成功的内容结果，而内置工具的 `{ result }` 变成错误形态的结果，因为内置工具的成功值必须满足它自己的输出 schema。钩子在 `next` 之后改写的结果通过 `tools/post-execute` 作为替换内容安装。[`host-ops.ts`](src/host-ops.ts) 持有每个 `$` 调用基于 `ctx.get(...)` 服务的引擎行为，因此部署只需组合其模组实际使用的服务。
+[`index.ts`](src/index.ts) 注册监听器。`tool.call` 包裹 `tools/execute`，因此 harness 的权限决定先于链；`{ deny }` 成为带原因的错误结果，`{ result }` 在工具为模组注册或值满足工具输出 schema 时成为成功结果，否则为错误形态的结果。钩子在 `next` 之后改写的结果经 `tools/post-execute` 作为替换内容安装。向 `next` 传入改写参数的钩子会被跳过并报告，因为调用参数已经写入日志。[`host-ops.ts`](src/host-ops.ts) 持有每个 `$` 调用基于 `ctx.get(...)` 服务的引擎行为，部署只需组合其模组用到的服务。[`surfaces.ts`](src/surfaces.ts) 为每个会话保留一条横幅：触发 `ui.render`，用 [`elements.ts`](src/elements.ts) 校验并序列化树，把每个 `Button` 的 `onPress` 保存在按绘制分配的动作 id 之后，让横幅订阅该次绘制读取的 `$.state` 槽位，并通过 `claudeCodeMods` Remote（`watchBand`、`pressBand`）把各代推流给 Client。
 
 ### 源码地图
 
 | 文件 | 角色 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：配置、模组加载、扩展点监听器 |
+| [`src/index.ts`](src/index.ts) | 桥接服务：配置、模组注册表、扩展点监听器、Remote |
+| [`src/define-mod.ts`](src/define-mod.ts) | `defineMod`：模组作为插件 |
 | [`src/host-ops.ts`](src/host-ops.ts) | 基于 harness 服务的 `$` 行为 |
-| [`src/engine.ts`](src/engine.ts) | 注册表、`$.state`、定时器、派发方向 |
-| [`src/chain.ts`](src/chain.ts) | middleware 链、预算时钟、失败规则 |
+| [`src/surfaces.ts`](src/surfaces.ts)、[`src/elements.ts`](src/elements.ts) | 提示框上方的横幅；元素构造器、校验、序列化 |
+| [`src/engine.ts`](src/engine.ts) | 注册表、`$.state`、定时器、分发方向 |
+| [`src/chain.ts`](src/chain.ts) | 中间件链、预算时钟、失败规则 |
 | [`src/api.ts`](src/api.ts) | 钩子收到的 `$` 对象 |
-| [`src/module.ts`](src/module.ts)、[`src/manifest.ts`](src/manifest.ts) | hooks module 导入与 `on`；插件目录校验 |
-| [`src/matcher.ts`](src/matcher.ts)、[`src/tool-names.ts`](src/tool-names.ts) | 事件名、matcher、工具名别名 |
-| [`src/testing.ts`](src/testing.ts) | 测试工具包 |
+| [`src/module.ts`](src/module.ts)、[`src/matcher.ts`](src/matcher.ts)、[`src/tool-names.ts`](src/tool-names.ts) | `register` 与 `on`；事件名、匹配器、工具名别名 |
+| [`src/testing.ts`](src/testing.ts) | 测试工具包（`./testing`） |
 
 </details>
 
@@ -128,11 +139,13 @@ harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [Claude Code 模组参考](https://code.claude.com/docs/en/plugins/mods/reference)——本桥接所镜像的事件、方法与限制。
-- [实验性包](../README.zh.md)——发布策略与依赖隔离。
-- [hooks 组](../../hooks/README.zh.md)——settings 钩子桥接；同时包含 settings 钩子的 `hooks.json` 需要 `dsh-hooks-claude-code` 来运行它们。
-- [工具执行流水线](../../../docs/tool-execution-pipeline.zh.md)——`tool.call` 所围绕的 waterfall。
-- [人类命令](../../interaction/commands/README.zh.md)——`$.command.register` 落在的注册表。
+- [与 Claude Code 模组的兼容性](../../../docs/subsystems/claude-code-mods.zh.md) — 本桥接与 Claude Code 模组的每一处差异，以及修复或原因。
+- [Claude Code 模组参考](https://code.claude.com/docs/en/plugins/mods/reference) — 本桥接镜像的事件、方法与限制。
+- [Web 横幅](../client-ui-claude-code-mods/README.zh.md) — 在输入停靠区绘制 `ui.render` 树的 Client 包。
+- [实验性包](../README.zh.md) — 发布策略与依赖隔离。
+- [Hooks 组](../../hooks/README.zh.md) — 设置钩子桥接；插件 `hooks.json` 中的设置钩子需要 `dsh-hooks-claude-code`。
+- [工具执行流水线](../../../docs/tool-execution-pipeline.zh.md) — `tool.call` 所包裹的瀑布流。
+- [人类命令](../../interaction/commands/README.zh.md) — `$.command.register` 落到的注册表。
 
 -----
 
@@ -143,9 +156,9 @@ harness 工具若有 Claude Code 对应名称，`e.tool` 与 `tool` matcher 使�
 
 #### 模型看到什么
 
-`prompt.submit` 钩子加入 `e.context` 的字符串会作为一条来源为 `{ kind: 'claude-code-mods' }` 的 user 消息跟在提示词之后到达；改写的 `text` 会替换提示词的文本块。`$.prompt.submit({ text })` 入队一条同样来源的 user 消息：带 `asUser: true` 时只有该文本，否则按下文框定，填入插件名与该文本。
+`prompt.submit` 钩子加入 `e.context` 的字符串成为输入的提示词之后的文本块，位于人类自己的消息内部；改写的 `text` 替换提示词的文本块。`$.prompt.submit({ text })` 排入一条 `user` 来源的消息：`asUser: true` 时只有文本本身，否则按下文框架填入插件名与文本。
 
-##### 模组提交的提示词的框定
+##### 模组提交的提示词的框架
 
 ```markdown
 Message from the "<plugin>" mod:
@@ -154,49 +167,49 @@ Message from the "<plugin>" mod:
 
 #### Token 影响
 
-在模组添加上下文或提交提示词之前无成本；这些文本依赖数据、会被记录，并在后续请求中重复发送直至上下文压缩。
+模组添加上下文或提交提示词之前没有开销；这些文本依赖数据、写入日志，并在后续请求中重发直到压缩。
 
-#### KV Cache 影响
+#### KV 缓存影响
 
-仅追加：添加的上下文与提交的提示词跟在可复用请求前缀之后，不会使已有条目失效。
+只追加：添加的上下文与提交的提示词跟在可复用的请求前缀之后，不会使现有条目失效。
 
 ### 模组决定的工具结果
 
 #### 模型看到什么
 
-`{ deny: reason }` 应答把 `Error: <reason>` 渲染为工具结果。对模组注册的工具，`{ result }` 应答把文本渲染为成功结果；对内置工具则渲染为错误形态的结果。在 `next` 之后改写的结果替换工具的内容文本。被丢弃的提示词以 `blocked` 结束轮次，没有模型可见的消息。
+`{ deny: reason }` 答案把 `Error: <reason>` 渲染为工具结果。`{ result }` 答案在工具为模组注册或值满足工具输出 schema 时经工具自身的呈现器渲染，否则作为携带该文本的错误形态结果。`next` 之后改写的结果替换工具的内容文本。被丢弃的提示词以 `blocked` 结束该轮，没有模型可见的消息。持有 `tool.call` 的模组（Blast Radius）把结果推迟到按钮决定为止；模型只看到结局。
 
 #### Token 影响
 
-拒绝与应答的调用用模组的文本替换工具自身的输出；被丢弃的提示词不发送请求。
+拒绝与代答的调用用模组的文本替换工具自身输出；被丢弃的提示词不发送请求。
 
-#### KV Cache 影响
+#### KV 缓存影响
 
-工具结果追加在可复用前缀之后；被丢弃的提示词不会使任何内容失效。
+工具结果追加在可复用前缀之后；被丢弃的提示词不会使任何条目失效。
 
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-这些限制描述 Claude Code 模组经由本桥接时行为不同之处。它们是当前包约束，而非任务积压。
+这些限制描述 Claude Code 模组经本桥接运行时行为不同之处；[兼容性页面](../../../docs/subsystems/claude-code-mods.zh.md) 是完整清单。它们是当前的包约束，不是任务积压。
 
-- **没有绘制表面**——`ui.render`、`ui.press`、`ui.input`、`ui.select`、`ui.resolve`、面板、提示框上方的横带以及元素树均未提供：`ui.render` 钩子永不运行，`$.ui.open` 应答 `{ isPlaced: false }`，`$.ui.log`、`$.ui.toast` 与 `$.ui.status` 写入 host 日志而非 transcript（文本记录）。可以承载它们的 Web GUI slot（横带对应 `conversation.input.dock`，toast 对应 `shell.overlay`，状态对应 `conversation.composer.dock`，日志行对应一个仅记录的会话事件加 Chat 节点）已经存在，但尚无客户端插件渲染模组树。
-- **未提供的事件**——`tool.check`、`tool.describe`、`turn.step`、其余 `prompt.*` 事件、`command.describe`、`config.*`、`session.compact`、`session.receive`、`session.send`、`session.append`、`session.attach`、`session.detach`、`session.measure`、`agent.*`、`plugin.register`、`engine.create` 与 `telemetry.*` 可以注册但永不触发；`classic.*` 名称与其他未知事件一样在 `register` 时被拒绝。
-- **未提供的 `$` 命名空间**——`$.model`、`$.agent`、`$.config`、`$.settings`、`$.mcp`、`$.audio`、`$.telemetry`、`$.turn`、`$.ui.notice`、`$.ui.blit`、`$.ui.copy`、`$.fs.ancestors`、`$.process.spawn`，以及 `$.session.repo`、`send`、`append`、`authorize`、`compact`、`surfaces` 以 `no implementation` 拒绝。`$.model.complete` 等待一个记录副请求的会话事件，使模组的模型调用仍可从会话日志重建。
-- **`tool.call` 在权限决策之后运行**——Claude Code 在其权限检查之前运行模组的 `tool.call` 钩子；这里 harness 的 `tools/pre-execute` waterfall（包括审批）先行落定。传给 `next` 的参数改写不被采纳，因为调用参数已被记录；桥接按工具各警告一次。
-- **代替内置工具应答**——代替内置工具运行的 `{ result }` 以携带该文本的错误形态结果到达模型，因为成功值必须满足该工具的输出 schema。
-- **一个进程，多个会话**——模组的模块级变量与 `$.env.set` 的写入由进程内的所有会话与插件共享，而 Claude Code 每个进程只运行一个会话；按会话的值请放在 `$.state`。`session.start` 与 `session.end` 只为根 agent 触发。
-- **没有沙箱、静态分析与热重载**——hooks module 在进程内以 Node 全局对象运行；仅经 `$` 访问的规则、`claude plugin validate`、类型生成、`--plugin-dir` 监视以及会话内模组编写流程均未实现。模组的 `.ts` 模块只在 Node 剥离类型或启动器转译时才能加载。
-- **`turn.complete` 文本**——钩子返回的 `{ text }` 写入 host 日志，而非答案下方的一行；`durationMs` 从该轮次的 `turn/start` 起计。
-- **`$.session.usage`**——在路由的上下文窗口与 provider 用量报告经 token meter 可知之前，`window` 为 `0` 且没有 `percent`；`rateLimits` 始终为空。`$.fs.stat` 报告 `mtimeMs: 0`。
-- **`hooks.json` 中的 settings 钩子**——忽略并给出警告；请为它们挂载 `@deepseek-ai/dsh-hooks-claude-code`。
+- **一个绘制表面** — 服务 `AbovePrompt`；`Pane`、其他渲染位点、`Input`、热键、`ui.press`、`ui.input`、`ui.select`、`ui.focus`、`ui.scroll` 不服务：`$.ui.open` 回答 `{ isPlaced: false }`，`$.ui.log`、`$.ui.toast`、`$.ui.status` 到达宿主日志而非 GUI。钩子按 120 列宽的横幅绘制；Web 横幅会换行。
+- **`next` 只运行一次** — 调用 `next` 两次的钩子得到第一次的运行；Claude Code 会再次运行下层链。在其 `next` 仍在运行时作答的钩子会等待该次运行。
+- **未服务的事件** — `tool.check`、`tool.describe`、`turn.step`、其他 `prompt.*` 事件、`command.describe`、`config.*`、`session.compact`、`session.receive`、`session.send`、`session.append`、`session.attach`、`session.detach`、`session.measure`、`agent.*`、`plugin.register`、`engine.create`、`telemetry.*` 可注册、永不触发，并在加载时以警告点名；`classic.*` 名字与任何未知事件一样在 `register` 时被拒绝。
+- **未服务的 `$` 命名空间** — `$.model`、`$.agent`、`$.config`、`$.settings`、`$.mcp`、`$.audio`、`$.telemetry`、`$.turn`、`$.ui.notice`、`$.ui.blit`、`$.ui.copy`、`$.fs.ancestors`、`$.process.spawn` 以及 `$.session.repo`、`send`、`append`、`authorize`、`compact`、`surfaces` 以 `no implementation` 拒绝。`$.model.complete` 等待一个写入日志的副请求事件，以便模组的模型调用仍可从 Session 日志重建。
+- **`tool.call` 在权限决定之后运行** — Claude Code 在其权限检查之前运行模组的 `tool.call` 钩子；此处 harness 的 `tools/pre-execute` 瀑布流（含审批）先行结束。改写传给 `next` 的参数的钩子会被跳过，并在报告中指向[工具前输入改写提案](../../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.zh.md)，因为调用参数已写入日志。
+- **一个进程，多个会话** — 模组的模块级变量与 `$.env.set` 写入由进程内所有会话与插件共享，而 Claude Code 每进程一个会话；按会话的值请放在 `$.state`。`session.start` 与 `session.end` 只为根智能体触发。
+- **无沙箱、无静态分析、无热重载** — 钩子模块以 Node 全局对象在进程内运行；仅 `$` 访问规则、`claude plugin validate`、类型生成、`--plugin-dir` 监视与会话内模组编写流程均未实现。再次挂载模组会在同一已求值模块上重新运行 `register`，模块级变量保留其值。
+- **`turn.complete` 文本** — 钩子返回的 `{ text }` 到达宿主日志，而非答案下方的一行；`durationMs` 从该轮的 `turn/start` 起算。
+- **`$.session.usage`** — 在 token 计量器得知路由的上下文窗口与提供商用量报告之前，`window` 为 `0` 且无 `percent`；`rateLimits` 始终为空。`$.fs.stat` 报告 `mtimeMs: 0`。
+- **`plugin.json` 与 `hooks.json`** — 不读取；`defineMod` 承载身份，插件的设置钩子需要 `@deepseek-ai/dsh-hooks-claude-code`。
 
 <a id="dev-note"></a>
 ### 开发备注
 
 <details>
-<summary>维护者工作上下文——点击展开</summary>
+<summary>维护者工作上下文 — 点击展开</summary>
 
-按对模组作者的价值排序，下一步是：为 `$.ui.log` 行提供 `claude-code-mods/ui` 会话事件与 Client Chat 节点；在 `conversation.input.dock` 上为 `Box`/`Text`/`Button` 树提供 `AbovePrompt` 渲染器；基于 `ctx.llm` 并带记录请求事件地提供 `$.model.complete`。
+按模组作者价值排序的后续步骤：Web GUI 中带 `TextInput`、热键以及 toast、status、log 表面的停靠 `Pane`；基于 `ctx.llm` 并带日志请求事件的 `$.model.complete`；以及在许可允许提供夹具后，以阅读方式运行 `anthropics/claude-code/mods` 中的官方模组。
 
 </details>

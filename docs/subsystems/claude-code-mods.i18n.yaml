@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for claude-code-mods.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/claude-code-mods.md
+/claude-code-mods-compatibility:
+  en: e520df3bf44e1160
+  zh: 557956eaf6faf4a7
+/claude-code-mods-compatibility/packaging-and-loading:
+  en: 2c36fb0f324f8a6d
+  zh: 69723bf6e3a953e5
+/claude-code-mods-compatibility/events:
+  en: 4932edf66891e29b
+  zh: 0a08ca2fcc233cd2
+/claude-code-mods-compatibility/the-chain:
+  en: 111c186536345342
+  zh: 8ddc81c78c05a840
+/claude-code-mods-compatibility/members:
+  en: 7b4984a5bdf5029b
+  zh: 114b91a050cc8b85
+/claude-code-mods-compatibility/drawing:
+  en: ad63be0ce30bb705
+  zh: 15811dc20f5f9ce8
+/claude-code-mods-compatibility/testing:
+  en: 8b3530b79e09a067
+  zh: c041e63f7fd8de5a
+/claude-code-mods-compatibility/the-example-mods:
+  en: b3ef5ea831c5c48f
+  zh: fa64186430e7c772
