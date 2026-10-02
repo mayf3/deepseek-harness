@@ -210,14 +210,15 @@ describe('dispatch: failures', () => {
     const report = vi.fn()
     const result = await dispatch(request({
       input: {},
-      core: () => new Promise((resolve) => { setTimeout(() => { resolve({ result: 'slow core' }) }, 60) }),
+      core: () => new Promise((resolve) => { setTimeout(() => { resolve({ result: 'slow core' }) }, 150) }),
       report,
-      budgetMs: 25,
+      // Generous against a loaded CI host: only the hook's own microseconds between awaits may count.
+      budgetMs: 100,
       // A real `$` whose every call takes 60 ms to answer: the clock pauses for the call.
       api: (hooked, clock) => createModsApi({
         mod: hooked.mod,
         clock,
-        invoke: () => new Promise((resolve) => { setTimeout(() => { resolve('contents') }, 60) }),
+        invoke: () => new Promise((resolve) => { setTimeout(() => { resolve('contents') }, 150) }),
         timers: { after: () => ({ cancel() {} }), every: () => ({ cancel() {} }) },
         report: () => {},
       }),
