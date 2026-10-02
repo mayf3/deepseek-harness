@@ -61,6 +61,10 @@ export interface ModsEngineOptions<B> {
   readonly catchBudgetMs: number
   /** Receives diagnostics: skipped hooks, failed fire-and-forget calls, timer callback errors. */
   readonly report: (line: string) => void
+  /** Observes `$.state` reads, by session key and `<plugin>\u0000<key>` slot, so a drawing can subscribe to what it read. */
+  readonly onStateRead?: (key: string, slot: string) => void
+  /** Observes `$.state` writes, by session key and slot. */
+  readonly onStateWritten?: (key: string, slot: string) => void
 }
 
 /** Options for raising one engine event. */
@@ -361,7 +365,9 @@ export class ModsEngine<B> {
     switch (op) {
       case 'state.get': {
         const slot = stateSlot(fields.plugin, fields.key)
-        return { value: this.state.get(this.options.stateKey(context.binding))?.get(slot) }
+        const key = this.options.stateKey(context.binding)
+        this.options.onStateRead?.(key, slot)
+        return { value: this.state.get(key)?.get(slot) }
       }
       case 'state.set': {
         const slot = stateSlot(fields.plugin, fields.key)
@@ -372,6 +378,7 @@ export class ModsEngine<B> {
           this.state.set(key, values)
         }
         values.set(slot, fields.value)
+        this.options.onStateWritten?.(key, slot)
         return undefined
       }
       case 'clock.now':

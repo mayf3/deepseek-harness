@@ -187,6 +187,17 @@ describe('dispatch: one run beneath per hook', () => {
     expect(result).toEqual({ ok: '{"command":"original"}' })
     expect(report).toHaveBeenCalledWith('a: tool.call hook skipped: rewrote the arguments of echo; rewrites are not served')
     expect(core).toHaveBeenCalledTimes(1)
+
+    // A validator that throws a bare value is reported through its text.
+    const bare = await dispatch(request<{ command: string }, { ok: string }>({
+      input: { command: 'original' },
+      core,
+      hooks: [hook(a, 'tool.call', (_$, e, next) => next({ ...(e as object), command: 'other' }))],
+      report,
+      validateNext: () => { throw 'refused as text' },
+    }))
+    expect(bare).toEqual({ ok: '{"command":"original"}' })
+    expect(report).toHaveBeenCalledWith('a: tool.call hook skipped: threw Error: refused as text')
   })
 })
 

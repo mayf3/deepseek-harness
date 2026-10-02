@@ -256,7 +256,8 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
       // An abandoned hook's later rejection is not an unhandled rejection.
       running.catch(() => {})
       const result = await Promise.race([running, clock.expired])
-      if (typeof result !== 'object' || result === null) throw new NoResultError()
+      // `null` is an answer (a surface drawn empty); only a hook that settles with no object at all is skipped.
+      if (typeof result !== 'object') throw new NoResultError()
       // The hook answered; whatever it started beneath still runs to its end before the event settles.
       clock.stop()
       if (state.beneath !== undefined) {
@@ -326,7 +327,7 @@ export async function dispatch<E, R>(request: DispatchRequest<E, R>): Promise<R>
         .then(() => handler(api, input, next as HookNext<unknown, unknown>) as R | undefined | Promise<R | undefined>)
       running.catch(() => {})
       const result = await Promise.race([running, clock.expired])
-      if (typeof result === 'object' && result !== null) return result
+      if (typeof result === 'object') return result
     } catch (error: unknown) {
       request.report(`${hook.mod.name}: ${request.event} .catch handler skipped: ${failureOf(error).line}`)
     } finally {

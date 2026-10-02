@@ -330,6 +330,8 @@ export interface PaneOpenArgs {
 
 /** `$.ui.open` result: this bridge places no panes. */
 export interface PaneOpenResult {
+  /** The pane id the mod chose. */
+  id: string
   isPlaced: boolean
   reason?: string
 }

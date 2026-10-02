@@ -97,6 +97,8 @@ export interface HostOpsOptions {
   readonly modCommands: Set<string>
   /** Full names of tools mods registered, whose calls a `tool.call` hook may answer with a successful result. */
   readonly modTools: Set<string>
+  /** Redraw a session's band after a `$.ui` call that changes what it shows; absent when no surface is drawn. */
+  readonly redraw?: (sessionId: string) => void
 }
 
 function requireAgent(context: OpContext<AgentBinding>, op: string): Agent {
@@ -205,6 +207,11 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
     return next
   }
 
+  /** Ask the band of the event's session to redraw, when a surface is drawn at all. */
+  function redraw(agent: Agent | undefined): void {
+    if (agent !== undefined) options.redraw?.(agent.session.id)
+  }
+
   /** One projection's state, or undefined when the registry or the projection's owning plugin is not composed. */
   function projection<K extends keyof SessionProjectionStateMap>(session: Session, key: K): SessionProjectionStateMap[K] | undefined {
     return ctx.get('sessionProjections')?.stateOf(session, key)
@@ -223,9 +230,13 @@ export function createHostOps(options: HostOpsOptions): OpTable<AgentBinding> {
       const { text } = record(input)
       ctx.logger.info(`${mod.name} (status): ${text === undefined ? '(cleared)' : requireString(text, '$.ui.status text')}`)
     },
-    'ui.invalidate': () => undefined,
-    'ui.open': () => ({ isPlaced: false, reason: 'this bridge places no panes: the harness Web GUI has no mod pane' }),
-    'ui.close': () => undefined,
+    'ui.invalidate': (_input, { binding }) => { redraw(binding.agent) },
+    // No pane is placed: a mod that degrades to the band (`isPlaced: false`) is drawn there after this call.
+    'ui.open': (input, { binding }) => {
+      redraw(binding.agent)
+      return { id: requireString(record(input).id, '$.ui.open id'), isPlaced: false, reason: 'this host places no panes; draw in AbovePrompt' }
+    },
+    'ui.close': (_input, { binding }) => { redraw(binding.agent) },
     'ui.panes': () => [],
     'ui.ask': async (input, context) => {
       const agent = requireAgent(context, 'ui.ask')

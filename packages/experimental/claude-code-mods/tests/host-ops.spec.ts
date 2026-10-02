@@ -112,6 +112,11 @@ describe('services a deployment did not compose', () => {
     await expect(call('fs.read', { path: 'x' })).rejects.toThrow(/dsh-fs/)
     await expect(call('process.run', { argv: ['ls'] })).rejects.toThrow(/dsh-subprocess/)
     await expect(call('session.turns', {}, agent)).rejects.toThrow(/turnBoundary projection/)
+    // Without a drawn surface the ui calls that would redraw the band are plain no-ops.
+    await expect(call('ui.invalidate', {}, agent)).resolves.toBeUndefined()
+    await expect(call('ui.invalidate', {})).resolves.toBeUndefined()
+    await expect(call('ui.open', { id: 'p' }, agent)).resolves.toMatchObject({ id: 'p', isPlaced: false })
+    await expect(call('ui.close', { id: 'p' }, agent)).resolves.toBeUndefined()
     expect(await call('session.usage', {}, agent)).toEqual({ startedAt: 1, context: { window: 0 }, rateLimits: [] })
   })
 

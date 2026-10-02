@@ -137,6 +137,13 @@ function toolResult(agent: Agent): { isError: boolean; text: string } | undefine
   return { isError: message.isError === true, text: message.content.map(block => block.type === 'text' ? block.text : '').join('') }
 }
 
+/** A mock model whose route advertises a context window, so the token meter can report pressure against it. */
+class WindowedAdapter extends MockAdapter {
+  override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return { ...await super.resolveModel(provider, model), context: { contextWindow: 1000 } }
+  }
+}
+
 function echoTool(name: string, ran: string[] = []) {
   return defineContentToolFixture({
     name, description: 'echoes its command', parameters: { command: { type: 'string' } },
@@ -777,11 +784,6 @@ describe('turn.complete reasons and sessions the bridge did not follow from the 
 
 describe('$.session.usage with the token meter', () => {
   it('reports the provider-measured prompt size against the route\'s context window', async () => {
-    class WindowedAdapter extends MockAdapter {
-      override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
-        return { ...await super.resolveModel(provider, model), context: { contextWindow: 1000 } }
-      }
-    }
     const mod = writeMod('usage-mod', `
       export function register(on) {
         on('turn.complete', async ($, e, next) => {
@@ -820,6 +822,9 @@ describe('loading diagnostics and configuration', () => {
       .rejects.toThrow(/another mod of that name is already loaded/)
 
     // A hook on an event this host never raises registers, and the load reports it.
+    const one = await h.ctx.claudeCodeMods.add({ name: 'one-unserved', register: (on) => { on('turn.step', () => ({})) } })
+    expect(h.warn).toHaveBeenCalledWith('claude-code-mods: one-unserved: on("turn.step") registered, but this host never raises that event')
+    await one()
     const dispose = await h.ctx.claudeCodeMods.add({
       name: 'unserved-mod',
       register: (on) => {
@@ -952,5 +957,93 @@ describe('a mod\'s $.tool.call reaches the mods loaded before it', () => {
     expect(run?.result).toEqual({ kind: 'success', text: 'caller-mod: {"result":"ran nested"}' })
     const lines = h.info.mock.calls.map(call => String(call[0])).filter(line => /^(observer|caller)-mod: /.test(line))
     expect(lines).toEqual(['observer-mod: saw echo from caller-mod/user id=mod'])
+  })
+})
+
+describe('the band above the prompt', () => {
+  it('draws Token Weather from session facts, redraws on the state it read, and resolves a Blast Radius hold by a press', { timeout: 30_000 }, async () => {
+    const tokenWeather = (await import('../examples/token-weather/index.ts')).default
+    const blastRadius = (await import('../examples/blast-radius/index.ts')).default
+    // Loaded outermost: draws a button that throws once armed, to show a failing onPress is reported, not fatal.
+    const boom = writeMod('boom-mod', `
+      let armed = false
+      export function register(on) {
+        on('session.start', async ($, e, next) => { await $.command.register({ name: 'arm-boom', description: 'arm' }); return next(e) })
+        on('command.run', { command: 'arm-boom' }, async ($) => { armed = true; $.ui.invalidate('ui.render'); return { text: 'armed' } })
+        on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
+          if (!armed) return next(e)
+          const { Button } = $.ui.resolve(e)
+          return Button({ label: 'Boom', onPress: () => { armed = false; throw new Error('nope') } })
+        })
+      }
+    `)
+    const ran: string[] = []
+    const adapter = new WindowedAdapter([
+      textResponse('first answer'),
+      toolCallResponse('c1', 'bash', { command: 'git reset --hard' }), textResponse('held'),
+      toolCallResponse('c2', 'bash', { command: 'git clean -fd' }), textResponse('ran'),
+    ])
+    // One band instance, consulted in load order: the guard that yields when idle goes before the readout that always draws.
+    const h = await harness([boom, blastRadius, tokenWeather], adapter, {
+      services: async (ctx, workspace) => {
+        await ctx.plugin(TokenMeter)
+        await ctx.plugin(LocalFileSystem, { cwd: workspace })
+        await ctx.plugin(LocalSubprocessRuntime)
+      },
+    })
+    h.ctx.tools.register(echoTool('bash', ran))
+    const agent = await h.agent()
+    const mods = h.ctx.claudeCodeMods
+    // Before a turn, Token Weather has no reading and Blast Radius holds nothing: the band is empty; so is an unknown session's.
+    expect((await mods.band(agent.session.id)).tree).toBeNull()
+    expect((await mods.band('no-such-session')).tree).toBeNull()
+
+    const seen: unknown[] = []
+    const watching = new AbortController()
+    const watcher = (async () => {
+      for await (const snapshot of mods.watchBand(agent, watching.signal)) seen.push(snapshot)
+    })()
+    await h.turn(agent, 'hello')
+    // turn.complete wrote the reading Token Weather's render reads: the band redraws without an invalidate.
+    await waitFor(() => JSON.stringify(seen.at(-1)).includes('of context'))
+    expect(h.warn).not.toHaveBeenCalledWith(expect.stringMatching(/ui.render hook skipped/))
+
+    // A risky command holds; the hook polls with real sleeps while the band offers Proceed and Cancel.
+    const holding = h.turn(agent, 'reset it')
+    await waitFor(() => JSON.stringify(seen.at(-1)).includes('Cancel'))
+    const drawn = seen.at(-1) as { generation: number; tree: unknown }
+    const buttonId = (tree: unknown, label: string): string | undefined =>
+      [...JSON.stringify(tree).matchAll(/"label":"(\w+)","hotkey":"\d"\},"children":\[\],"actionId":"(a\d+)"/gu)]
+        .find(match => match[1] === label)?.[2]
+    const cancelId = buttonId(drawn.tree, 'Cancel')
+    expect(cancelId).toBeDefined()
+    await mods.pressBand(agent, drawn.generation, cancelId ?? '')
+    await holding
+    expect(ran).toEqual([])
+    expect(toolResult(agent)?.text).toMatch(/Blast Radius held this command: the user pressed Cancel/)
+    await waitFor(() => !JSON.stringify(seen.at(-1)).includes('Cancel'))
+
+    // Proceed lets the next risky command run.
+    const proceeding = h.turn(agent, 'clean it')
+    await waitFor(() => JSON.stringify(seen.at(-1)).includes('Proceed'))
+    const second = seen.at(-1) as { generation: number; tree: unknown }
+    const proceedId = buttonId(second.tree, 'Proceed')
+    await mods.pressBand(agent, second.generation, proceedId ?? '')
+    await proceeding
+    expect(ran).toEqual(['git clean -fd'])
+    // A stale press is ignored and reported, not applied.
+    await mods.pressBand(agent, second.generation, proceedId ?? '')
+    expect(h.warn).toHaveBeenCalledWith(expect.stringMatching(/band press ignored/))
+
+    // A button whose onPress throws is reported and the band redraws.
+    await h.ctx.commands.execute(agent, '/arm-boom', [], new AbortController().signal)
+    await waitFor(() => JSON.stringify(seen.at(-1)).includes('Boom'))
+    const armed = seen.at(-1) as { generation: number; tree: unknown }
+    const boomId = [...JSON.stringify(armed.tree).matchAll(/"actionId":"(a\d+)"/gu)][0]?.[1]
+    await mods.pressBand(agent, armed.generation, boomId ?? '')
+    expect(h.warn).toHaveBeenCalledWith("claude-code-mods: a button's onPress failed: nope")
+    await waitFor(() => !JSON.stringify(seen.at(-1)).includes('Boom'))
+    watching.abort()
+    await watcher
   })
 })

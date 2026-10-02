@@ -10,11 +10,12 @@
  * @module @deepseek-ai/dsh-experimental-claude-code-mods
  */
 
-import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { AssistantMessage, ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
@@ -24,13 +25,15 @@ import { RewriteRefusedError } from './chain.ts'
 import { ModsEngine } from './engine.ts'
 import { createHostOps, toolCallResultOf } from './host-ops.ts'
 import type { AgentBinding } from './host-ops.ts'
-import { createToolNameAliases } from './tool-names.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { SurfaceTable } from './surfaces.ts'
+import type { SurfaceSnapshot } from './surfaces.ts'
+import { createToolNameAliases } from './tool-names.ts'
 import { messageOf, record, stringify } from './values.ts'
 import type {
   ModDefinition, PromptSubmitInput, PromptSubmitResult, SessionEndInput, SessionEndResult, SessionStartInput,
   SessionStartResult, ToolCallInput, ToolCallResult, TurnCompleteInput, TurnCompleteResult, TurnStartInput,
-  TurnStartResult, TurnUsage,
+  TurnStartResult, TurnUsage, UiRenderInput, UiRenderResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -40,6 +43,9 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export type * from './types.ts'
+export type { BoxProps, ButtonProps, SerializedElement, SerializedNode, TextProps, UiElement, UiElements, UiNode } from './elements.ts'
+export type { SurfaceSnapshot } from './surfaces.ts'
+export { BAND_COLUMNS } from './surfaces.ts'
 export { defineMod, type ModConfig, type ModPlugin, type ModSpec } from './define-mod.ts'
 export { DEFAULT_TOOL_ALIASES } from './tool-names.ts'
 export { KNOWN_EVENTS } from './matcher.ts'
@@ -59,7 +65,7 @@ export interface Config {
 
 /** Engine events this host raises; a hook on any other known event registers and is reported as unserved. */
 export const SERVED_EVENTS: ReadonlySet<string> = new Set([
-  'session.start', 'session.end', 'prompt.submit', 'turn.start', 'turn.complete', 'tool.call', 'command.run',
+  'session.start', 'session.end', 'prompt.submit', 'turn.start', 'turn.complete', 'tool.call', 'command.run', 'ui.render',
 ])
 
 /** Where the deferred argument-rewrite mechanism is specified. */
@@ -182,9 +188,10 @@ function modAnswered(text: string, code: 'MOD_DENIED' | 'MOD_ANSWERED', rendered
 /**
  * The bridge service: loaded mods, their hooks, and the harness listeners
  * that raise their events. Mods join through {@link ClaudeCodeMods.add},
- * which {@link defineMod} calls when a mod plugin mounts.
+ * which {@link defineMod} calls when a mod plugin mounts. The Remote methods
+ * let a Client draw each session's band above the prompt and press its buttons.
  */
-export class ClaudeCodeMods extends Service {
+export class ClaudeCodeMods extends TypertRemoteService {
   static Config: z<Config> = z.object({
     hookTimeoutMs: z.number().default(10_000),
     catchTimeoutMs: z.number().default(1_000),
@@ -197,11 +204,11 @@ export class ClaudeCodeMods extends Service {
   static inject: string[] = []
 
   private readonly engine: ModsEngine<AgentBinding>
-  private readonly detached: DetachedRuns
   private readonly registrations = new Map<string, Set<() => void>>()
+  private readonly surfaces: SurfaceTable
 
   constructor(ctx: Context, config: Config) {
-    super(ctx, 'claudeCodeMods')
+    super(ctx, 'claudeCodeMods', { namespace: 'claudeCodeMods' })
     const hookTimeoutMs = config.hookTimeoutMs ?? 10_000
     const catchTimeoutMs = config.catchTimeoutMs ?? 1_000
     const processTimeoutMs = config.processTimeoutMs ?? 30_000
@@ -213,19 +220,48 @@ export class ClaudeCodeMods extends Service {
     const modCommands = new Set<string>()
     const modTools = new Set<string>()
     const report = (line: string): void => { ctx.logger.warn(`claude-code-mods: ${line}`) }
-    const ops = createHostOps({ ctx, aliases, processTimeoutMs, registrations: this.registrations, callOrigins, modCommands, modTools })
-    this.engine = new ModsEngine<AgentBinding>({
+    const agentOf = (sessionId: string): Agent | undefined => ctx.get('agents')?.get(SessionId(sessionId))
+    const detached = new DetachedRuns(report)
+    const surfaces = new SurfaceTable({
+      render: (sessionId, input) => {
+        const agent = agentOf(sessionId)
+        if (agent === undefined) return Promise.resolve(null)
+        return engine.raise<UiRenderInput, UiRenderResult>('ui.render', input, () => null, {
+          binding: { agent }, signal: detached.controller.signal,
+        })
+      },
+      runAction: async (_sessionId, callback) => {
+        try {
+          await callback()
+        } catch (error: unknown) {
+          report(`a button's onPress failed: ${messageOf(error)}`)
+        }
+      },
+      report,
+    })
+    this.surfaces = surfaces
+    // Deferred by one macrotask: a mod sets its own state right after the `$` call that triggers the redraw resolves.
+    const redraw = (sessionId: string): void => {
+      setTimeout(() => {
+        if (agentOf(sessionId) !== undefined) void surfaces.refresh(sessionId)
+      }, 0).unref()
+    }
+    const ops = createHostOps({
+      ctx, aliases, processTimeoutMs, registrations: this.registrations, callOrigins, modCommands, modTools, redraw,
+    })
+    const engine: ModsEngine<AgentBinding> = new ModsEngine<AgentBinding>({
       ops: op => ops[op],
       stateKey: binding => binding.agent?.session.id ?? '',
       budgetMs: hookTimeoutMs,
       catchBudgetMs: catchTimeoutMs,
       report,
+      onStateRead: (key, slot) => { surfaces.stateRead(key, slot) },
+      onStateWritten: (key, slot) => { surfaces.stateWritten(key, slot) },
     })
-    const engine = this.engine
-    this.detached = new DetachedRuns(report)
-    const detached = this.detached
+    this.engine = engine
     const registrations = this.registrations
     ctx.effect(() => async () => {
+      surfaces.dispose()
       for (const owned of registrations.values()) for (const dispose of owned) dispose()
       registrations.clear()
       await engine.dispose()
@@ -263,6 +299,7 @@ export class ClaudeCodeMods extends Service {
       await engine.raise<SessionStartInput, SessionStartResult>(
         'session.start', input, e => ({ cwd: e.cwd }), { binding: { agent }, signal: abandon },
       )
+      redraw(agent.session.id)
     })
 
     ctx.on('agent/disposed', ({ agent }) => {
@@ -271,6 +308,7 @@ export class ClaudeCodeMods extends Service {
       startedTurns.delete(sessionId)
       // The agent's scoped registrations unwound with its context; only the bookkeeping remains.
       registrations.delete(sessionId)
+      surfaces.forget(sessionId)
       const forget = (): Promise<void> => engine.forgetSession(sessionId)
       if (!startedRoots.delete(sessionId)) {
         detached.track('session cleanup', forget())
@@ -348,6 +386,7 @@ export class ClaudeCodeMods extends Service {
           }
         },
       })
+      if (agent !== undefined) redraw(agent.session.id)
       if (answer.deny !== undefined) return modAnswered(answer.deny, 'MOD_DENIED', `Error: ${answer.deny}`)
       const text = typeof answer.result === 'string' ? answer.result : stringify(answer.result) ?? ''
       if (beneath !== undefined) {
@@ -416,8 +455,42 @@ export class ClaudeCodeMods extends Service {
         'turn.complete', input, () => ({ text: '' }), { binding: { agent }, signal: detached.controller.signal },
       ).then((result) => {
         if (typeof result.text === 'string' && result.text.length > 0) ctx.logger.info(`claude-code-mods: ${result.text}`)
+        redraw(session.id)
       }))
     })
+  }
+
+  /**
+   * Watch the band above the prompt of one session: the current drawing, then
+   * every redraw, until the Client stops watching.
+   * @param agent - the session's agent, resolved by the Gateway.
+   * @param signal - carrier cancellation.
+   * @returns the band's snapshots.
+   */
+  @Remote({ mode: 'stream' })
+  watchBand(agent: Agent, signal: AbortSignal): AsyncIterable<SurfaceSnapshot> {
+    return this.surfaces.watch(agent.session.id, signal)
+  }
+
+  /**
+   * Press a button of the band's current drawing: runs the mod's `onPress` and redraws.
+   * @param agent - the session's agent, resolved by the Gateway.
+   * @param generation - the drawing the Client saw.
+   * @param actionId - the button's action id in that drawing.
+   * @returns the snapshot after the press.
+   */
+  @Remote
+  pressBand(agent: Agent, generation: number, actionId: string): Promise<SurfaceSnapshot> {
+    return this.surfaces.press(agent.session.id, generation, actionId)
+  }
+
+  /**
+   * The current drawing of one session's band, drawing it first when nothing was drawn yet.
+   * @param sessionId - the session.
+   * @returns the band's snapshot.
+   */
+  band(sessionId: string): Promise<SurfaceSnapshot> {
+    return this.surfaces.current(sessionId)
   }
 
   /**
