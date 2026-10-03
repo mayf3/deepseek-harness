@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
-import { validRange } from 'semver'
+import { valid, validRange } from 'semver'
 import { releaseFamily } from './families.ts'
 import { attempt, attemptEchoed, isEntry } from './process.ts'
 import { packedIdentity, readPublishOrder, type PackedIdentity } from './tarball.ts'
@@ -85,29 +85,38 @@ function registryState(name: string, version: string): RegistryState {
   return { kind: 'present', integrity: parsed }
 }
 
-/** Reject empty tags, npm option prefixes, URI-encoded characters, and version ranges. */
+/** Reject empty tags, npm option prefixes, characters requiring URI encoding, and version ranges. */
 function validateDistTag(distTag: string): void {
   if (distTag === '' || distTag.startsWith('-') || encodeURIComponent(distTag) !== distTag || validRange(distTag) !== null) {
-    throw new Error(`Invalid npm dist-tag ${JSON.stringify(distTag)}: use a non-empty tag without a leading hyphen, URI-encoded characters, or a version range.`)
+    throw new Error(`Invalid npm dist-tag ${JSON.stringify(distTag)}: use a non-empty tag without a leading hyphen, characters requiring URI encoding, or a version range.`)
   }
 }
 
 /** An explicit channel may be new or already name the same version after a partial publication. */
 function verifyDistTag(member: PackedIdentity, distTag: string): void {
-  const result = attempt('npm', ['view', member.name, 'dist-tags', '--json'])
+  const result = attempt('npm', ['dist-tag', 'ls', member.name])
   if (result.status !== 0) {
     const output = `${result.stdout}${result.stderr}`
     if (output.includes('E404') || output.includes('404 Not Found')) return
-    throw new Error(`npm view ${member.name} dist-tags failed:\n${output}`)
+    throw new Error(`npm dist-tag ls ${member.name} failed:\n${output}`)
   }
-  const parsed: unknown = JSON.parse(result.stdout)
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`registry reported invalid dist-tags for ${member.name}`)
+  const tags = new Map<string, string>()
+  for (const line of result.stdout.split(/\r?\n/u).filter(line => line !== '')) {
+    const match = /^(\S+): (\S+)$/u.exec(line)
+    const tag = match?.[1]
+    const version = match?.[2]
+    if (tag === undefined || version === undefined || valid(version) === null || tags.has(tag)) {
+      throw new Error(`npm reported invalid dist-tags for ${member.name}: ${JSON.stringify(line)}`)
+    }
+    tags.set(tag, version)
   }
-  const version: unknown = Object.hasOwn(parsed, distTag) ? Reflect.get(parsed, distTag) : undefined
-  if (version === undefined) return
-  if (typeof version !== 'string' || version === '') {
-    throw new Error(`registry reported an invalid ${distTag} dist-tag for ${member.name}`)
+  if (tags.size === 0) throw new Error(`npm reported no dist-tags for ${member.name}`)
+  const version = tags.get(distTag)
+  if (version === undefined) {
+    if (registryState(member.name, member.version).kind === 'present') {
+      throw new Error(`${member.name}@${member.version} is already published without dist-tag ${distTag}; this run cannot bind an existing version to a new channel.`)
+    }
+    return
   }
   if (version !== member.version) {
     throw new Error(`${member.name}@${distTag} already points to ${version}; choose an unused dist-tag instead of replacing it with ${member.version}.`)

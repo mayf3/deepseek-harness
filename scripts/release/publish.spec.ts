@@ -31,6 +31,7 @@ vi.mock('node:timers/promises', async importOriginal => ({
 const CHANNEL = 'dsh-0-2-1-alpha-1'
 const ABSENT: CommandResult = { status: 1, stdout: '', stderr: 'npm error code E404' }
 const SUCCESS: CommandResult = { status: 0, stdout: '', stderr: '' }
+const CONFLICT: CommandResult = { status: 1, stdout: '', stderr: 'npm error code E409 Failed to save packument' }
 
 interface PackedFixture {
   readonly name: string
@@ -69,15 +70,23 @@ function registry(
 ): void {
   vi.mocked(attempt).mockImplementation((command, args) => {
     expect(command).toBe('npm')
+    if (args[0] === 'dist-tag') {
+      expect(args).toHaveLength(3)
+      expect(args[1]).toBe('ls')
+      const name = args[2]
+      if (name === undefined) throw new Error('Missing npm dist-tag package')
+      if (!tags.has(name)) return ABSENT
+      const payload = tags.get(name)
+      const stdout = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? Object.entries(payload).map(([tag, version]) => `${tag}: ${String(version)}`).join('\n')
+        : JSON.stringify(payload) ?? 'undefined'
+      return { ...SUCCESS, stdout }
+    }
     expect(args).toHaveLength(4)
     expect(args[0]).toBe('view')
     expect(args[3]).toBe('--json')
     const selector = args[1]
     if (selector === undefined) throw new Error('Missing npm view selector')
-    if (args[2] === 'dist-tags') {
-      if (!tags.has(selector)) return ABSENT
-      return { ...SUCCESS, stdout: JSON.stringify(tags.get(selector)) }
-    }
     if (args[2] === 'dist.integrity') {
       const integrity = integrities.get(selector)
       return integrity === undefined ? ABSENT : { ...SUCCESS, stdout: JSON.stringify(integrity) }
@@ -127,9 +136,9 @@ describe('release publication channels', () => {
     expect(second).toBeDefined()
     registry(new Map([[first!.name, { latest: '1.0.5', next: '1.0.5-rc.1' }]]))
     vi.mocked(attemptEchoed).mockImplementation(() => {
-      expect(vi.mocked(attempt).mock.calls.filter(([, args]) => args[2] === 'dist-tags')).toEqual([
-        ['npm', ['view', first!.name, 'dist-tags', '--json']],
-        ['npm', ['view', second!.name, 'dist-tags', '--json']],
+      expect(vi.mocked(attempt).mock.calls.filter(([, args]) => args[0] === 'dist-tag')).toEqual([
+        ['npm', ['dist-tag', 'ls', first!.name]],
+        ['npm', ['dist-tag', 'ls', second!.name]],
       ])
       return SUCCESS
     })
@@ -166,20 +175,20 @@ describe('release publication channels', () => {
     const fixture = packedRelease(['1.0.6-alpha.1', '4.0.5-alpha.1'])
     const [first, second] = fixture.packages
     registry(new Map([
-      [first!.name, {}],
+      [first!.name, { latest: '1.0.5' }],
       [second!.name, { [CHANNEL]: '4.0.4' }],
     ]))
 
     await expect(publishRelease('vendor', fixture.directory, CHANNEL)).rejects.toThrow()
 
-    expect(vi.mocked(attempt).mock.calls).toEqual([
-      ['npm', ['view', first!.name, 'dist-tags', '--json']],
-      ['npm', ['view', second!.name, 'dist-tags', '--json']],
+    expect(vi.mocked(attempt).mock.calls.filter(([, args]) => args[0] === 'dist-tag')).toEqual([
+      ['npm', ['dist-tag', 'ls', first!.name]],
+      ['npm', ['dist-tag', 'ls', second!.name]],
     ])
     expect(attemptEchoed).not.toHaveBeenCalled()
   })
 
-  it.each([null, [], 'not an object', { [CHANNEL]: 42 }])('rejects malformed registry channels %j before publishing', async (payload) => {
+  it.each([null, [], {}, 'not an object', { [CHANNEL]: 42 }])('rejects malformed registry channels %j before publishing', async (payload) => {
     const fixture = packedRelease(['1.0.6-alpha.1'])
     registry(new Map([[fixture.packages[0]!.name, payload]]))
 
@@ -197,7 +206,19 @@ describe('release publication channels', () => {
     expect(attemptEchoed).not.toHaveBeenCalled()
   })
 
-  it('skips an identical artifact when the custom channel already names its version', async () => {
+  it('rejects repeated channel bindings before publishing', async () => {
+    const fixture = packedRelease(['1.0.6-alpha.1'])
+    vi.mocked(attempt).mockReturnValue({
+      ...SUCCESS,
+      stdout: `${CHANNEL}: 1.0.6-alpha.1\n${CHANNEL}: 1.0.6-alpha.1\n`,
+    })
+
+    await expect(publishRelease('vendor', fixture.directory, CHANNEL)).rejects.toThrow('invalid dist-tags')
+
+    expect(attemptEchoed).not.toHaveBeenCalled()
+  })
+
+  it('skips an identical artifact with its custom channel and no latest tag', async () => {
     const fixture = packedRelease(['1.0.6-alpha.1'])
     const entry = fixture.packages[0]!
     registry(
@@ -207,19 +228,73 @@ describe('release publication channels', () => {
 
     await publishRelease('vendor', fixture.directory, CHANNEL)
 
+    expect(attempt).toHaveBeenCalledWith('npm', ['dist-tag', 'ls', entry.name])
     expect(attemptEchoed).not.toHaveBeenCalled()
     expect(sleep).not.toHaveBeenCalled()
   })
 
-  it('leaves an absent custom channel unchanged when the identical version is already published', async () => {
+  it('rejects an already published version whose custom channel is absent', async () => {
     const fixture = packedRelease(['1.0.6-alpha.1'])
     const entry = fixture.packages[0]!
-    registry(new Map([[entry.name, {}]]), new Map([[`${entry.name}@${entry.version}`, entry.integrity]]))
+    registry(new Map([[entry.name, { latest: '1.0.5' }]]), new Map([[`${entry.name}@${entry.version}`, entry.integrity]]))
+
+    await expect(publishRelease('vendor', fixture.directory, CHANNEL)).rejects.toThrow()
+
+    expect(attemptEchoed).not.toHaveBeenCalled()
+    expect(attempt).toHaveBeenCalledWith('npm', ['view', `${entry.name}@${entry.version}`, 'dist.integrity', '--json'])
+  })
+
+  it('stops before the first upload when a later published version has no custom channel', async () => {
+    const fixture = packedRelease(['1.0.6-alpha.1', '4.0.5-alpha.1'])
+    const [first, second] = fixture.packages
+    registry(
+      new Map([[first!.name, { latest: '1.0.5' }], [second!.name, { latest: '4.0.4' }]]),
+      new Map([[`${second!.name}@${second!.version}`, second!.integrity]]),
+    )
+
+    await expect(publishRelease('vendor', fixture.directory, CHANNEL)).rejects.toThrow()
+
+    expect(attempt).toHaveBeenCalledWith('npm', ['view', `${second!.name}@${second!.version}`, 'dist.integrity', '--json'])
+    expect(attemptEchoed).not.toHaveBeenCalled()
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('preserves the explicit channel when retrying an E409 publication', async () => {
+    const fixture = packedRelease(['1.0.6-alpha.1'])
+    const entry = fixture.packages[0]!
+    registry(new Map([[entry.name, { latest: '1.0.5', next: '1.0.5-rc.1' }]]))
+    vi.mocked(attemptEchoed).mockReturnValueOnce(CONFLICT).mockReturnValueOnce(SUCCESS)
 
     await publishRelease('vendor', fixture.directory, CHANNEL)
 
-    expect(attemptEchoed).not.toHaveBeenCalled()
-    expect(attempt).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(attemptEchoed).mock.calls).toEqual([
+      ['npm', ['publish', entry.path, '--tag', CHANNEL]],
+      ['npm', ['publish', entry.path, '--tag', CHANNEL]],
+    ])
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(2_000)
+  })
+
+  it('keeps the explicit channel when an E409 publication already landed', async () => {
+    const fixture = packedRelease(['1.0.6-alpha.1'])
+    const entry = fixture.packages[0]!
+    const tags = new Map<string, Record<string, string>>([[entry.name, { latest: '1.0.5', next: '1.0.5-rc.1' }]])
+    const integrities = new Map<string, string>()
+    registry(tags, integrities)
+    vi.mocked(attemptEchoed).mockImplementationOnce(() => {
+      integrities.set(`${entry.name}@${entry.version}`, entry.integrity)
+      tags.set(entry.name, { ...tags.get(entry.name)!, [CHANNEL]: entry.version })
+      return CONFLICT
+    })
+
+    await publishRelease('vendor', fixture.directory, CHANNEL)
+
+    expect(attemptEchoed).toHaveBeenCalledExactlyOnceWith('npm', ['publish', entry.path, '--tag', CHANNEL])
+    const lookupIndex = vi.mocked(attempt).mock.calls.findLastIndex(([, args]) => args[2] === 'dist.integrity')
+    expect(lookupIndex).toBeGreaterThanOrEqual(0)
+    expect(vi.mocked(attempt).mock.invocationCallOrder[lookupIndex]).toBeGreaterThan(
+      vi.mocked(attemptEchoed).mock.invocationCallOrder[0]!,
+    )
+    expect(sleep).not.toHaveBeenCalled()
   })
 
   it('rejects different bytes already published at the requested version', async () => {

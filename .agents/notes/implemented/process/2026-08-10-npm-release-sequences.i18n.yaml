@@ -21,8 +21,8 @@
   en: 321f48c7e4afac24
   zh: 974a7fa1a75c810d
 /agent-note-private-npm-publication-as-three-independent-sequences/decision/publication-runs-only-on-github-and-the-registry-decides-what-goes-out:
-  en: 8b255f6df8bd762f
-  zh: 2ed6d1a84efe3e44
+  en: 8c8cd90e6eabe07d
+  zh: 7035b71a6eeeb379
 /agent-note-private-npm-publication-as-three-independent-sequences/decision/workspace-internal-references-use-the-workspace-protocol:
   en: 82a7925d449fc283
   zh: 653358a1ffbad80a
@@ -42,8 +42,8 @@
   en: c505237cad2c4128
   zh: 55364ba462536680
 /agent-note-private-npm-publication-as-three-independent-sequences/alternatives-considered:
-  en: b98c53537c33ba02
-  zh: b9e3bddadff0d6d6
+  en: ed22fa8a47b5c4b6
+  zh: 7b367971a51a67ff
 /agent-note-private-npm-publication-as-three-independent-sequences/consequences:
-  en: 72c2be77f220dcda
-  zh: 64312d7065abe25e
+  en: 46f82110175ea3f7
+  zh: 1cdd1c99bfb88440

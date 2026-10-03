@@ -76,7 +76,7 @@ tag 预留包版本并标识其 commit，不代表发布成功。即使对应发
 
 registry 的两个行为决定了「怎么尝试一次发布」。写入之间至少间隔两秒并带退避重试，因为连续背靠背发多个包会超出 registry 自身的处理速度，换来 `E409 Failed to save packument`。而每次重试都先重查 registry：报出来的失败可能对应一次其实已经落地的写入，所以「该版本现在存在且 integrity 与本 tarball 相同」算作已发布，而不是又一个待放置的版本。
 
-对 dsh 和 vendor，`release:publish --dist-tag <tag>` 覆盖该族默认发布通道。vendor 发布 workflow 接受可选的 `dist-tag` 输入；省略时保留该族默认值。覆盖值必须是合法的 npm dist-tag。发布任何 tarball 前，publisher 检查每个打包成员的该 tag：允许尚未绑定或已指向预期版本；若指向其他版本，则拒绝整次发布。原有 integrity 检查与重试继续生效。跳过的版本不会重新绑定 tag。
+对 dsh 和 vendor，`release:publish --dist-tag <tag>` 覆盖该族默认发布通道。vendor 发布 workflow 接受可选的 `dist-tag` 输入；省略时保留该族默认值。覆盖值必须是合法的 npm dist-tag。发布任何 tarball 前，publisher 检查每个打包成员：所选 tag 必须已指向预期版本，或者该 tag 和版本都不存在。tag 指向其他版本，或版本已经发布但缺少所选 tag，都会在上传前拒绝整次发布。原有 integrity 检查与重试继续生效。跳过的版本不会重新绑定 tag。
 
 预检不会原子性地预留 npm tag。发布负责人协调可能在检查后更改绑定的外部发布者。专用 dist-tag 也不会让稳定版本被已有依赖范围排除：隔离需要预发布版本，并核查实际打包产物中的依赖范围。
 
@@ -150,7 +150,7 @@ dsh 的验证会一并安装 vendored 族的 pack 产物。harness 的包把 ven
 
 **事件级 tag（`vendor-r1`、`vendor-r2`）。** 为「一次发布事件携带多个包版本」准备。既然由 registry 决定发什么，workflow 就不再从 tag 推断集合，per-package tag 够用，而且每个 tag 携带的是它自己那个包的真实版本。
 
-**把九个 vendored 包统一到一条 `4.0.x` 版本线。** 省掉变更检测，但 cosmokit 会从 `1.8.1` 跳到 `4.0.1`、丢失上游血缘；九包内部的上游范围（`^1.8.1` 之类）会立刻失配，必须改写 vendored manifest。
+**把九个 vendored 包统一到一条 `4.0.x` 版本线。** Cosmokit 会从 `1.8.1` 跳到 `4.0.1`、丢失上游血缘；九包内部的上游范围（`^1.8.1` 之类）会立刻失配，必须改写 vendored manifest。
 
 **只发布目录有变更的 vendor 包。** 目录 diff 不能证明从不同仓库状态重新打包会产出相同字节。递增全部九个包可避免未改目录的 integrity 冲突，代价是增加版本号。
 
@@ -170,7 +170,7 @@ dsh 的验证会一并安装 vendored 族的 pack 产物。harness 的包把 ven
 
 ## 后果
 
-发布脚本是带入口守卫的可 import 模块，其判断都有单测覆盖：tag 命名、发布顺序与环报告、版本基线运算、payload 变更判据，以及各族的 payload 策略。第一版带过的两个缺陷——publish 命令在 import 时执行了 pack 命令、变更判据对 `vendor/cordis` 的源码改动失明——正是这类测试在对应接缝上能抓住的。
+发布脚本是带入口守卫的可 import 模块，其判断都有单测覆盖：tag 命名、发布顺序与环报告、版本基线运算，以及各族的 payload 策略。入口守卫阻止 import 执行发布命令。
 
 一个 pull request 会为两条序列跑完整的 pack（无凭据），并把打包好的 dsh tarball 装进一次性 consumer，用普通 Node 驱动 `dsh --version`。这个探针刻意只有一条命令：它证明 `files` 选出了完整 payload、发布出去的范围可解析，不涉及任何交互行为。
 

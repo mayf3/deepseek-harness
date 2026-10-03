@@ -76,7 +76,7 @@ All three sequences decide this way, including the native one: it publishes thro
 
 Two registry behaviours shape how a publish is attempted. Writes are spaced by at least two seconds and retried with a backoff, because publishing several packages back to back outruns the registry's own processing and earns `E409 Failed to save packument`. And every retry re-reads the registry first: a reported failure can answer a write that landed anyway, so a version that now exists with this tarball's integrity counts as published rather than as a version to place again.
 
-For dsh and vendor, `release:publish --dist-tag <tag>` overrides the family's default publication channel. The vendor publish workflow accepts the optional `dist-tag` input; omitting it preserves the family default. An override must be a valid npm dist-tag. Before publishing any tarball, the publisher checks that tag for every packed member: an absent binding or one already naming the intended version is accepted; a binding to another version rejects the entire attempt. Existing integrity checks and retries still apply. Skipped versions are never retagged.
+For dsh and vendor, `release:publish --dist-tag <tag>` overrides the family's default publication channel. The vendor publish workflow accepts the optional `dist-tag` input; omitting it preserves the family default. An override must be a valid npm dist-tag. Before publishing any tarball, the publisher checks every packed member: the selected tag must already name the intended version, or both that tag and the version must be absent. A tag bound elsewhere, or an already published version without the selected tag, rejects the entire attempt before any upload. Existing integrity checks and retries still apply. Skipped versions are never retagged.
 
 The preflight does not reserve npm tags atomically. The release manager coordinates external publishers that could change a binding after the check. A dedicated dist-tag also does not exclude stable versions from existing dependency ranges: isolation requires prerelease versions and an audit of the actual packed dependency ranges.
 
@@ -150,7 +150,7 @@ The installed-consumer probe captures npm's HTTP diagnostics and includes them w
 
 **Event-level tags (`vendor-r1`, `vendor-r2`).** Prepared for one release event carrying several package versions. Once the registry decides what publishes, the workflow no longer infers the set from the tag, so per-package tags suffice — and each one names its own package's real version.
 
-**Putting the nine vendored packages on one `4.0.x` line.** It removes change detection, but cosmokit would jump from `1.8.1` to `4.0.1` and lose its upstream lineage; the upstream ranges inside the nine (`^1.8.1` and friends) would stop matching immediately, forcing a rewrite of the vendored manifests.
+**Putting the nine vendored packages on one `4.0.x` line.** Cosmokit would jump from `1.8.1` to `4.0.1` and lose its upstream lineage; the upstream ranges inside the nine (`^1.8.1` and friends) would stop matching immediately, forcing a rewrite of the vendored manifests.
 
 **Publishing only changed vendor directories.** A directory diff does not establish that repacking from another repository state produces identical bytes. Advancing all nine packages avoids integrity collisions for unchanged directories at the cost of additional versions.
 
@@ -170,7 +170,7 @@ The installed-consumer probe captures npm's HTTP diagnostics and includes them w
 
 ## Consequences
 
-The release scripts are importable modules behind a guarded entry point, and their judgements carry unit tests: tag naming, publish order and cycle reporting, version-baseline arithmetic, the payload change judgement, and each family's payload policy. Two defects the first draft carried — a publish command that ran the pack command on import, and a change judgement blind to `vendor/cordis` source edits — are exactly what a test at that seam catches.
+The release scripts are importable modules behind a guarded entry point, and their judgements carry unit tests: tag naming, publish order and cycle reporting, version-baseline arithmetic, and each family's payload policy. The entry guard prevents an import from executing a release command.
 
 A pull request runs the full pack for both sequences without credentials and installs the packed dsh tarballs into a throwaway consumer, where plain Node drives `dsh --version`. That probe is deliberately one command: it proves `files` selected a complete payload and that the published ranges resolve, and says nothing about interactive behavior.
 
