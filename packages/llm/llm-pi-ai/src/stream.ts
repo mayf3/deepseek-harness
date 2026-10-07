@@ -10,6 +10,7 @@
 
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isQuotaExceededError, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
@@ -148,6 +149,11 @@ export async function* toStreamChunks(
   // pi-ai contentIndex ↔ our block index map 1:1 (both count blocks from 0
   // in stream order), but we track ids per index for tool calls.
   const toolIds = new Map<number, { id: string; name: string }>()
+  const toolArguments = new Map<number, string>()
+  // Only a toolcall_end finalizes a call: the downstream assembler builds
+  // executable blocks from unclosed deltas, so a started-but-unclosed call
+  // must never reach a dispatching finish, whatever its delta JSON looks like.
+  const finalizedToolCalls = new Set<number>()
 
   for await (const event of events) {
     switch (event.type) {
@@ -181,6 +187,7 @@ export async function* toStreamChunks(
         break
       }
       case 'toolcall_delta': {
+        toolArguments.set(event.contentIndex, (toolArguments.get(event.contentIndex) ?? '') + event.delta)
         const known = toolIds.get(event.contentIndex)
         yield {
           type: 'tool-call-delta',
@@ -191,7 +198,47 @@ export async function* toStreamChunks(
         }
         break
       }
-      case 'toolcall_end':
+      case 'toolcall_end': {
+        finalizedToolCalls.add(event.contentIndex)
+        // The provider-captured final JSON string is authoritative when present,
+        // including empty. Observed deltas are streaming progress only: Responses
+        // may keep the initial prefix, or a non-prefix final replacement, out of
+        // the delta sequence entirely.
+        // The paired pi-ai change (0.82.x line; see earendil-works/pi #5963/#9461)
+        // captures the authoritative final string on the event. Read it through a
+        // narrow structural type so this compiles against the published pi-ai
+        // types today; the field is present once the paired artifact ships.
+        const authoritative = typeof (event as { rawArguments?: unknown }).rawArguments === 'string'
+          ? (event as { rawArguments: string }).rawArguments
+          : undefined
+        const raw = authoritative ?? toolArguments.get(event.contentIndex)
+        if (raw === '') {
+          // The agent loop interprets an empty string as {}, bypassing JSON.parse.
+          throw new LlmError('pi-ai emitted empty tool arguments', 'MALFORMED_RESPONSE')
+        }
+        if (raw !== undefined) {
+          let parsed: unknown
+          let valid = false
+          try {
+            parsed = JSON.parse(raw)
+            valid = true
+          } catch {
+            // Preserve malformed raw JSON for the existing tool argument validator.
+            // pi-ai's partial parser may have silently repaired its parsed object.
+          }
+          if (valid) {
+            if (!deepEqualJson(parsed, event.toolCall.arguments)) {
+              // A provider may replace its final snapshot without a matching delta.
+              // Neither a stale raw value nor an unverified replacement may execute.
+              throw new LlmError('pi-ai final tool arguments conflict with streamed JSON', 'MALFORMED_RESPONSE')
+            }
+            if (authoritative !== undefined && (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))) {
+              // The authoritative final must be a JSON object; valid non-object
+              // arguments are a malformed tool call, not an empty argument list.
+              throw new LlmError('pi-ai final tool arguments are not a JSON object', 'MALFORMED_RESPONSE')
+            }
+          }
+        }
         yield {
           type: 'block-end',
           index: event.contentIndex,
@@ -199,20 +246,29 @@ export async function* toStreamChunks(
             type: 'tool-call',
             id: brandString<ToolCallId>(event.toolCall.id),
             name: event.toolCall.name,
-            // pi-ai hands back the PARSED arguments; the harness vocabulary
-            // keeps the raw string.
-            arguments: JSON.stringify(event.toolCall.arguments),
+            // Keep streamed JSON verbatim. Object-only providers have no raw
+            // delta to preserve and retain the existing serialization fallback.
+            arguments: raw ?? JSON.stringify(event.toolCall.arguments),
           },
         }
         break
-      case 'done':
+      }
+      case 'done': {
+        const reason = mapStopReason(event.message, contextWindow)
+        // A dispatching finish authorizes tool execution, so it requires every
+        // started call to have been finalized by toolcall_end. max-tokens keeps
+        // the assembler's drop semantics and error finishes never dispatch.
+        if (reason.kind === 'tool-calls' && [...toolIds.keys()].some(index => !finalizedToolCalls.has(index))) {
+          throw new LlmError('pi-ai tool call stream finished without toolcall_end for every started call', 'MALFORMED_RESPONSE')
+        }
         yield { type: 'usage', usage: mapUsage(event.message.usage) }
         yield {
           type: 'finish',
-          reason: mapStopReason(event.message, contextWindow),
+          reason,
           replayState: toPiReplayState(event.message, requestedModel),
         }
         return
+      }
       case 'error':
         // In-stream error delivery (pi-ai's style) → error finish chunk
         // (the harness's other sanctioned error path besides throwing).
