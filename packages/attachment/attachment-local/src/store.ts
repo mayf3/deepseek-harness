@@ -86,6 +86,10 @@ async function syncDirectory(path: string): Promise<void> {
   /* v8 ignore stop */
 }
 
+function isPermissionError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM')
+}
+
 /**
  * Create one private directory tree and persist every ancestor entry up to a
  * caller-vouched durable boundary. The walk deliberately ignores what mkdir
@@ -93,7 +97,12 @@ async function syncDirectory(path: string): Promise<void> {
  * process then merely observes, so "already existed" is not "already durable"
  * — the entry may still be unsynced in the creator, and a crash would drop a
  * directory the session checkpoint already references. Re-syncing a durable
- * entry is harmless; skipping an unsynced one is not.
+ * entry is harmless; skipping an unsynced one is not. An ancestor this process
+ * cannot open (EACCES/EPERM) ends the proof there: without read access it
+ * cannot create or remove that directory's entries either, so their durability
+ * is not this process's obligation and cannot be proven by it. Deployments
+ * place homes below another account's traverse-only directory; without this
+ * bound, saving any attachment would fail there on every attempt.
  * @param path - absolute directory to create.
  * @param boundary - absolute ancestor the caller vouches is already durable.
  */
@@ -105,7 +114,12 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
   let level = target
   while (level !== stop) {
     const parent = dirname(level)
-    await syncDirectory(parent)
+    try {
+      await syncDirectory(parent)
+    } catch (error: unknown) {
+      if (isPermissionError(error)) break
+      throw error
+    }
     /* v8 ignore next -- filesystem-root guard: callers pass a boundary that is an ancestor of path, so the walk reaches it first. */
     if (parent === level) return
     level = parent
@@ -114,8 +128,9 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
 
 /**
  * Establish this process's proof that one DSH_HOME entry and every ancestor
- * below the filesystem root are durable. Mere existence is insufficient: a
- * concurrent process may have created the directory but not synced its parent.
+ * below the filesystem root it can open are durable. Mere existence is
+ * insufficient: a concurrent process may have created the directory but not
+ * synced its parent.
  */
 async function ensureDurableHome(path: string): Promise<string> {
   const home = resolve(path)

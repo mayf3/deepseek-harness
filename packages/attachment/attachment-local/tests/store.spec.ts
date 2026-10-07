@@ -12,6 +12,7 @@ import { readImageFile, saveImageFile } from '../src/store.ts'
 const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
   syncedDirectories: [] as string[],
+  failOpenFor: undefined as string | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -27,8 +28,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return actual.readFile(...args)
     },
     async open(...args: Parameters<typeof actual.open>): ReturnType<typeof actual.open> {
+      if (fsControl.failOpenFor !== undefined && args[1] === constants.O_RDONLY && String(args[0]) === fsControl.failOpenFor) {
+        throw Object.assign(new Error('injected ancestor sync failure'), { code: 'ENOENT' })
+      }
+      const handle = await actual.open(...args)
       if (args[1] === constants.O_RDONLY) fsControl.syncedDirectories.push(String(args[0]))
-      return actual.open(...args)
+      return handle
     },
   }
 })
@@ -67,6 +72,7 @@ function parentChainToRoot(path: string): string[] {
 }
 
 afterEach(async () => {
+  fsControl.failOpenFor = undefined
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -107,6 +113,50 @@ describe('local attachment store', () => {
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+  })
+
+  it.skipIf(process.platform === 'win32')('stops the durability proof at the nearest ancestor it lacks permission to open', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    const sha256 = createHash('sha256').update(PNG).digest('hex')
+    const objects = join(storageRoot, 'objects')
+    const bucket = join(objects, sha256.slice(0, 2))
+    await mkdir(home, { recursive: true })
+    // Traverse-only for the owner: the home below stays reachable, while the
+    // ancestor's entries can no longer be read or synced by this process —
+    // the production shape where homes sit below another account's root.
+    await chmod(top, 0o0111)
+    fsControl.syncedDirectories.length = 0
+    try {
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      // The locked ancestor and everything above it stay unsynced; the proof
+      // covers the home and every directory the save creates below it.
+      expect(fsControl.syncedDirectories).toEqual([
+        objects,
+        storageRoot,
+        join(storageRoot, '..'),
+        home,
+        storageRoot,
+        join(storageRoot, '..'),
+        home,
+        bucket,
+        objects,
+      ])
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('propagates ancestor sync failures that are not permission denials', async () => {
+    const storageRoot = await root()
+    fsControl.failOpenFor = join(storageRoot, '..', '..')
+
+    await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+      .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('publishes one private content-addressed object and deduplicates equal bytes', async () => {
