@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-08-attachment-durability-proof-permission-boundary.md
+2026-10-08-attachment-durability-proof-permission-boundary.md: 7294d201415c743534b3c03bd054dd24c254460d
+2026-10-08-attachment-durability-proof-permission-boundary.zh.md: dad925957e273a321db671dec7db3fe6b08b9972
