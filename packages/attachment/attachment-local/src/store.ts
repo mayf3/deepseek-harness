@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, stat, unlink } from 'node:fs/promises'
+import { chmod, link, mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
@@ -18,6 +18,12 @@ import { detectImage, probeImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
+/* Marks a home whose entry exists but was never proven durable: a previous
+   save created it and failed (or crashed) before completing the required
+   parent syncs. Without it, the residue would be indistinguishable from a
+   deployed home and the next save would demote the same parent syncs to
+   best-effort. */
+const UNPROVEN_HOME_MARKER = '.unproven-home'
 
 function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
@@ -137,6 +143,11 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
  * still insufficient within the proven range: a concurrent process may have
  * created a directory but not synced its parent, so the walk re-syncs every
  * level it can open.
+ *
+ * A home this call created but could not prove (or a process crash between
+ * creation and proof) is left behind with an unproven marker, and the next
+ * save that observes the marker re-runs the required proof over the whole
+ * ancestor chain instead of treating the residue as a deployed home.
  * @param path - absolute DSH_HOME to prove durable.
  * @returns the resolved home path.
  */
@@ -165,28 +176,70 @@ async function ensureDurableHome(path: string): Promise<string> {
     }
     await mkdir(home, { recursive: true, mode: 0o700 })
     await chmod(home, 0o700)
+    const stop = parse(home).root
+    const unprovenMarker = join(home, UNPROVEN_HOME_MARKER)
+    /* A failed proof leaves the just-created home behind — the mkdir already
+       happened. Mark it so no later save (this process's retry, another
+       process, or a post-crash restart) mistakes the residue for a deployed
+       home and demotes the same parent syncs to best-effort. */
+    if (created) {
+      await writeFile(unprovenMarker, '', { mode: 0o600 })
+    }
     /* Required range: the parent recording each directory this call created.
        A permission failure here is a real durability hole — POSIX allows
        write+search without read, so the entry may exist unproveably — and
        fails the save instead of reporting an unproven reference. */
+    let residueProven = false
     if (created) {
       for (let level = dirname(home); ; level = dirname(level)) {
         await syncDirectory(level)
         if (level === boundary) break
       }
+    } else {
+      let unproven = false
+      try {
+        await stat(unprovenMarker)
+        unproven = true
+      } catch (error: unknown) {
+        /* v8 ignore next -- The store owns the home mode (0o700 above), so the
+           marker is always stat-able; only ENOENT is reachable. */
+        if (!isENOENT(error)) throw error
+      }
+      if (unproven) {
+        /* Residue of a failed or crashed proof: the entry exists, so this
+           call did not create it, but its durability was never established.
+           Re-run the required proof over every ancestor — no best-effort
+           stop — and clear the marker only once it completes. */
+        for (let level = dirname(home); level !== stop; level = dirname(level)) {
+          await syncDirectory(level)
+          /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+          if (level === dirname(level)) break
+        }
+        await unlink(unprovenMarker)
+        await syncDirectory(home)
+        residueProven = true
+      }
     }
     /* Best-effort range above this call's writes: stop at the first ancestor
        this process cannot open. */
-    const stop = parse(home).root
-    for (let level = dirname(created ? boundary : home); level !== stop; level = dirname(level)) {
-      try {
-        await syncDirectory(level)
-      } catch (error: unknown) {
-        if (isPermissionError(error)) break
-        throw error
+    if (!residueProven) {
+      for (let level = dirname(created ? boundary : home); level !== stop; level = dirname(level)) {
+        try {
+          await syncDirectory(level)
+        } catch (error: unknown) {
+          if (isPermissionError(error)) break
+          throw error
+        }
+        /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+        if (level === dirname(level)) break
       }
-      /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
-      if (level === dirname(level)) break
+    }
+    if (created) {
+      /* The proof completed: unmark. The home sync makes the marker's
+         removal itself durable, so a crash cannot resurrect a stale marker
+         on an already-proven home. */
+      await unlink(unprovenMarker)
+      await syncDirectory(home)
     }
     durableHomes.add(home)
   }
