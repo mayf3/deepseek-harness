@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-08-attachment-durability-proof-permission-boundary.md
-2026-10-08-attachment-durability-proof-permission-boundary.md: d6a1772270784dabf867a87a6f3ffde6602bb2bc
-2026-10-08-attachment-durability-proof-permission-boundary.zh.md: 9c8ddbb720ebcd9f22873f95f390e172f334dbda
+2026-10-08-attachment-durability-proof-permission-boundary.md: 7d7b1209ecb5d819801a1aeb2995ed76271346e4
+2026-10-08-attachment-durability-proof-permission-boundary.zh.md: afb42e98c76dcf4db77d0e1ddfa60a6d44373c75

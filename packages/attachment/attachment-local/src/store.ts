@@ -2,8 +2,8 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join, parse, resolve } from 'node:path'
+import { chmod, link, mkdir, open, readFile, rename, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
   AttachmentId,
@@ -18,15 +18,15 @@ import { detectImage, probeImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
-/* Marks a home whose entry exists but was never proven durable: a previous
-   save created it and its required proof failed (or the process crashed
-   after the marker was written, before completing the parent syncs). Without
-   it, the residue would be indistinguishable from a deployed home and the
-   next save would demote the same parent syncs to best-effort. The marker is
-   synced into the home before the proof, so it survives any crash that
-   leaves the home behind; the brief window between creating the home and the
-   marker being durable has no such witness and its residue then counts as a
-   deployed home. */
+/* Witness for a directory entry this store created but never proved durable:
+   the home of a save whose required proof failed (or that crashed after the
+   witness became durable, before completing the parent syncs), or an entry a
+   failed rollback could not remove. Without it, the residue would be
+   indistinguishable from a deployed home and the next save would demote the
+   same parent syncs to best-effort. The witness is staged inside the home's
+   directory and made durable before an atomic rename publishes the home, so
+   no concurrent save and no crash that leaves the home behind can observe it
+   without the witness. */
 const UNPROVEN_HOME_MARKER = '.unproven-home'
 
 function digest(data: Uint8Array): string {
@@ -104,6 +104,66 @@ function isENOENT(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
+function isEntryConflict(error: unknown): boolean {
+  return error instanceof Error && 'code' in error
+    && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')
+}
+
+/** Whether one directory carries an unproven-entry witness. */
+async function hasWitness(level: string): Promise<boolean> {
+  try {
+    await stat(join(level, UNPROVEN_HOME_MARKER))
+    return true
+  } catch (error: unknown) {
+    /* v8 ignore next 2 -- The boundary walk traversed every scanned level and
+       the store owns created modes, so only ENOENT is reachable. */
+    if (!isENOENT(error)) throw error
+    return false
+  }
+}
+
+/** Drop a witness into an entry the rollback could not remove. */
+async function markUnremovable(level: string): Promise<void> {
+  /* Best-effort: if the witness cannot be written either, the save's own
+     loud failure remains the only outcome.
+     v8 ignore next -- Requires the same condition that broke the rollback to
+     also break the witness write, which no deterministic test schedules. */
+  await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 }).catch(
+    /* v8 ignore next -- See above; the save has already failed loudly. */
+    () => {},
+  )
+}
+
+/* Remove the staged home and every entry this call created below the
+   boundary, so no residue can shrink a later save's required boundary past
+   an unproven entry. rmdir is non-recursive: an entry a concurrent creator
+   occupies survives with its content untouched and is itself marked, so a
+   later save re-runs the required proof over it. Ownership is not checked —
+   an empty entry a concurrent creator just made can be removed, and that
+   creator's own recursive mkdir recreates it. The original failure the
+   caller rethrows remains the loud outcome. */
+async function rollBackCreatedChain(staged: string, home: string, boundary: string): Promise<void> {
+  const chain = [staged]
+  /* Entries strictly below the boundary — the boundary itself predates this
+     call and is never removed; the root stops the walk in the degenerate
+     boundary-is-nothing case. */
+  const stop = parse(home).root
+  for (let level = dirname(home); level !== boundary && level !== stop; level = dirname(level)) {
+    chain.push(level)
+  }
+  for (const level of chain) {
+    try {
+      await rmdir(level)
+    } catch (error: unknown) {
+      /* v8 ignore next 3 -- ENOENT requires a concurrent remover racing this
+         rollback, which no deterministic test schedules. */
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+        await markUnremovable(level)
+      }
+    }
+  }
+}
+
 /**
  * Create one private directory tree and persist every ancestor entry up to a
  * caller-vouched durable boundary. The walk deliberately ignores what mkdir
@@ -148,10 +208,13 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
  * created a directory but not synced its parent, so the walk re-syncs every
  * level it can open.
  *
- * A home this call created but could not prove is left behind with an
- * unproven marker (made durable before the proof runs), and the next save
- * that observes the marker re-runs the required proof over the whole
- * ancestor chain instead of treating the residue as a deployed home.
+ * A home this call creates is published by an atomic rename from a staged
+ * directory whose durable witness (an unproven marker) is already inside, so
+ * no concurrent save or crash can observe an unmarked created home. A home
+ * this call could not prove keeps that witness, as does any created entry a
+ * rollback could not remove, and the next save that observes a witness
+ * re-runs the required proof over the whole ancestor chain instead of
+ * treating the residue as a deployed home.
  * @param path - absolute DSH_HOME to prove durable.
  * @returns the resolved home path.
  */
@@ -178,71 +241,81 @@ async function ensureDurableHome(path: string): Promise<string> {
       }
       boundary = parent
     }
-    await mkdir(home, { recursive: true, mode: 0o700 })
-    await chmod(home, 0o700)
     const stop = parse(home).root
-    const unprovenMarker = join(home, UNPROVEN_HOME_MARKER)
-    /* A failed proof leaves the just-created home behind — the mkdir already
-       happened. Mark it so no later save (this process's retry, another
-       process, or a post-crash restart) mistakes the residue for a deployed
-       home and demotes the same parent syncs to best-effort. */
+    let staged: string | undefined
     if (created) {
+      /* Stage the witness inside a private sibling and rename it into place:
+         the home's first observable state already carries its witness, so no
+         concurrent save and no crash can observe an unmarked created home
+         and mistake it for a deployed one. */
+      staged = join(dirname(home), `.${basename(home)}.${randomUUID()}.unproven`)
+      await mkdir(staged, { recursive: true, mode: 0o700 })
+      await chmod(staged, 0o700)
       try {
-        await writeFile(unprovenMarker, '', { mode: 0o600 })
+        await writeFile(join(staged, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
       } catch (error: unknown) {
-        /* A residue without its marker would be indistinguishable from a
-           deployed home, so remove every entry this call created — not just
-           the home, or a surviving created ancestor would become the next
-           save's boundary and its recording parent's sync would be demoted
-           to best-effort. Best-effort itself: a concurrent creator may
-           already own an entry, and the original failure remains the loud
-           outcome. */
-        for (let level = home; level !== boundary; level = dirname(level)) {
-          await rmdir(level).catch(
-            /* v8 ignore next -- Requires a concurrent writer inside the just-created chain on top of the marker-write failure. */
-            () => {},
-          )
-        }
+        await rollBackCreatedChain(staged, home, boundary)
         throw error
       }
-      /* The marker's entry becomes durable before the proof runs, so a crash
-         that leaves the home behind cannot lose the marker and pass the
-         residue off as a deployed home. */
-      await syncDirectory(home)
+      /* The witness becomes durable before the home becomes observable. */
+      await syncDirectory(staged)
+      try {
+        await rename(staged, home)
+      } catch (error: unknown) {
+        /* v8 ignore next 3 -- A fresh staged directory can only race a
+           concurrent winner (EEXIST/ENOTEMPTY); other rename failures are
+           exotic filesystem errors no test fs schedules. */
+        if (!isEntryConflict(error)) {
+          await rollBackCreatedChain(staged, home, boundary)
+          throw error
+        }
+        /* A concurrent first save won the rename and its home already
+           carries the witness: observe it instead of creating. */
+        await unlink(join(staged, UNPROVEN_HOME_MARKER)).catch(
+          /* v8 ignore next -- Superseded by the storage failure that entered cleanup. */
+          () => {},
+        )
+        await rollBackCreatedChain(staged, home, boundary)
+        created = false
+      }
     }
-    /* Required range: the parent recording each directory this call created.
-       A permission failure here is a real durability hole — POSIX allows
-       write+search without read, so the entry may exist unproveably — and
-       fails the save instead of reporting an unproven reference. */
+    /* Existing entries carrying a witness: the home itself when this call
+       did not create it — including a concurrent winner's home after a lost
+       rename — and every ancestor up to the filesystem root. A rollback
+       marks whichever created entry it could not remove, and that entry can
+       sit above the boundary a later save observes, so the scan cannot be
+       bounded by the boundary. Every scanned level was already traversed by
+       the walk (stat(home) proves search on the whole chain), so a witness
+       can never hide. */
+    const marked: string[] = []
+    if (!created && await hasWitness(home)) marked.push(home)
+    for (let level = dirname(home); level !== stop; level = dirname(level)) {
+      if (await hasWitness(level)) marked.push(level)
+      /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+      if (level === dirname(level)) break
+    }
+    /* Required range: the parent recording each directory this call created,
+       and — above any witness this call found — the whole ancestor chain. A
+       permission failure in a required range is a real durability hole —
+       POSIX allows write+search without read, so the entry may exist
+       unproveably — and fails the save instead of reporting an unproven
+       reference. */
     let residueProven = false
-    if (created) {
+    if (marked.length > 0) {
+      for (let level = dirname(home); level !== stop; level = dirname(level)) {
+        await syncDirectory(level)
+        /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+        if (level === dirname(level)) break
+      }
+      for (const level of marked) {
+        await unlink(join(level, UNPROVEN_HOME_MARKER))
+        await syncDirectory(level)
+      }
+      residueProven = true
+    } else if (created) {
       for (let level = dirname(home); ; level = dirname(level)) {
         await syncDirectory(level)
         if (level === boundary) break
-      }
-    } else {
-      let unproven = false
-      try {
-        await stat(unprovenMarker)
-        unproven = true
-      } catch (error: unknown) {
-        /* v8 ignore next -- The store owns the home mode (0o700 above), so the
-           marker is always stat-able; only ENOENT is reachable. */
-        if (!isENOENT(error)) throw error
-      }
-      if (unproven) {
-        /* Residue of a failed or crashed proof: the entry exists, so this
-           call did not create it, but its durability was never established.
-           Re-run the required proof over every ancestor — no best-effort
-           stop — and clear the marker only once it completes. */
-        for (let level = dirname(home); level !== stop; level = dirname(level)) {
-          await syncDirectory(level)
-          /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
-          if (level === dirname(level)) break
-        }
-        await unlink(unprovenMarker)
-        await syncDirectory(home)
-        residueProven = true
       }
     }
     /* Best-effort range above this call's writes: stop at the first ancestor
@@ -263,7 +336,7 @@ async function ensureDurableHome(path: string): Promise<string> {
       /* The proof completed: unmark. The home sync makes the marker's
          removal itself durable, so a crash cannot resurrect a stale marker
          on an already-proven home. */
-      await unlink(unprovenMarker)
+      await unlink(join(home, UNPROVEN_HOME_MARKER))
       await syncDirectory(home)
     }
     durableHomes.add(home)
