@@ -285,6 +285,42 @@ describe('local attachment store', () => {
     }
   })
 
+  it.skipIf(process.platform === 'win32')('removes every created ancestor on a marker-write failure and keeps the retry fail-closed', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'new', 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await chmod(top, 0o0300)
+    fsControl.failWriteFileFor = join(home, '.unproven-home')
+    try {
+      // The recursive mkdir creates both new and home; the failed marker
+      // write must roll back the whole created chain. A surviving new would
+      // become the retry's pre-existing boundary and demote the top sync —
+      // the very parent that records the unproven new entry — to best-effort.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(top, 'new'))).rejects.toMatchObject({ code: 'ENOENT' })
+
+      // With the marker write healthy again, the retry re-enters the full
+      // created range below top, so the unopenable top still fails the
+      // required proof instead of being absorbed above a surviving ancestor.
+      fsControl.failWriteFileFor = undefined
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+
+      // Once top becomes provable the save completes with the full required
+      // proof and no residue.
+      await chmod(top, 0o0700)
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await chmod(top, 0o0700)
+      fsControl.failWriteFileFor = undefined
+    }
+  })
+
   it.skipIf(process.platform === 'win32')('syncs the parent recording each directory it creates', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
@@ -298,11 +334,13 @@ describe('local attachment store', () => {
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
-    // The created home's recording entry is synced first (required), the
-    // best-effort vouching continues above it, the unproven marker's removal
-    // is made durable with a home sync, and the created bucket/staging chains
+    // The unproven marker is made durable with a home sync before the proof
+    // runs; the created home's recording entry is then synced required, the
+    // best-effort vouching continues above it, the marker's removal is made
+    // durable with a second home sync, and the created bucket/staging chains
     // are each synced up to the home boundary.
     expect(fsControl.syncedDirectories).toEqual([
+      home,
       top,
       ...parentChainToRoot(top),
       home,

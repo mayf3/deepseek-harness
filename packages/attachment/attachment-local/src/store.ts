@@ -19,10 +19,14 @@ import { detectImage, probeImage } from './image.ts'
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
 /* Marks a home whose entry exists but was never proven durable: a previous
-   save created it and failed (or crashed) before completing the required
-   parent syncs. Without it, the residue would be indistinguishable from a
-   deployed home and the next save would demote the same parent syncs to
-   best-effort. */
+   save created it and its required proof failed (or the process crashed
+   after the marker was written, before completing the parent syncs). Without
+   it, the residue would be indistinguishable from a deployed home and the
+   next save would demote the same parent syncs to best-effort. The marker is
+   synced into the home before the proof, so it survives any crash that
+   leaves the home behind; the brief window between creating the home and the
+   marker being durable has no such witness and its residue then counts as a
+   deployed home. */
 const UNPROVEN_HOME_MARKER = '.unproven-home'
 
 function digest(data: Uint8Array): string {
@@ -144,9 +148,9 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
  * created a directory but not synced its parent, so the walk re-syncs every
  * level it can open.
  *
- * A home this call created but could not prove (or a process crash between
- * creation and proof) is left behind with an unproven marker, and the next
- * save that observes the marker re-runs the required proof over the whole
+ * A home this call created but could not prove is left behind with an
+ * unproven marker (made durable before the proof runs), and the next save
+ * that observes the marker re-runs the required proof over the whole
  * ancestor chain instead of treating the residue as a deployed home.
  * @param path - absolute DSH_HOME to prove durable.
  * @returns the resolved home path.
@@ -186,16 +190,25 @@ async function ensureDurableHome(path: string): Promise<string> {
       try {
         await writeFile(unprovenMarker, '', { mode: 0o600 })
       } catch (error: unknown) {
-        /* A home left behind without its marker would be indistinguishable
-           from a deployed home on the next save, so remove what this call
-           created; best-effort, because a concurrent creator may already own
-           the entry and the original failure remains the loud outcome. */
-        await rmdir(home).catch(
-          /* v8 ignore next -- Requires a concurrent writer inside the just-created home on top of the marker-write failure. */
-          () => {},
-        )
+        /* A residue without its marker would be indistinguishable from a
+           deployed home, so remove every entry this call created — not just
+           the home, or a surviving created ancestor would become the next
+           save's boundary and its recording parent's sync would be demoted
+           to best-effort. Best-effort itself: a concurrent creator may
+           already own an entry, and the original failure remains the loud
+           outcome. */
+        for (let level = home; level !== boundary; level = dirname(level)) {
+          await rmdir(level).catch(
+            /* v8 ignore next -- Requires a concurrent writer inside the just-created chain on top of the marker-write failure. */
+            () => {},
+          )
+        }
         throw error
       }
+      /* The marker's entry becomes durable before the proof runs, so a crash
+         that leaves the home behind cannot lose the marker and pass the
+         residue off as a deployed home. */
+      await syncDirectory(home)
     }
     /* Required range: the parent recording each directory this call created.
        A permission failure here is a real durability hole — POSIX allows
