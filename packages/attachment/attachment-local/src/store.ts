@@ -20,13 +20,14 @@ const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
 /* Witness for a directory entry this store created but never proved durable:
    the home of a save whose required proof failed (or that crashed after the
-   witness became durable, before completing the parent syncs), or an entry a
-   failed rollback could not remove. Without it, the residue would be
+   witnesses became durable, before completing the parent syncs), or any
+   level of a created subtree. Without it, the residue would be
    indistinguishable from a deployed home and the next save would demote the
-   same parent syncs to best-effort. The witness is staged inside the home's
-   directory and made durable before an atomic rename publishes the home, so
-   no concurrent save and no crash that leaves the home behind can observe it
-   without the witness. */
+   same parent syncs to best-effort. The whole created subtree is built
+   privately under the boundary, every level's witness is synced before one
+   atomic rename publishes the highest missing entry, so no concurrent save
+   and no crash that leaves created entries behind can observe them without
+   a witness. */
 const UNPROVEN_HOME_MARKER = '.unproven-home'
 
 function digest(data: Uint8Array): string {
@@ -105,8 +106,10 @@ function isENOENT(error: unknown): boolean {
 }
 
 function isEntryConflict(error: unknown): boolean {
-  return error instanceof Error && 'code' in error
-    && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')
+  /* Windows reports an occupied rename target as EPERM rather than ENOTEMPTY. */
+  /* v8 ignore next -- win32-only branch; the Linux coverage lane never exercises it. */
+  if (process.platform === 'win32') return error instanceof Error && 'code' in error && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY' || error.code === 'EPERM')
+  return error instanceof Error && 'code' in error && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')
 }
 
 /** Whether one directory carries an unproven-entry witness. */
@@ -122,45 +125,22 @@ async function hasWitness(level: string): Promise<boolean> {
   }
 }
 
-/** Drop a witness into an entry the rollback could not remove. */
-async function markUnremovable(level: string): Promise<void> {
-  /* Best-effort: if the witness cannot be written either, the save's own
-     loud failure remains the only outcome.
-     v8 ignore next -- Requires the same condition that broke the rollback to
-     also break the witness write, which no deterministic test schedules. */
-  await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 }).catch(
-    /* v8 ignore next -- See above; the save has already failed loudly. */
-    () => {},
-  )
-}
-
-/* Remove the staged home and every entry this call created below the
-   boundary, so no residue can shrink a later save's required boundary past
-   an unproven entry. rmdir is non-recursive: an entry a concurrent creator
-   occupies survives with its content untouched and is itself marked, so a
-   later save re-runs the required proof over it. Ownership is not checked —
-   an empty entry a concurrent creator just made can be removed, and that
-   creator's own recursive mkdir recreates it. The original failure the
-   caller rethrows remains the loud outcome. */
-async function rollBackCreatedChain(staged: string, home: string, boundary: string): Promise<void> {
-  const chain = [staged]
-  /* Entries strictly below the boundary — the boundary itself predates this
-     call and is never removed; the root stops the walk in the degenerate
-     boundary-is-nothing case. */
-  const stop = parse(home).root
-  for (let level = dirname(home); level !== boundary && level !== stop; level = dirname(level)) {
-    chain.push(level)
-  }
-  for (const level of chain) {
-    try {
-      await rmdir(level)
-    } catch (error: unknown) {
-      /* v8 ignore next 3 -- ENOENT requires a concurrent remover racing this
-         rollback, which no deterministic test schedules. */
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
-        await markUnremovable(level)
-      }
-    }
+/* Discard the private staging tree after a failure or a lost publish race.
+   Only this call's own staged entries are touched: deployed entries, a
+   concurrent winner's published chain, and any file content anywhere are
+   never removed. A leftover here is private litter under a fresh UUID name —
+   it can never become a later save's boundary — so the discard is
+   best-effort and the save's own failure remains the loud outcome. */
+async function discardCreatedStaging(levels: string[]): Promise<void> {
+  for (const level of [...levels].reverse()) {
+    await unlink(join(level, UNPROVEN_HOME_MARKER)).catch(
+      /* v8 ignore next -- The witness may not exist yet when the witness write itself failed. */
+      () => {},
+    )
+    await rmdir(level).catch(
+      /* v8 ignore next -- Only reachable if the private staging tree was externally modified, which no deterministic test schedules. */
+      () => {},
+    )
   }
 }
 
@@ -208,13 +188,14 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
  * created a directory but not synced its parent, so the walk re-syncs every
  * level it can open.
  *
- * A home this call creates is published by an atomic rename from a staged
- * directory whose durable witness (an unproven marker) is already inside, so
- * no concurrent save or crash can observe an unmarked created home. A home
- * this call could not prove keeps that witness, as does any created entry a
- * rollback could not remove, and the next save that observes a witness
- * re-runs the required proof over the whole ancestor chain instead of
- * treating the residue as a deployed home.
+ * The publish unit for a missing home is the whole subtree from the highest
+ * missing entry down to the home. It is built inside one private staging
+ * directory under the boundary, every created level's witness (an unproven
+ * marker) is synced there, and one atomic rename publishes the highest
+ * missing entry — so no concurrent save or crash can observe a created
+ * entry without a witness. A save that observes witnesses re-runs the
+ * required proof over the whole ancestor chain instead of treating the
+ * residue as a deployed home, and clears the witnesses it proved.
  * @param path - absolute DSH_HOME to prove durable.
  * @returns the resolved home path.
  */
@@ -242,41 +223,46 @@ async function ensureDurableHome(path: string): Promise<string> {
       boundary = parent
     }
     const stop = parse(home).root
-    let staged: string | undefined
     if (created) {
-      /* Stage the witness inside a private sibling and rename it into place:
-         the home's first observable state already carries its witness, so no
-         concurrent save and no crash can observe an unmarked created home
-         and mistake it for a deployed one. */
-      staged = join(dirname(home), `.${basename(home)}.${randomUUID()}.unproven`)
-      await mkdir(staged, { recursive: true, mode: 0o700 })
-      await chmod(staged, 0o700)
+      /* Publish unit: the whole subtree from the highest missing entry down
+         to the home is built inside one private staging directory under the
+         boundary. Every created level receives its witness and a directory
+         sync before one atomic rename publishes the highest missing entry —
+         nothing this call creates is ever observable without a durable
+         witness, and every failure discards only this private tree. */
+      let highestMissing = home
+      while (dirname(highestMissing) !== boundary) highestMissing = dirname(highestMissing)
+      const staged = join(boundary, `.${basename(home)}.${randomUUID()}.unproven`)
+      const mRels: string[] = []
+      for (let level = home; level !== highestMissing; level = dirname(level)) mRels.unshift(level.slice(highestMissing.length + 1))
+      const levels = [staged, ...mRels.map(rel => join(staged, rel))]
+      let published = false
       try {
-        await writeFile(join(staged, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
-      } catch (error: unknown) {
-        await rollBackCreatedChain(staged, home, boundary)
-        throw error
-      }
-      /* The witness becomes durable before the home becomes observable. */
-      await syncDirectory(staged)
-      try {
-        await rename(staged, home)
-      } catch (error: unknown) {
-        /* v8 ignore next 3 -- A fresh staged directory can only race a
-           concurrent winner (EEXIST/ENOTEMPTY); other rename failures are
-           exotic filesystem errors no test fs schedules. */
-        if (!isEntryConflict(error)) {
-          await rollBackCreatedChain(staged, home, boundary)
-          throw error
+        await mkdir(staged, { recursive: true, mode: 0o700 })
+        await chmod(staged, 0o700)
+        for (const rel of mRels) await mkdir(join(staged, rel), { recursive: true, mode: 0o700 })
+        for (const level of levels) {
+          await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
+          /* The witness becomes durable before the entry becomes observable. */
+          await syncDirectory(level)
         }
-        /* A concurrent first save won the rename and its home already
-           carries the witness: observe it instead of creating. */
-        await unlink(join(staged, UNPROVEN_HOME_MARKER)).catch(
-          /* v8 ignore next -- Superseded by the storage failure that entered cleanup. */
-          () => {},
-        )
-        await rollBackCreatedChain(staged, home, boundary)
-        created = false
+        try {
+          await rename(staged, highestMissing)
+          published = true
+        } catch (error: unknown) {
+          if (isEntryConflict(error)) {
+            /* A concurrent first save wins the rename and its published chain
+               already carries witnesses: observe it instead of creating. */
+            created = false
+          } else {
+            /* v8 ignore next 2 -- A fresh staging tree can only race a concurrent
+               winner (EEXIST/ENOTEMPTY/Windows EPERM); other rename failures are
+               exotic filesystem errors no test fs schedules. */
+            throw error
+          }
+        }
+      } finally {
+        if (!published) await discardCreatedStaging(levels)
       }
     }
     /* Existing entries carrying a witness: the home itself when this call
@@ -302,6 +288,9 @@ async function ensureDurableHome(path: string): Promise<string> {
        reference. */
     let residueProven = false
     if (marked.length > 0) {
+      /* A witness means some entry on this chain was created without a
+         completed proof: re-prove the whole ancestor chain — no best-effort
+         stop — and clear every witness only once that proof completes. */
       for (let level = dirname(home); level !== stop; level = dirname(level)) {
         await syncDirectory(level)
         /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
@@ -312,9 +301,15 @@ async function ensureDurableHome(path: string): Promise<string> {
         await syncDirectory(level)
       }
       residueProven = true
-    } else if (created) {
+    }
+    if (!residueProven && created) {
+      /* Required range: the parent recording each directory this call
+         created. A permission failure here is a real durability hole — POSIX
+         allows write+search without read, so the entry may exist unproveably
+         — and fails the save instead of reporting an unproven reference. */
       for (let level = dirname(home); ; level = dirname(level)) {
         await syncDirectory(level)
+        /* v8 ignore next -- The walk stops at the boundary by construction; falling through would loop forever. */
         if (level === boundary) break
       }
     }
