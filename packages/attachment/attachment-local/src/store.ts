@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
+import { chmod, link, mkdir, open, readFile, stat, unlink } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
@@ -90,6 +90,10 @@ function isPermissionError(error: unknown): boolean {
   return error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM')
 }
 
+function isENOENT(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
 /**
  * Create one private directory tree and persist every ancestor entry up to a
  * caller-vouched durable boundary. The walk deliberately ignores what mkdir
@@ -97,12 +101,10 @@ function isPermissionError(error: unknown): boolean {
  * process then merely observes, so "already existed" is not "already durable"
  * — the entry may still be unsynced in the creator, and a crash would drop a
  * directory the session checkpoint already references. Re-syncing a durable
- * entry is harmless; skipping an unsynced one is not. An ancestor this process
- * cannot open (EACCES/EPERM) ends the proof there: without read access it
- * cannot create or remove that directory's entries either, so their durability
- * is not this process's obligation and cannot be proven by it. Deployments
- * place homes below another account's traverse-only directory; without this
- * bound, saving any attachment would fail there on every attempt.
+ * entry is harmless; skipping an unsynced one is not. Callers pass boundaries
+ * this process owns or has already proven, so every sync here covers an entry
+ * this call may have created and a failure — permission or otherwise — fails
+ * the save loudly instead of reporting a reference it cannot prove.
  * @param path - absolute directory to create.
  * @param boundary - absolute ancestor the caller vouches is already durable.
  */
@@ -114,12 +116,7 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
   let level = target
   while (level !== stop) {
     const parent = dirname(level)
-    try {
-      await syncDirectory(parent)
-    } catch (error: unknown) {
-      if (isPermissionError(error)) break
-      throw error
-    }
+    await syncDirectory(parent)
     /* v8 ignore next -- filesystem-root guard: callers pass a boundary that is an ancestor of path, so the walk reaches it first. */
     if (parent === level) return
     level = parent
@@ -127,15 +124,70 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
 }
 
 /**
- * Establish this process's proof that one DSH_HOME entry and every ancestor
- * below the filesystem root it can open are durable. Mere existence is
- * insufficient: a concurrent process may have created the directory but not
- * synced its parent.
+ * Establish this process's proof that one DSH_HOME entry is durable, bounded
+ * as high as those proofs reach. Every entry this call may create — the home
+ * itself and any missing ancestor below the first existing one — is synced
+ * required: its recording parent must fsync or the save fails, because the
+ * walk can only reach what the credentials permit and POSIX grants write and
+ * search on a directory whose entries cannot be read. Above that created
+ * range the call changes nothing, so it syncs further ancestors best-effort:
+ * each one another account owns bounds the guarantee there (their deploy-time
+ * entries are outside this process's proof), and stopping is sound precisely
+ * because no entry of this call lives at or above the stop. Mere existence is
+ * still insufficient within the proven range: a concurrent process may have
+ * created a directory but not synced its parent, so the walk re-syncs every
+ * level it can open.
+ * @param path - absolute DSH_HOME to prove durable.
+ * @returns the resolved home path.
  */
 async function ensureDurableHome(path: string): Promise<string> {
   const home = resolve(path)
   if (!durableHomes.has(home)) {
-    await ensureDurableDirectory(home, parse(home).root)
+    /* Highest already-existing ancestor: mkdir adds entries only below it. */
+    let created = false
+    let boundary = home
+    for (;;) {
+      try {
+        await stat(boundary)
+        break
+      } catch (error: unknown) {
+        if (!isENOENT(error)) throw error
+      }
+      created = true
+      const parent = dirname(boundary)
+      /* v8 ignore next 3 -- only reachable when the whole home path sits
+         directly below the filesystem root, which no test fs can arrange. */
+      if (parent === boundary) {
+        boundary = parse(home).root
+        break
+      }
+      boundary = parent
+    }
+    await mkdir(home, { recursive: true, mode: 0o700 })
+    await chmod(home, 0o700)
+    /* Required range: the parent recording each directory this call created.
+       A permission failure here is a real durability hole — POSIX allows
+       write+search without read, so the entry may exist unproveably — and
+       fails the save instead of reporting an unproven reference. */
+    if (created) {
+      for (let level = dirname(home); ; level = dirname(level)) {
+        await syncDirectory(level)
+        if (level === boundary) break
+      }
+    }
+    /* Best-effort range above this call's writes: stop at the first ancestor
+       this process cannot open. */
+    const stop = parse(home).root
+    for (let level = dirname(created ? boundary : home); level !== stop; level = dirname(level)) {
+      try {
+        await syncDirectory(level)
+      } catch (error: unknown) {
+        if (isPermissionError(error)) break
+        throw error
+      }
+      /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+      if (level === dirname(level)) break
+    }
     durableHomes.add(home)
   }
   return home
