@@ -14,8 +14,8 @@ const fsControl = vi.hoisted(() => ({
   syncedDirectories: [] as string[],
   failOpenFor: undefined as string | undefined,
   failNextMarkerWrite: false,
+  failRenameWith: undefined as string | undefined,
   holdMarkerWrite: undefined as { promise: Promise<void>; release: () => void; armed: boolean } | undefined,
-  occupyMarkerParentBeforeFail: undefined as string | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -33,15 +33,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     },
     async writeFile(...args: Parameters<typeof actual.writeFile>): ReturnType<typeof actual.writeFile> {
       if (isMarkerPath(args[0])) {
-        if (fsControl.occupyMarkerParentBeforeFail !== undefined) {
-          /* A concurrent sibling occupies the created ancestor before the
-             marker write fails, so the rollback finds it non-empty. */
-          const occupier = join(fsControl.occupyMarkerParentBeforeFail, 'occupied-by-sibling-staging')
-          await actual.mkdir(occupier, { recursive: true })
-          await actual.writeFile(join(occupier, 'in-flight'), Uint8Array.of(1))
-          fsControl.occupyMarkerParentBeforeFail = undefined
-          throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
-        }
         if (fsControl.failNextMarkerWrite) {
           fsControl.failNextMarkerWrite = false
           throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
@@ -53,6 +44,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         }
       }
       return actual.writeFile(...args)
+    },
+    async rename(...args: Parameters<typeof actual.rename>): ReturnType<typeof actual.rename> {
+      if (fsControl.failRenameWith !== undefined) {
+        const code = fsControl.failRenameWith
+        fsControl.failRenameWith = undefined
+        throw Object.assign(new Error('injected rename failure'), { code })
+      }
+      return actual.rename(...args)
     },
     async open(...args: Parameters<typeof actual.open>): ReturnType<typeof actual.open> {
       if (fsControl.failOpenFor !== undefined && args[1] === constants.O_RDONLY && String(args[0]) === fsControl.failOpenFor) {
@@ -103,8 +102,8 @@ function parentChainToRoot(path: string): string[] {
 afterEach(async () => {
   fsControl.failOpenFor = undefined
   fsControl.failNextMarkerWrite = false
+  fsControl.failRenameWith = undefined
   fsControl.holdMarkerWrite = undefined
-  fsControl.occupyMarkerParentBeforeFail = undefined
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -306,7 +305,7 @@ describe('local attachment store', () => {
     }
   })
 
-  it.skipIf(process.platform === 'win32')('removes every created ancestor on a marker-write failure and keeps the retry fail-closed', async () => {
+  it.skipIf(process.platform === 'win32')('publishes nothing when a staged witness cannot be written, and keeps the retry fail-closed', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
     const home = join(top, 'new', 'home')
@@ -314,16 +313,17 @@ describe('local attachment store', () => {
     await chmod(top, 0o0300)
     fsControl.failNextMarkerWrite = true
     try {
-      // The recursive mkdir creates both new and home; the failed marker
-      // write must roll back the whole created chain. A surviving new would
-      // become the retry's pre-existing boundary and demote the top sync —
-      // the very parent that records the unproven new entry — to best-effort.
+      // The whole created subtree is staged privately under top and nothing
+      // is published before its witnesses are durable: a witness-write
+      // failure discards the staging tree, so neither new nor home is left
+      // behind and the retry's boundary cannot shrink past an unproven
+      // entry.
       await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
         .rejects.toMatchObject({ code: 'EACCES' })
       await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' })
       await expect(stat(join(top, 'new'))).rejects.toMatchObject({ code: 'ENOENT' })
 
-      // With the marker write healthy again, the retry re-enters the full
+      // With the witness write healthy again, the retry re-enters the full
       // created range below top, so the unopenable top still fails the
       // required proof instead of being absorbed above a surviving ancestor.
       await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
@@ -374,38 +374,129 @@ describe('local attachment store', () => {
     }
   })
 
-  it.skipIf(process.platform === 'win32')('marks a created ancestor it cannot roll back and keeps later saves fail-closed', async () => {
+  it.skipIf(process.platform === 'win32')('discards its private staging and propagates a rename failure that is not a publish conflict', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
     const home = join(top, 'new', 'home')
     const storageRoot = join(home, 'attachments', 'v1')
     await chmod(top, 0o0300)
-    // The marker write fails after a concurrent sibling occupies the created
-    // ancestor, so the rollback cannot remove it (rmdir ENOTEMPTY).
-    fsControl.occupyMarkerParentBeforeFail = join(top, 'new')
+    fsControl.failRenameWith = 'EIO'
     try {
+      // A rename failure that is not a publish conflict carries its real
+      // cause, and the private staging tree is discarded: nothing this call
+      // created is observable, so the fail-closed retry cannot shrink.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EIO' })
+      await expect(stat(join(top, 'new'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' })
+
+      fsControl.failRenameWith = undefined
       await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
         .rejects.toMatchObject({ code: 'EACCES' })
-      // The occupied ancestor survives, but it must carry the witness: a
-      // later save whose boundary would otherwise shrink to it re-runs the
-      // required proof instead of absorbing the unopenable top as
-      // best-effort above an unproven entry.
+    } finally {
+      await chmod(top, 0o0700)
+      fsControl.failRenameWith = undefined
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('shows a concurrent first save no created level without its witness', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'new', 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await chmod(top, 0o0300)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    // Hold the first save after it staged its whole subtree but before the
+    // first witness is durable: nothing is published yet, so the concurrent
+    // save must build and publish its own witnessed chain.
+    fsControl.holdMarkerWrite = { promise: gate, release, armed: true }
+    try {
+      const first = saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await vi.waitFor(() => expect(fsControl.holdMarkerWrite?.armed).toBe(false))
+
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      // The winner's published chain is witnessed at every created level.
       await expect(stat(join(top, 'new', '.unproven-home'))).resolves.toBeTruthy()
+      await expect(stat(join(home, '.unproven-home'))).resolves.toBeTruthy()
 
-      fsControl.failNextMarkerWrite = false
-      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
-        .rejects.toMatchObject({ code: 'EACCES' })
+      // Released, the loser's publish conflicts with the winner's chain; it
+      // discards its private staging, observes the witnesses, and refuses
+      // through the required proof instead of returning a reference.
+      release()
+      await expect(first).rejects.toMatchObject({ code: 'EACCES' })
 
-      // Once top becomes provable, the save proves the whole chain, clears
-      // every witness, and succeeds.
+      // Once top becomes provable the chain is proved and witnesses cleared.
       await chmod(top, 0o0700)
       const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
       await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
       await expect(stat(join(top, 'new', '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
       await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
+      release()
+      fsControl.holdMarkerWrite = undefined
       await chmod(top, 0o0700)
-      fsControl.occupyMarkerParentBeforeFail = undefined
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('keeps later saves fail-closed while a witness marks the published chain', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'new', 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    const winnerBytes = Uint8Array.from([9, 8, 7])
+    await mkdir(join(top, 'new', 'in-flight', 'keep'), { recursive: true })
+    await writeFile(join(top, 'new', 'in-flight', 'keep', 'bytes'), winnerBytes)
+    // A prior save published this chain and failed its required proof: the
+    // witnesses stand, so a later save re-proves the whole ancestor chain
+    // instead of shrinking its boundary past the unproven entries.
+    await writeFile(join(top, 'new', '.unproven-home'), '')
+    await mkdir(home, { recursive: true })
+    await writeFile(join(home, '.unproven-home'), '')
+    await chmod(top, 0o0300)
+    try {
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      // The winner's in-flight content survives every refused save.
+      expect(Buffer.from(await readFile(join(top, 'new', 'in-flight', 'keep', 'bytes'))).toString('hex'))
+        .toBe(Buffer.from(winnerBytes).toString('hex'))
+
+      await chmod(top, 0o0700)
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      await expect(stat(join(top, 'new', '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(Buffer.from(await readFile(join(top, 'new', 'in-flight', 'keep', 'bytes'))).toString('hex'))
+        .toBe(Buffer.from(winnerBytes).toString('hex'))
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('treats an unwitnessed occupied ancestor as deployed and preserves its bytes', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'new', 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    const bytes = Uint8Array.from([1, 2, 3])
+    await mkdir(join(top, 'new', 'occupied'), { recursive: true })
+    await writeFile(join(top, 'new', 'occupied', 'in-flight'), bytes)
+    await chmod(top, 0o0300)
+    try {
+      // The occupied ancestor carries no witness, so it predates this store's
+      // creations and stays on the deployed-home contract: the save publishes
+      // only the home below it, proves its recording parent, and honestly
+      // bounds the proof at the unopenable top. The occupier's bytes are
+      // never touched — removal is not part of this protocol.
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      expect(Buffer.from(await readFile(join(top, 'new', 'occupied', 'in-flight'))).toString('hex'))
+        .toBe(Buffer.from(bytes).toString('hex'))
+      await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(top, 'new', '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await chmod(top, 0o0700)
     }
   })
 
