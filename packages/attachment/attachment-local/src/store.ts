@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdir, open, readFile, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
@@ -183,7 +183,19 @@ async function ensureDurableHome(path: string): Promise<string> {
        process, or a post-crash restart) mistakes the residue for a deployed
        home and demotes the same parent syncs to best-effort. */
     if (created) {
-      await writeFile(unprovenMarker, '', { mode: 0o600 })
+      try {
+        await writeFile(unprovenMarker, '', { mode: 0o600 })
+      } catch (error: unknown) {
+        /* A home left behind without its marker would be indistinguishable
+           from a deployed home on the next save, so remove what this call
+           created; best-effort, because a concurrent creator may already own
+           the entry and the original failure remains the loud outcome. */
+        await rmdir(home).catch(
+          /* v8 ignore next -- Requires a concurrent writer inside the just-created home on top of the marker-write failure. */
+          () => {},
+        )
+        throw error
+      }
     }
     /* Required range: the parent recording each directory this call created.
        A permission failure here is a real durability hole — POSIX allows
