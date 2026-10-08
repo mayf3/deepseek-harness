@@ -13,6 +13,7 @@ const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
   syncedDirectories: [] as string[],
   failOpenFor: undefined as string | undefined,
+  failWriteFileFor: undefined as string | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -26,6 +27,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         if (signal !== undefined) fsControl.readSignals.push(signal)
       }
       return actual.readFile(...args)
+    },
+    async writeFile(...args: Parameters<typeof actual.writeFile>): ReturnType<typeof actual.writeFile> {
+      if (fsControl.failWriteFileFor !== undefined && String(args[0]) === fsControl.failWriteFileFor) {
+        throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
+      }
+      return actual.writeFile(...args)
     },
     async open(...args: Parameters<typeof actual.open>): ReturnType<typeof actual.open> {
       if (fsControl.failOpenFor !== undefined && args[1] === constants.O_RDONLY && String(args[0]) === fsControl.failOpenFor) {
@@ -75,6 +82,7 @@ function parentChainToRoot(path: string): string[] {
 
 afterEach(async () => {
   fsControl.failOpenFor = undefined
+  fsControl.failWriteFileFor = undefined
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -251,6 +259,30 @@ describe('local attachment store', () => {
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
     await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.skipIf(process.platform === 'win32')('removes the created home when its unproven marker cannot be written', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    fsControl.failWriteFileFor = join(home, '.unproven-home')
+    try {
+      // A residue home without its marker would be indistinguishable from a
+      // deployed home, so the failed marker write removes the created home
+      // and the save fails loudly.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      await expect(stat(home)).rejects.toMatchObject({ code: 'ENOENT' })
+
+      // The later save therefore re-enters the created path with its full
+      // required proof instead of treating residue as deployed.
+      fsControl.failWriteFileFor = undefined
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+    } finally {
+      fsControl.failWriteFileFor = undefined
+    }
   })
 
   it.skipIf(process.platform === 'win32')('syncs the parent recording each directory it creates', async () => {
