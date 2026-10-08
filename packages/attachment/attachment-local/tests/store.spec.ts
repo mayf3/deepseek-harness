@@ -13,11 +13,14 @@ const fsControl = vi.hoisted(() => ({
   readSignals: [] as AbortSignal[],
   syncedDirectories: [] as string[],
   failOpenFor: undefined as string | undefined,
-  failWriteFileFor: undefined as string | undefined,
+  failNextMarkerWrite: false,
+  holdMarkerWrite: undefined as { promise: Promise<void>; release: () => void; armed: boolean } | undefined,
+  occupyMarkerParentBeforeFail: undefined as string | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const isMarkerPath = (path: unknown): boolean => String(path).endsWith('/.unproven-home')
   return {
     ...actual,
     readFile(...args: Parameters<typeof actual.readFile>): ReturnType<typeof actual.readFile> {
@@ -29,8 +32,25 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return actual.readFile(...args)
     },
     async writeFile(...args: Parameters<typeof actual.writeFile>): ReturnType<typeof actual.writeFile> {
-      if (fsControl.failWriteFileFor !== undefined && String(args[0]) === fsControl.failWriteFileFor) {
-        throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
+      if (isMarkerPath(args[0])) {
+        if (fsControl.occupyMarkerParentBeforeFail !== undefined) {
+          /* A concurrent sibling occupies the created ancestor before the
+             marker write fails, so the rollback finds it non-empty. */
+          const occupier = join(fsControl.occupyMarkerParentBeforeFail, 'occupied-by-sibling-staging')
+          await actual.mkdir(occupier, { recursive: true })
+          await actual.writeFile(join(occupier, 'in-flight'), Uint8Array.of(1))
+          fsControl.occupyMarkerParentBeforeFail = undefined
+          throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
+        }
+        if (fsControl.failNextMarkerWrite) {
+          fsControl.failNextMarkerWrite = false
+          throw Object.assign(new Error('injected marker write failure'), { code: 'EACCES' })
+        }
+        const hold = fsControl.holdMarkerWrite
+        if (hold !== undefined && hold.armed) {
+          hold.armed = false
+          await hold.promise
+        }
       }
       return actual.writeFile(...args)
     },
@@ -82,7 +102,9 @@ function parentChainToRoot(path: string): string[] {
 
 afterEach(async () => {
   fsControl.failOpenFor = undefined
-  fsControl.failWriteFileFor = undefined
+  fsControl.failNextMarkerWrite = false
+  fsControl.holdMarkerWrite = undefined
+  fsControl.occupyMarkerParentBeforeFail = undefined
   await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })))
 })
 
@@ -261,15 +283,15 @@ describe('local attachment store', () => {
     await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it.skipIf(process.platform === 'win32')('removes the created home when its unproven marker cannot be written', async () => {
+  it.skipIf(process.platform === 'win32')('removes the staged home when its unproven marker cannot be written', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
     const home = join(top, 'home')
     const storageRoot = join(home, 'attachments', 'v1')
-    fsControl.failWriteFileFor = join(home, '.unproven-home')
+    fsControl.failNextMarkerWrite = true
     try {
       // A residue home without its marker would be indistinguishable from a
-      // deployed home, so the failed marker write removes the created home
+      // deployed home, so the failed marker write removes the staged home
       // and the save fails loudly.
       await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
         .rejects.toMatchObject({ code: 'EACCES' })
@@ -277,11 +299,10 @@ describe('local attachment store', () => {
 
       // The later save therefore re-enters the created path with its full
       // required proof instead of treating residue as deployed.
-      fsControl.failWriteFileFor = undefined
       const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
       await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
     } finally {
-      fsControl.failWriteFileFor = undefined
+      fsControl.failNextMarkerWrite = false
     }
   })
 
@@ -291,7 +312,7 @@ describe('local attachment store', () => {
     const home = join(top, 'new', 'home')
     const storageRoot = join(home, 'attachments', 'v1')
     await chmod(top, 0o0300)
-    fsControl.failWriteFileFor = join(home, '.unproven-home')
+    fsControl.failNextMarkerWrite = true
     try {
       // The recursive mkdir creates both new and home; the failed marker
       // write must roll back the whole created chain. A surviving new would
@@ -305,7 +326,6 @@ describe('local attachment store', () => {
       // With the marker write healthy again, the retry re-enters the full
       // created range below top, so the unopenable top still fails the
       // required proof instead of being absorbed above a surviving ancestor.
-      fsControl.failWriteFileFor = undefined
       await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
         .rejects.toMatchObject({ code: 'EACCES' })
 
@@ -317,7 +337,75 @@ describe('local attachment store', () => {
       await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {
       await chmod(top, 0o0700)
-      fsControl.failWriteFileFor = undefined
+      fsControl.failNextMarkerWrite = false
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('shows a concurrent first save no home without its witness', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await chmod(top, 0o0300)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    // Hold the first save after its home (chain) exists but before its
+    // witness is written — the exact mid-creation state a concurrent second
+    // save could observe.
+    fsControl.holdMarkerWrite = { promise: gate, release, armed: true }
+    try {
+      const first = saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await vi.waitFor(() => expect(fsControl.holdMarkerWrite?.armed).toBe(false))
+
+      // The second save must not observe an unmarked home and return an
+      // unproven reference: it either sees no home (staged creation) and
+      // runs its own required proof, or sees a marked one.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+
+      // Released, the first save finds the second's home (or its own rename
+      // conflicts) and still refuses through the required proof.
+      release()
+      await expect(first).rejects.toMatchObject({ code: 'EACCES' })
+    } finally {
+      release()
+      fsControl.holdMarkerWrite = undefined
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('marks a created ancestor it cannot roll back and keeps later saves fail-closed', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'new', 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await chmod(top, 0o0300)
+    // The marker write fails after a concurrent sibling occupies the created
+    // ancestor, so the rollback cannot remove it (rmdir ENOTEMPTY).
+    fsControl.occupyMarkerParentBeforeFail = join(top, 'new')
+    try {
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      // The occupied ancestor survives, but it must carry the witness: a
+      // later save whose boundary would otherwise shrink to it re-runs the
+      // required proof instead of absorbing the unopenable top as
+      // best-effort above an unproven entry.
+      await expect(stat(join(top, 'new', '.unproven-home'))).resolves.toBeTruthy()
+
+      fsControl.failNextMarkerWrite = false
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+
+      // Once top becomes provable, the save proves the whole chain, clears
+      // every witness, and succeeds.
+      await chmod(top, 0o0700)
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      await expect(stat(join(top, 'new', '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await chmod(top, 0o0700)
+      fsControl.occupyMarkerParentBeforeFail = undefined
     }
   })
 
@@ -334,13 +422,15 @@ describe('local attachment store', () => {
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
-    // The unproven marker is made durable with a home sync before the proof
-    // runs; the created home's recording entry is then synced required, the
-    // best-effort vouching continues above it, the marker's removal is made
-    // durable with a second home sync, and the created bucket/staging chains
-    // are each synced up to the home boundary.
-    expect(fsControl.syncedDirectories).toEqual([
-      home,
+    // The staged home's witness is made durable with a staged-directory sync
+    // before the atomic rename; the created home's recording entry is then
+    // synced required, the best-effort vouching continues above it, the
+    // witness's removal is made durable with a home sync, and the created
+    // bucket/staging chains are each synced up to the home boundary.
+    const [stagedSynced, ...rest] = fsControl.syncedDirectories
+    expect(dirname(String(stagedSynced))).toBe(top)
+    expect(String(stagedSynced)).toMatch(/\.unproven$/)
+    expect(rest).toEqual([
       top,
       ...parentChainToRoot(top),
       home,
