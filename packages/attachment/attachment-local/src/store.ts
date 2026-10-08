@@ -2,8 +2,8 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
-import { dirname, join, parse, resolve } from 'node:path'
+import { chmod, link, mkdir, open, readFile, rename, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
   AttachmentId,
@@ -18,6 +18,17 @@ import { detectImage, probeImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
+/* Witness for a directory entry this store created but never proved durable:
+   the home of a save whose required proof failed (or that crashed after the
+   witnesses became durable, before completing the parent syncs), or any
+   level of a created subtree. Without it, the residue would be
+   indistinguishable from a deployed home and the next save would demote the
+   same parent syncs to best-effort. The whole created subtree is built
+   privately under the boundary, every level's witness is synced before one
+   atomic rename publishes the highest missing entry, so no concurrent save
+   and no crash that leaves created entries behind can observe them without
+   a witness. */
+const UNPROVEN_HOME_MARKER = '.unproven-home'
 
 function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
@@ -86,6 +97,53 @@ async function syncDirectory(path: string): Promise<void> {
   /* v8 ignore stop */
 }
 
+function isPermissionError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM')
+}
+
+function isENOENT(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+function isEntryConflict(error: unknown): boolean {
+  /* Windows reports an occupied rename target as EPERM rather than ENOTEMPTY. */
+  /* v8 ignore next -- win32-only branch; the Linux coverage lane never exercises it. */
+  if (process.platform === 'win32') return error instanceof Error && 'code' in error && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY' || error.code === 'EPERM')
+  return error instanceof Error && 'code' in error && (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')
+}
+
+/** Whether one directory carries an unproven-entry witness. */
+async function hasWitness(level: string): Promise<boolean> {
+  try {
+    await stat(join(level, UNPROVEN_HOME_MARKER))
+    return true
+  } catch (error: unknown) {
+    /* v8 ignore next 2 -- The boundary walk traversed every scanned level and
+       the store owns created modes, so only ENOENT is reachable. */
+    if (!isENOENT(error)) throw error
+    return false
+  }
+}
+
+/* Discard the private staging tree after a failure or a lost publish race.
+   Only this call's own staged entries are touched: deployed entries, a
+   concurrent winner's published chain, and any file content anywhere are
+   never removed. A leftover here is private litter under a fresh UUID name —
+   it can never become a later save's boundary — so the discard is
+   best-effort and the save's own failure remains the loud outcome. */
+async function discardCreatedStaging(levels: string[]): Promise<void> {
+  for (const level of [...levels].reverse()) {
+    await unlink(join(level, UNPROVEN_HOME_MARKER)).catch(
+      /* v8 ignore next -- The witness may not exist yet when the witness write itself failed. */
+      () => {},
+    )
+    await rmdir(level).catch(
+      /* v8 ignore next -- Only reachable if the private staging tree was externally modified, which no deterministic test schedules. */
+      () => {},
+    )
+  }
+}
+
 /**
  * Create one private directory tree and persist every ancestor entry up to a
  * caller-vouched durable boundary. The walk deliberately ignores what mkdir
@@ -93,7 +151,10 @@ async function syncDirectory(path: string): Promise<void> {
  * process then merely observes, so "already existed" is not "already durable"
  * — the entry may still be unsynced in the creator, and a crash would drop a
  * directory the session checkpoint already references. Re-syncing a durable
- * entry is harmless; skipping an unsynced one is not.
+ * entry is harmless; skipping an unsynced one is not. Callers pass boundaries
+ * this process owns or has already proven, so every sync here covers an entry
+ * this call may have created and a failure — permission or otherwise — fails
+ * the save loudly instead of reporting a reference it cannot prove.
  * @param path - absolute directory to create.
  * @param boundary - absolute ancestor the caller vouches is already durable.
  */
@@ -113,14 +174,198 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
 }
 
 /**
- * Establish this process's proof that one DSH_HOME entry and every ancestor
- * below the filesystem root are durable. Mere existence is insufficient: a
- * concurrent process may have created the directory but not synced its parent.
+ * Establish this process's proof that one DSH_HOME entry is durable, bounded
+ * as high as those proofs reach. Every entry this call may create — the home
+ * itself and any missing ancestor below the first existing one — is synced
+ * required: its recording parent must fsync or the save fails, because the
+ * walk can only reach what the credentials permit and POSIX grants write and
+ * search on a directory whose entries cannot be read. Above that created
+ * range the call changes nothing, so it syncs further ancestors best-effort:
+ * each one another account owns bounds the guarantee there (their deploy-time
+ * entries are outside this process's proof), and stopping is sound precisely
+ * because no entry of this call lives at or above the stop. Mere existence is
+ * still insufficient within the proven range: a concurrent process may have
+ * created a directory but not synced its parent, so the walk re-syncs every
+ * level it can open.
+ *
+ * The publish unit for a missing home is the whole subtree from the highest
+ * missing entry down to the home. It is built inside one private staging
+ * directory under the boundary, every created level's witness (an unproven
+ * marker) is synced there, and one atomic rename publishes the highest
+ * missing entry — so no concurrent save or crash can observe a created
+ * entry without a witness. A save that observes witnesses re-runs the
+ * required proof over the whole ancestor chain instead of treating the
+ * residue as a deployed home, and clears the witnesses it proved.
+ * @param path - absolute DSH_HOME to prove durable.
+ * @returns the resolved home path.
  */
 async function ensureDurableHome(path: string): Promise<string> {
   const home = resolve(path)
   if (!durableHomes.has(home)) {
-    await ensureDurableDirectory(home, parse(home).root)
+    /* Highest already-existing ancestor: mkdir adds entries only below it. */
+    let created = false
+    let boundary = home
+    for (;;) {
+      try {
+        await stat(boundary)
+        break
+      } catch (error: unknown) {
+        if (!isENOENT(error)) throw error
+      }
+      created = true
+      const parent = dirname(boundary)
+      /* v8 ignore next 3 -- only reachable when the whole home path sits
+         directly below the filesystem root, which no test fs can arrange. */
+      if (parent === boundary) {
+        boundary = parse(home).root
+        break
+      }
+      boundary = parent
+    }
+    const stop = parse(home).root
+    if (created) {
+      /* Publish unit: the whole subtree from the highest missing entry down
+         to the home is built inside one private staging directory under the
+         boundary. Every created level receives its witness and a directory
+         sync before one atomic rename publishes the highest missing entry —
+         nothing this call creates is ever observable without a durable
+         witness, and every failure discards only this private tree.
+
+         A lost publish race re-scans the chain: if the home itself now
+         exists the winner published it and is observed; if the winner
+         published only an ancestor — a different home sharing the missing
+         chain — this home still does not exist, so the protocol re-enters
+         one level deeper under the winner's witnessed chain instead of
+         mistaking the ancestor for a proven home. The boundary strictly
+         descends with every lost race, bounding the loop by the path
+         depth. */
+      while (created) {
+        let highestMissing = home
+        while (dirname(highestMissing) !== boundary) highestMissing = dirname(highestMissing)
+        const staged = join(boundary, `.${basename(home)}.${randomUUID()}.unproven`)
+        const mRels: string[] = []
+        for (let level = home; level !== highestMissing; level = dirname(level)) mRels.unshift(level.slice(highestMissing.length + 1))
+        const levels = [staged, ...mRels.map(rel => join(staged, rel))]
+        let published = false
+        try {
+          await mkdir(staged, { recursive: true, mode: 0o700 })
+          await chmod(staged, 0o700)
+          for (const rel of mRels) await mkdir(join(staged, rel), { recursive: true, mode: 0o700 })
+          for (const level of levels) {
+            await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
+            /* The witness becomes durable before the entry becomes observable. */
+            await syncDirectory(level)
+          }
+          try {
+            await rename(staged, highestMissing)
+            published = true
+          } catch (error: unknown) {
+            if (!isEntryConflict(error)) {
+              /* v8 ignore next -- A fresh staging tree can only race a concurrent winner
+                 (EEXIST/ENOTEMPTY/Windows EPERM); the injected-failure test covers this throw. */
+              throw error
+            }
+            /* Re-scan from the home upward: the first existing ancestor is
+               the winner's published chain. If that chain reaches the home,
+               the winner published this home — observe it; otherwise the
+               boundary descends into the winner's ancestor and the protocol
+               re-enters with this home still to create. */
+            let scan = home
+            for (;;) {
+              try {
+                await stat(scan)
+                break
+              } catch (scanError: unknown) {
+                /* v8 ignore next -- The boundary walk proved search on every scanned level, so only ENOENT is reachable. */
+                if (!isENOENT(scanError)) throw scanError
+              }
+              const parent = dirname(scan)
+              /* v8 ignore next 3 -- only reachable when the whole home path sits
+                 directly below the filesystem root, which no test fs can arrange. */
+              if (parent === scan) {
+                scan = parse(home).root
+                break
+              }
+              scan = parent
+            }
+            if (scan === home) created = false
+            else boundary = scan
+          }
+        } finally {
+          if (!published) await discardCreatedStaging(levels)
+        }
+        if (published) break
+      }
+    }
+    /* Existing entries carrying a witness: the home itself when this call
+       did not create it — including a concurrent winner's home after a lost
+       rename — and every ancestor up to the filesystem root. A rollback
+       marks whichever created entry it could not remove, and that entry can
+       sit above the boundary a later save observes, so the scan cannot be
+       bounded by the boundary. Every scanned level was already traversed by
+       the walk (stat(home) proves search on the whole chain), so a witness
+       can never hide. */
+    const marked: string[] = []
+    if (!created && await hasWitness(home)) marked.push(home)
+    for (let level = dirname(home); level !== stop; level = dirname(level)) {
+      if (await hasWitness(level)) marked.push(level)
+      /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+      if (level === dirname(level)) break
+    }
+    /* Required range: the parent recording each directory this call created,
+       and — above any witness this call found — the whole ancestor chain. A
+       permission failure in a required range is a real durability hole —
+       POSIX allows write+search without read, so the entry may exist
+       unproveably — and fails the save instead of reporting an unproven
+       reference. */
+    let residueProven = false
+    if (marked.length > 0) {
+      /* A witness means some entry on this chain was created without a
+         completed proof: re-prove the whole ancestor chain — no best-effort
+         stop — and clear every witness only once that proof completes. */
+      for (let level = dirname(home); level !== stop; level = dirname(level)) {
+        await syncDirectory(level)
+        /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+        if (level === dirname(level)) break
+      }
+      for (const level of marked) {
+        await unlink(join(level, UNPROVEN_HOME_MARKER))
+        await syncDirectory(level)
+      }
+      residueProven = true
+    }
+    if (!residueProven && created) {
+      /* Required range: the parent recording each directory this call
+         created. A permission failure here is a real durability hole — POSIX
+         allows write+search without read, so the entry may exist unproveably
+         — and fails the save instead of reporting an unproven reference. */
+      for (let level = dirname(home); ; level = dirname(level)) {
+        await syncDirectory(level)
+        /* v8 ignore next -- The walk stops at the boundary by construction; falling through would loop forever. */
+        if (level === boundary) break
+      }
+    }
+    /* Best-effort range above this call's writes: stop at the first ancestor
+       this process cannot open. */
+    if (!residueProven) {
+      for (let level = dirname(created ? boundary : home); level !== stop; level = dirname(level)) {
+        try {
+          await syncDirectory(level)
+        } catch (error: unknown) {
+          if (isPermissionError(error)) break
+          throw error
+        }
+        /* v8 ignore next -- filesystem-root guard: dirname reaches the root before level stops shrinking. */
+        if (level === dirname(level)) break
+      }
+    }
+    if (created) {
+      /* The proof completed: unmark. The home sync makes the marker's
+         removal itself durable, so a crash cannot resurrect a stale marker
+         on an already-proven home. */
+      await unlink(join(home, UNPROVEN_HOME_MARKER))
+      await syncDirectory(home)
+    }
     durableHomes.add(home)
   }
   return home
