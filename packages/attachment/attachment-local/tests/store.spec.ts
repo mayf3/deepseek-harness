@@ -66,7 +66,9 @@ function parentChainToRoot(path: string): string[] {
   const root = parse(level).root
   while (level !== root) {
     level = dirname(level)
-    parents.push(level)
+    /* The filesystem root itself is excluded: it holds no entry of this call,
+       so the bounded walk never syncs it. */
+    if (level !== root) parents.push(level)
   }
   return parents
 }
@@ -115,7 +117,7 @@ describe('local attachment store', () => {
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
   })
 
-  it.skipIf(process.platform === 'win32')('stops the durability proof at the nearest ancestor it lacks permission to open', async () => {
+  it.skipIf(process.platform === 'win32')('bounds the durability proof above an unopenable ancestor that holds no entry of this call', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
     const home = join(top, 'home')
@@ -124,17 +126,19 @@ describe('local attachment store', () => {
     const objects = join(storageRoot, 'objects')
     const bucket = join(objects, sha256.slice(0, 2))
     await mkdir(home, { recursive: true })
-    // Traverse-only for the owner: the home below stays reachable, while the
-    // ancestor's entries can no longer be read or synced by this process —
-    // the production shape where homes sit below another account's root.
+    // The home pre-exists, so this save creates nothing at or above it; the
+    // ancestor is made traverse-only for the owner (the production shape where
+    // homes sit below another account's root) and the proof honestly stops
+    // there instead of claiming ancestors it cannot open.
     await chmod(top, 0o0111)
     fsControl.syncedDirectories.length = 0
     try {
       const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
 
       await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
-      // The locked ancestor and everything above it stay unsynced; the proof
-      // covers the home and every directory the save creates below it.
+      // The unopenable ancestor stays unsynced; the proof covers the home and
+      // every directory the save creates below it, whose publication chain is
+      // fully synced.
       expect(fsControl.syncedDirectories).toEqual([
         objects,
         storageRoot,
@@ -151,9 +155,101 @@ describe('local attachment store', () => {
     }
   })
 
+  it.skipIf(process.platform === 'win32')('proceeds when a writable-unreadable ancestor holds no entry of this call', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await mkdir(home, { recursive: true })
+    // Write+search without read (0o300): the process could create entries
+    // here, but this save creates none — the home predates the call — so the
+    // bounded stop is sound and the save proceeds.
+    await chmod(top, 0o0300)
+    try {
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('fails loudly when it creates a home entry it cannot prove durable', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    // The home is missing, so the call creates its entry in a write+search
+    // (0o300) parent whose entries cannot be read or fsynced: the required
+    // proof of that new entry fails and the save must refuse, not report an
+    // unprovable reference.
+    await chmod(top, 0o0300)
+    try {
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('syncs the parent recording each directory it creates', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    const sha256 = createHash('sha256').update(PNG).digest('hex')
+    const objects = join(storageRoot, 'objects')
+    const bucket = join(objects, sha256.slice(0, 2))
+    fsControl.syncedDirectories.length = 0
+
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+
+    await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+    // The created home's recording entry is synced first (required), the
+    // best-effort vouching continues above it, and the created bucket/staging
+    // chains are each synced up to the home boundary.
+    expect(fsControl.syncedDirectories).toEqual([
+      top,
+      ...parentChainToRoot(top),
+      objects,
+      storageRoot,
+      join(storageRoot, '..'),
+      home,
+      storageRoot,
+      join(storageRoot, '..'),
+      home,
+      bucket,
+      objects,
+    ])
+  })
+
+  it('fails loudly when the storage root path is not a directory', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const storageRoot = join(top, 'home', 'attachments', 'v1')
+    await mkdir(join(top, 'home'), { recursive: true })
+    await writeFile(join(top, 'home', 'attachments'), Uint8Array.of(0))
+
+    await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+      .rejects.toMatchObject({ code: 'ENOTDIR' })
+  })
+
+  it('propagates scan errors other than a missing path', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    await writeFile(join(top, 'blocker'), Uint8Array.of(0))
+    const storageRoot = join(top, 'blocker', 'home', 'attachments', 'v1')
+
+    // The home sits below a regular file, so the existence scan itself fails
+    // with ENOTDIR — neither a missing path nor a permission boundary — and
+    // the save refuses instead of proving anything.
+    await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+      .rejects.toMatchObject({ code: 'ENOTDIR' })
+  })
+
   it.skipIf(process.platform === 'win32')('propagates ancestor sync failures that are not permission denials', async () => {
     const storageRoot = await root()
-    fsControl.failOpenFor = join(storageRoot, '..', '..')
+    fsControl.failOpenFor = dirname(join(storageRoot, '..', '..'))
 
     await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
       .rejects.toMatchObject({ code: 'ENOENT' })
