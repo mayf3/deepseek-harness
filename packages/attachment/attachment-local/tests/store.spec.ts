@@ -440,6 +440,50 @@ describe('local attachment store', () => {
     }
   })
 
+  it.skipIf(process.platform === 'win32')('re-enters the protocol under a winner\'s ancestor when two homes share the missing chain', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const homeA = join(top, 'new', 'home-a')
+    const homeB = join(top, 'new', 'home-b')
+    const storageRootA = join(homeA, 'attachments', 'v1')
+    const storageRootB = join(homeB, 'attachments', 'v1')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    // Hold the first save after it staged its whole subtree but before the
+    // first witness is durable: `new` is still absent, and both homes share
+    // that missing chain.
+    fsControl.holdMarkerWrite = { promise: gate, release, armed: true }
+    fsControl.syncedDirectories.length = 0
+    try {
+      const first = saveImageFile(storageRootA, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await vi.waitFor(() => expect(fsControl.holdMarkerWrite?.armed).toBe(false))
+
+      // The concurrent save publishes the shared chain for home-b and
+      // completes with a fully proven reference.
+      const refB = await saveImageFile(storageRootB, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRootB, refB)).resolves.toEqual({ ref: refB, data: PNG })
+
+      // Released, the first save loses the publish race for `new` — which
+      // now holds home-b, not home-a. It must re-enter the protocol under
+      // the winner's witnessed chain and publish home-a with its own
+      // witnessed proof: one staging attempt per publish, so the witness
+      // sync of the re-entry is observable as a third staged-directory sync.
+      release()
+      const refA = await first
+      await expect(readImageFile(storageRootA, refA)).resolves.toEqual({ ref: refA, data: PNG })
+      const stagedSyncs = fsControl.syncedDirectories.filter(path => path.endsWith('.unproven'))
+      expect(stagedSyncs.length).toBe(3)
+      await expect(stat(join(top, 'new', '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(homeA, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(stat(join(homeB, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+      // The winner's bytes survive the loser's re-entry untouched.
+      await expect(readImageFile(storageRootB, refB)).resolves.toEqual({ ref: refB, data: PNG })
+    } finally {
+      release()
+      fsControl.holdMarkerWrite = undefined
+    }
+  })
+
   it.skipIf(process.platform === 'win32')('keeps later saves fail-closed while a witness marks the published chain', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)

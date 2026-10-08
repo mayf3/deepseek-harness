@@ -229,40 +229,72 @@ async function ensureDurableHome(path: string): Promise<string> {
          boundary. Every created level receives its witness and a directory
          sync before one atomic rename publishes the highest missing entry —
          nothing this call creates is ever observable without a durable
-         witness, and every failure discards only this private tree. */
-      let highestMissing = home
-      while (dirname(highestMissing) !== boundary) highestMissing = dirname(highestMissing)
-      const staged = join(boundary, `.${basename(home)}.${randomUUID()}.unproven`)
-      const mRels: string[] = []
-      for (let level = home; level !== highestMissing; level = dirname(level)) mRels.unshift(level.slice(highestMissing.length + 1))
-      const levels = [staged, ...mRels.map(rel => join(staged, rel))]
-      let published = false
-      try {
-        await mkdir(staged, { recursive: true, mode: 0o700 })
-        await chmod(staged, 0o700)
-        for (const rel of mRels) await mkdir(join(staged, rel), { recursive: true, mode: 0o700 })
-        for (const level of levels) {
-          await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
-          /* The witness becomes durable before the entry becomes observable. */
-          await syncDirectory(level)
-        }
+         witness, and every failure discards only this private tree.
+
+         A lost publish race re-scans the chain: if the home itself now
+         exists the winner published it and is observed; if the winner
+         published only an ancestor — a different home sharing the missing
+         chain — this home still does not exist, so the protocol re-enters
+         one level deeper under the winner's witnessed chain instead of
+         mistaking the ancestor for a proven home. The boundary strictly
+         descends with every lost race, bounding the loop by the path
+         depth. */
+      while (created) {
+        let highestMissing = home
+        while (dirname(highestMissing) !== boundary) highestMissing = dirname(highestMissing)
+        const staged = join(boundary, `.${basename(home)}.${randomUUID()}.unproven`)
+        const mRels: string[] = []
+        for (let level = home; level !== highestMissing; level = dirname(level)) mRels.unshift(level.slice(highestMissing.length + 1))
+        const levels = [staged, ...mRels.map(rel => join(staged, rel))]
+        let published = false
         try {
-          await rename(staged, highestMissing)
-          published = true
-        } catch (error: unknown) {
-          if (isEntryConflict(error)) {
-            /* A concurrent first save wins the rename and its published chain
-               already carries witnesses: observe it instead of creating. */
-            created = false
-          } else {
-            /* v8 ignore next 2 -- A fresh staging tree can only race a concurrent
-               winner (EEXIST/ENOTEMPTY/Windows EPERM); other rename failures are
-               exotic filesystem errors no test fs schedules. */
-            throw error
+          await mkdir(staged, { recursive: true, mode: 0o700 })
+          await chmod(staged, 0o700)
+          for (const rel of mRels) await mkdir(join(staged, rel), { recursive: true, mode: 0o700 })
+          for (const level of levels) {
+            await writeFile(join(level, UNPROVEN_HOME_MARKER), '', { mode: 0o600 })
+            /* The witness becomes durable before the entry becomes observable. */
+            await syncDirectory(level)
           }
+          try {
+            await rename(staged, highestMissing)
+            published = true
+          } catch (error: unknown) {
+            if (!isEntryConflict(error)) {
+              /* v8 ignore next -- A fresh staging tree can only race a concurrent winner
+                 (EEXIST/ENOTEMPTY/Windows EPERM); the injected-failure test covers this throw. */
+              throw error
+            }
+            /* Re-scan from the home upward: the first existing ancestor is
+               the winner's published chain. If that chain reaches the home,
+               the winner published this home — observe it; otherwise the
+               boundary descends into the winner's ancestor and the protocol
+               re-enters with this home still to create. */
+            let scan = home
+            for (;;) {
+              try {
+                await stat(scan)
+                break
+              } catch (scanError: unknown) {
+                /* v8 ignore next -- The boundary walk proved search on every scanned level, so only ENOENT is reachable. */
+                if (!isENOENT(scanError)) throw scanError
+              }
+              const parent = dirname(scan)
+              /* v8 ignore next 3 -- only reachable when the whole home path sits
+                 directly below the filesystem root, which no test fs can arrange. */
+              if (parent === scan) {
+                scan = parse(home).root
+                break
+              }
+              scan = parent
+            }
+            if (scan === home) created = false
+            else boundary = scan
+          }
+        } finally {
+          if (!published) await discardCreatedStaging(levels)
         }
-      } finally {
-        if (!published) await discardCreatedStaging(levels)
+        if (published) break
       }
     }
     /* Existing entries carrying a witness: the home itself when this call
