@@ -192,6 +192,67 @@ describe('local attachment store', () => {
     }
   })
 
+  it.skipIf(process.platform === 'win32')('keeps refusing when a retry saves into the home a failed proof left behind', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await chmod(top, 0o0300)
+    try {
+      // The first save creates the home, fails its required proof loudly, and
+      // leaves the home entry behind in the write+search-only parent.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+      // An ordinary retry observes the residue as an existing home and must
+      // not demote the same parent sync to best-effort: the entry is still
+      // unproven, so the retry keeps refusing instead of returning a
+      // reference whose home durability was never established.
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a home marked unproven until its proof can complete, then clears the marker', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+    await mkdir(home, { recursive: true })
+    // The residue shape another process (or a post-crash restart) observes:
+    // the failed proof left the created home plus its unproven marker. The
+    // bounded best-effort stop must not absorb the unopenable parent while
+    // the marker stands.
+    await writeFile(join(home, '.unproven-home'), '')
+    await chmod(top, 0o0300)
+    try {
+      await expect(saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS))
+        .rejects.toMatchObject({ code: 'EACCES' })
+
+      // Once the parent becomes provable, the next save re-runs the required
+      // proof, clears the marker, and proceeds without leaving residue.
+      await chmod(top, 0o0700)
+      const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+      await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+      await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await chmod(top, 0o0700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('leaves no unproven marker behind a fully proven created home', async () => {
+    const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
+    roots.push(top)
+    const home = join(top, 'home')
+    const storageRoot = join(home, 'attachments', 'v1')
+
+    const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS)
+
+    await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
+    await expect(stat(join(home, '.unproven-home'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it.skipIf(process.platform === 'win32')('syncs the parent recording each directory it creates', async () => {
     const top = await mkdtemp(join(tmpdir(), 'dsh-attachment-'))
     roots.push(top)
@@ -206,11 +267,13 @@ describe('local attachment store', () => {
 
     await expect(readImageFile(storageRoot, ref)).resolves.toEqual({ ref, data: PNG })
     // The created home's recording entry is synced first (required), the
-    // best-effort vouching continues above it, and the created bucket/staging
-    // chains are each synced up to the home boundary.
+    // best-effort vouching continues above it, the unproven marker's removal
+    // is made durable with a home sync, and the created bucket/staging chains
+    // are each synced up to the home boundary.
     expect(fsControl.syncedDirectories).toEqual([
       top,
       ...parentChainToRoot(top),
+      home,
       objects,
       storageRoot,
       join(storageRoot, '..'),
