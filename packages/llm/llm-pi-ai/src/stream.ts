@@ -42,8 +42,15 @@ function classifyPiAiError(message: string): string {
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
   if (/\b429\b|rate.?limit/i.test(message)) return 'RATE_LIMIT'
   // A rejected request body (gateway or provider size cap): resending the
-  // same request cannot succeed, so it is invalid, not transient.
-  if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
+  // same request cannot succeed, so it is invalid, not transient. This covers
+  // both gateway wordings of the same request-buffer family — the direct
+  // rejection (`failed to buffer the request body: length limit exceeded`)
+  // and the retry-phase overrun (`exceeded request buffer limit while
+  // retrying upstream`), where the edge held the request to retry a failed
+  // upstream attempt and the buffered request outgrew its limit. The HTTP
+  // status is flattened away before this adapter sees the message, so the
+  // match stays textual.
+  if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|exceeded request buffer limit while retrying upstream|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b|invalid.?request/i.test(message)) return 'INVALID_REQUEST'
   if (/\b5\d\d\b/.test(message)) return 'SERVER'
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
