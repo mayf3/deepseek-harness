@@ -234,6 +234,35 @@ export interface RequestContext {
 export type RequestHeaderReason = 'initial' | 'resume' | 'change'
 
 /**
+ * Exact secret-free OpenAI Codex standalone-search request, mirrored from the
+ * out-of-repo `dsh-openai-codex` plugin that writes it. Headers, credentials,
+ * and response data are absent.
+ */
+export interface OpenAICodexSearchLlmRequest {
+  /** Trusted first-party standalone-search endpoint the official Codex client uses. */
+  readonly endpoint: 'https://chatgpt.com/backend-api/codex/alpha/search'
+  /** Exact JSON body sent to the provider. */
+  readonly body: {
+    readonly id: string
+    readonly model: string
+    readonly input: readonly [{
+      readonly type: 'message'
+      readonly role: 'user'
+      readonly content: readonly [{ readonly type: 'input_text'; readonly text: string }]
+    }]
+    readonly commands: {
+      readonly search_query: readonly [{ readonly q: string }]
+    }
+    readonly settings: {
+      readonly search_context_size: 'low' | 'medium' | 'high'
+      readonly allowed_callers: readonly ['direct']
+      readonly external_web_access: boolean | 'indexed'
+    }
+    readonly max_output_tokens: number
+  }
+}
+
+/**
  * The merge-extensible, append-only source of truth for an agent interaction.
  * Message history is derived from this log. Every event is lossless JSON and
  * sequence numbers stay contiguous, including raw chunks, so persistence can
@@ -340,6 +369,19 @@ export interface SessionEventMap {
    * so tolerating concurrent writers needs a signal beyond the log.
    */
   'session/end-seed': Record<string, never>
+  /**
+   * Exact secret-free OpenAI Codex standalone-search request the out-of-repo
+   * `dsh-openai-codex` provider plugin appends to the initiating agent's
+   * session immediately before dispatch — the Codex sibling of
+   * `web/deepseek-search-llm-request`. Log-only telemetry that reconstructs no
+   * conversation state. Registered here, in the durable vocabulary this build
+   * always knows, because the writing plugin cannot: a worker that resumes a
+   * persisted log without mounting the plugin would otherwise refuse the
+   * whole log, and plugin-side runtime registration covers only processes
+   * that load the plugin. The writer does not mark the event ignorable; this
+   * registration is the load-safety guarantee.
+   */
+  'web/openai-codex-search-llm-request': OpenAICodexSearchLlmRequest
 }
 
 /** The appendable event-type keys of {@link SessionEventMap}, plugin-merged extensions included. */

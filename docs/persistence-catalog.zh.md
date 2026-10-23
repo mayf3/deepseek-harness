@@ -1007,3 +1007,25 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/web/web-search-deepseek/src/provider.ts:83`](../packages/web/web-search-deepseek/src/provider.ts)
+
+<a id="webopenai-codex-search-llm-request--log-only"></a>
+
+#### `web/openai-codex-search-llm-request` — log-only
+
+```ts persistence-catalog
+/**
+ * Exact secret-free OpenAI Codex standalone-search request the out-of-repo
+ * `dsh-openai-codex` provider plugin appends to the initiating agent's
+ * session immediately before dispatch — the Codex sibling of
+ * `web/deepseek-search-llm-request`. Log-only telemetry that reconstructs no
+ * conversation state. Registered here, in the durable vocabulary this build
+ * always knows, because the writing plugin cannot: a worker that resumes a
+ * persisted log without mounting the plugin would otherwise refuse the
+ * whole log, and plugin-side runtime registration covers only processes
+ * that load the plugin. The writer does not mark the event ignorable; this
+ * registration is the load-safety guarantee.
+ */
+'web/openai-codex-search-llm-request': OpenAICodexSearchLlmRequest
+```
+
+来源：[`packages/core/session/src/types.ts:384`](../packages/core/session/src/types.ts)

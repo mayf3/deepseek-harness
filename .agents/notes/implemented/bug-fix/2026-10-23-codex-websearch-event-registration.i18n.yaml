@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-23-codex-websearch-event-registration.md
+2026-10-23-codex-websearch-event-registration.md: fef0e8114c7a043b5fcc5e07c08badcfd0de2412
+2026-10-23-codex-websearch-event-registration.zh.md: 6f1998a354588de5c876919e82b55ec04b5f25ab
