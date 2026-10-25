@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, createMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, CallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, createMessage, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
 import { toPiContext } from '../src/context.ts'
@@ -787,8 +787,42 @@ describe('mapStopReason / mapUsage', () => {
     }))).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
     expect(mapStopReason(assistant({
       stopReason: 'error',
+      errorMessage: 'exceeded request buffer limit while retrying upstream',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'INVALID_REQUEST' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
       errorMessage: 'vector length limit exceeded',
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+  })
+
+  it('keeps the gateway retry-buffer wording out of the bounded-retry default set', () => {
+    const policy = resolveRetryPolicy({ mode: 'normal' }, 'convert.spec default retry policy')
+    expect(policy.mode).toBe('normal')
+    if (policy.mode !== 'normal') return
+    expect(policy.retryableCodes).not.toContain('INVALID_REQUEST')
+    expect(policy.retryableCodes).not.toContain('PI_AI_ERROR')
+    expect(policy.retryableCodes).toContain('TRANSPORT')
+    expect(policy.retryableCodes).toContain('SERVER')
+  })
+
+  it('dispatches no tool call when a terminal error follows a started one', async () => {
+    const partial = assistant({
+      content: [{ type: 'toolCall', id: 'call-1', name: 'f', arguments: {} }],
+    })
+    const chunks = await collect(toStreamChunks(feed(
+      { type: 'toolcall_start', contentIndex: 0, partial },
+      { type: 'toolcall_delta', contentIndex: 0, delta: '{"a"', partial },
+      {
+        type: 'error',
+        reason: 'error',
+        error: assistant({ stopReason: 'error', errorMessage: 'exceeded request buffer limit while retrying upstream' }),
+      },
+    )))
+    expect(chunks.filter(chunk => chunk.type === 'block-end' && chunk.block.type === 'tool-call')).toEqual([])
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'INVALID_REQUEST' } },
+    })
   })
 
   it.each([
