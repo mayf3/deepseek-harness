@@ -16,7 +16,7 @@ That bridge has concurrency and durability obligations. Human input, cancellatio
 
 The hierarchy is Goal → Goal Round → Turn → Step. A goal round is the outer continuation policy iteration; it becomes one goal-sourced session turn, and that turn can contain any number of ordinary model/tool steps. Human turns in the same session are not goal rounds and never increment `roundsStarted`.
 
-The plugin has no configuration. `maxGoalRounds` is resolved and persisted by `dsh-goal`, and the same-condition blocking threshold is resolved and prompted by `dsh-tool-goal`. Repeating those tunables in the driver would create multiple owners for one policy.
+The driver configures only enqueue ownership (`native` or `external`) and its bounded external wait. `maxGoalRounds` is resolved and persisted by `dsh-goal`, and the same-condition blocking threshold is resolved and prompted by `dsh-tool-goal`. Repeating those tunables in the driver would create multiple owners for one policy.
 
 ### Reservation and admission
 
@@ -25,6 +25,10 @@ When an agent is idle, has no competing queued work, and its current goal is `ac
 The `agent/pre-step` waterfall is the entry fence. A positive goal source enters only when it exactly matches the driver's pending identity and content, the live goal still has that id and revision, activation remains armed, and the round is still the next number. The plugin checks once before delegating and again after downstream listeners return. This second check prevents an async listener from editing or pausing the goal while still entering the old prompt.
 
 Only the resulting `user/message` is an entered round and advances the goal fold. A stale reservation closes a blocked no-step turn; the driver marks it stale and does not charge the round. A downstream policy rejection that is not caused by staleness blocks the goal rather than retrying around policy.
+
+External ownership uses an awaited provider with the original message and a synchronous, at-most-once commit closure. The driver retains its reservation while the provider acquires admission. The closure rechecks live state in the owner's execution context; a Promise-returning replacement for `followup(): void` cannot supply that ordering. Missing providers, denial and uncertain receipts disarm rather than retry. Consumers propagate abort to their queue owner; an expired callback never authorizes a fresh enqueue.
+
+Idle cancellation with an empty inbox has no status or splice event. `agent/cancel-requested` supplies a read-only notification after ordinary cancellation so an external pending reservation is invalidated without creating maintenance activity or inheriting its wake context. It changes no loop phase or abort-cause precedence.
 
 ### Human work and revision races
 
@@ -75,6 +79,7 @@ The core cancellation test proves notification order and containment: observers 
 
 ## Alternatives considered
 
+- **Wrap `followup(): void` in an async function** — rejected because the native driver cannot await the discarded return, and a maintenance wrapper can wake in an obsolete execution context. The provider receives an explicitly awaited reservation instead.
 - **Add a goal loop inside `dsh-agent-loop`** — rejected because the public queue, prompt, session, cancellation, and status contracts are sufficient, and a concrete-loop branch would privilege one policy.
 - **Use `agent/turn-continuation` to make every round another step** — rejected because a goal round is an outer policy iteration and must have its own durable user prompt, turn boundary, round count, and failure settlement.
 - **Persist a pending reservation** — rejected because a crash cannot prove that queued process memory had reached admission; only the durable `user/message` consumes the round.
