@@ -364,6 +364,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Folds revisioned objective state from the session log and keeps live continuation activation process-local.',
   },
   {
+    key: 'goalRoundEnqueue',
+    pkg: 'goal-round-driver',
+    title: 'External goal admission owner',
+    mode: 'core',
+    note: 'An optional awaited owner receives the exact native message and commit closure; external mode never falls back to direct enqueue.',
+  },
+  {
+    key: 'goalRoundDriver',
+    pkg: 'goal-round-driver',
+    title: 'Goal driver compatibility readback',
+    mode: 'core',
+    note: 'Reports the loaded enqueue protocol and configured ownership mode before a consumer activates automatic work.',
+  },
+  {
     key: 'e2b',
     pkg: 'e2b',
     title: 'E2B sandbox lifecycle owner',

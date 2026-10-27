@@ -740,6 +740,40 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'goalRoundDriver',
+    summary: 'Compatibility readback for consumers that require owned external admission.',
+    description: 'Compatibility readback for consumers that require owned external admission.',
+    methods: [
+      {
+        signature: 'protocolVersion: 1',
+        description: 'Version supported by this loaded driver.',
+        parameters: [],
+      },
+      {
+        signature: 'enqueueMode: \'native\' | \'external\'',
+        description: 'Actual configured ownership mode; never inferred from provider presence.',
+        parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'goalRoundEnqueue',
+    summary: 'Optional owner supplied before selecting external enqueue mode.',
+    description: 'Optional owner supplied before selecting external enqueue mode.',
+    methods: [
+      {
+        signature: 'protocolVersion: 1',
+        description: 'Version of the awaited reservation/commit protocol.',
+        parameters: [],
+      },
+      {
+        signature: 'enqueue: (request: GoalRoundEnqueueRequest) => Promise<GoalRoundEnqueueResult>',
+        description: 'Resolve only with the actual enqueue disposition; uncertainty stops continuation.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'goals',
     summary: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
     description: 'Goal service (`ctx.goals`) backed exclusively by the owning session log.',
@@ -2285,6 +2319,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'the session whose composition changed.' }, { name: 'agentPreset', description: 'the preset recorded by the committed selection.' }],
   },
   {
+    name: 'agent/cancel-requested',
+    mode: 'emit',
+    signature: '\'agent/cancel-requested\'(this: Scoped<Agent>, payload: { agent: Agent; cause: AgentCancelCause; keepInbox: boolean }): void',
+    summary: 'Cancellation was requested, including while idle with an empty inbox.',
+    description: 'Cancellation was requested, including while idle with an empty inbox. Notification follows the existing inbox/active-signal cancellation; it is not a veto and does not create activity or change the first abort cause.',
+    parameters: [{ name: 'payload', description: '.keepInbox - whether pending inbox work was preserved. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
     name: 'agent/created',
     mode: 'emit',
     signature: '\'agent/created\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
@@ -3243,6 +3285,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GoalPhase',
     declaration: 'export type GoalPhase = \'active\' | \'paused\' | \'blocked\' | \'complete\';',
+  },
+  {
+    name: 'GoalRoundCommitResult',
+    declaration: 'export type GoalRoundCommitResult = {\n    kind: \'enqueued\';\n    messageId: MessageId;\n} | {\n    kind: \'not_enqueued\';\n};',
+  },
+  {
+    name: 'GoalRoundEnqueueRequest',
+    declaration: 'export interface GoalRoundEnqueueRequest {\n    agent: Agent;\n    message: UserMessage;\n    signal: AbortSignal;\n    commit: () => GoalRoundCommitResult;\n}',
+  },
+  {
+    name: 'GoalRoundEnqueueResult',
+    declaration: 'export type GoalRoundEnqueueResult = GoalRoundCommitResult | {\n    kind: \'outcome_unknown\';\n};',
   },
   {
     name: 'GoalSnapshot',
