@@ -17,7 +17,9 @@
   name: '@deepseek-ai/dsh-goal-round-driver'
 ```
 
-该插件没有可调配置。`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.md)；在驱动器中重复任一数值都可能产生分歧策略。
+`enqueueMode` 默认为 `native`；`external` 要求 `ctx.goalRoundEnqueue` 协议版本为 `1`。`enqueueTimeoutMs` 限制外部准入等待时间（正整数毫秒，默认 `30000`）。`maxGoalRounds` 属于目标定义，面向模型的阻塞阈值则属于 [`dsh-tool-goal`](../tool-goal/README.md)；在驱动器中重复任一数值都可能产生分歧策略。
+
+外部模式的提供方接收 `{ agent, message, signal, commit }`。它必须等待所属准入完成，并在该执行上下文中同步调用 `commit()`。闭包重新核对原生预留，仅以原消息调用一次 `followup`。拒绝、超时、提供方异常或不确定回执都会解除自动续行，均不允许重放。目标变更、取消、竞争输入和卸载会中止等待；消费方必须把此 signal 传给准入拥有方，在迟到 prompt 写入前移除排队项。`ctx.goalRoundDriver` 提供 `{ protocolVersion: 1, enqueueMode }` 供必需模式兼容检查；提供方缺失时不会回退到原生入队。
 
 ## Round 约定
 

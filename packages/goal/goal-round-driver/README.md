@@ -17,7 +17,9 @@ Same-session continuation driver for [`ctx.goals`](../goal/README.md). It turns 
   name: '@deepseek-ai/dsh-goal-round-driver'
 ```
 
-The plugin has no tunable configuration. `maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to [`dsh-tool-goal`](../tool-goal/README.md); duplicating either value in the driver could produce divergent policy.
+`enqueueMode` defaults to `native`; `external` requires `ctx.goalRoundEnqueue` protocol version `1`. `enqueueTimeoutMs` bounds external admission (positive integer milliseconds, default `30000`). `maxGoalRounds` belongs to the goal definition, while the model-facing blocked threshold belongs to [`dsh-tool-goal`](../tool-goal/README.md); duplicating either value in the driver could produce divergent policy.
+
+In external mode the provider receives `{ agent, message, signal, commit }`. It must await its owner admission and invoke `commit()` synchronously in that admission's execution context. The closure rechecks the native reservation and calls `followup` at most once with the original message. Denial, timeout, provider rejection, or an uncertain receipt disarms automatic continuation; none permits replay. Goal changes, cancellation, competing input, and teardown abort pending work. Consumers must propagate that signal to remove any owner-side queued admission before it can write a late prompt. `ctx.goalRoundDriver` exposes `{ protocolVersion: 1, enqueueMode }` for required-mode compatibility checks; missing providers never fall back to native enqueue.
 
 ## Round contract
 
