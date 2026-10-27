@@ -4,6 +4,9 @@
  */
 
 import { isDeepStrictEqual } from 'node:util'
+import z from '@deepseek-ai/schemastery'
+import { awaitGoalRoundEnqueue } from './enqueue.ts'
+import type { GoalRoundCommitResult } from './enqueue.ts'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
@@ -14,6 +17,20 @@ import type { Session, SessionEvent, UserMessage } from '@deepseek-ai/dsh-sessio
 import { renderGoalRoundPrompt } from './prompt.ts'
 
 export { renderGoalRoundPrompt } from './prompt.ts'
+export type { GoalRoundCommitResult, GoalRoundEnqueue, GoalRoundEnqueueRequest, GoalRoundEnqueueResult, GoalRoundDriverCapability } from './enqueue.ts'
+
+/** Native standalone scheduling or a required external admission boundary. */
+export interface Config {
+  /** Select direct native enqueue or require an external admission owner. */
+  enqueueMode?: 'native' | 'external'
+  /** Maximum external admission wait in milliseconds; expiry disarms without replay. */
+  enqueueTimeoutMs?: number
+}
+/** Explicit external mode never falls back to direct native enqueue. */
+export const Config: z<Config> = z.object({
+  enqueueMode: z.union(['native', 'external']).default('native'),
+  enqueueTimeoutMs: z.number().step(1).min(1).default(30000),
+})
 
 export const name = 'goal-round-driver'
 export const inject = ['agents', 'goals', 'sessions']
@@ -29,7 +46,7 @@ interface RoundIdentity {
 interface RoundAttempt extends RoundIdentity {
   readonly messageId: MessageId
   readonly content: ContentBlock[]
-  phase: 'queued' | 'claimed' | 'admitted'
+  phase: 'awaiting' | 'queued' | 'claimed' | 'admitted'
   cancelled: boolean
   stale: boolean
 }
@@ -43,6 +60,7 @@ interface DriverState {
   requested: boolean
   run: Promise<void> | undefined
   stopping: boolean
+  admission: AbortController | undefined
 }
 
 /** Whether a source identifies an automatic, positive-numbered goal round. */
@@ -73,7 +91,13 @@ function renderThrown(value: unknown): string {
 }
 
 /** Install automatic same-session continuation and its race fences. */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config = {}): void {
+  const mode = config.enqueueMode ?? 'native'
+  const timeoutMs = config.enqueueTimeoutMs ?? 30000
+  if (!['native', 'external'].includes(mode) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+    throw new TypeError('Invalid goal-round-driver enqueue configuration')
+  }
+  ctx.provide('goalRoundDriver', { protocolVersion: 1, enqueueMode: mode })
   const states = new Map<Agent, DriverState>()
 
   /** Create state for an exact currently live agent. */
@@ -88,6 +112,7 @@ export function apply(ctx: Context): void {
       requested: false,
       run: undefined,
       stopping: false,
+      admission: undefined,
     }
     states.set(agent, state)
     return state
@@ -183,13 +208,42 @@ export function apply(ctx: Context): void {
       round,
       messageId: message.id,
       content,
-      phase: 'queued',
+      phase: mode === 'external' ? 'awaiting' : 'queued',
       cancelled: false,
       stale: false,
     }
     state.attempt = reservation
     try {
-      agent.followup(message)
+      if (mode === 'native') agent.followup(message)
+      else {
+        const controller = new AbortController()
+        state.admission = controller
+        const commitState = { enqueued: false }
+        const commit = (): GoalRoundCommitResult => {
+          if (commitState.enqueued) return { kind: 'enqueued', messageId: message.id }
+          if (controller.signal.aborted || !readyToDrive(state)) return { kind: 'not_enqueued' }
+          const latest = currentGoal(state)
+          if (state.attempt !== reservation
+            || latest?.id !== goal.id || latest.revision !== goal.revision
+            || latest.phase !== 'active' || latest.activation !== 'armed'
+            || latest.roundsStarted + 1 !== round) return { kind: 'not_enqueued' }
+          // No await: followup's wake inherits the admission owner's current context.
+          commitState.enqueued = true
+          reservation.phase = 'queued'
+          agent.followup(message)
+          return { kind: 'enqueued', messageId: message.id }
+        }
+        try {
+          const result = await awaitGoalRoundEnqueue(ctx, { agent, message, signal: controller.signal, commit }, controller, timeoutMs)
+          if (result.kind !== 'enqueued' || result.messageId !== message.id || !commitState.enqueued) {
+            if (!controller.signal.aborted || controller.signal.reason === 'timeout') disarm(state)
+          }
+        } finally {
+          controller.abort('settled')
+          state.admission = undefined
+          if (!commitState.enqueued && state.attempt === reservation) state.attempt = undefined
+        }
+      }
     } catch (error: unknown) {
       state.attempt = undefined
       ctx.logger.warn(`goal-round-driver: could not queue round ${round} for agent "${agent.id}": ${renderThrown(error)}`)
@@ -249,7 +303,19 @@ export function apply(ctx: Context): void {
     })
 
     ctx.on('agent/created', ({ agent }) => { stateFor(agent) })
-    ctx.on('agent/disposed', ({ agent }) => { states.delete(agent) })
+    ctx.on('agent/disposed', ({ agent }) => {
+      const state = stateFor(agent)
+      state.stopping = true
+      state.admission?.abort('disposed')
+      states.delete(agent)
+    })
+    ctx.on('agent/cancel-requested', ({ agent }) => {
+      const state = states.get(agent)
+      if (state?.admission === undefined) return
+      state.admission.abort('cancelled')
+      const goal = currentGoal(state)
+      if (goal?.phase === 'active' && goal.activation === 'armed') ctx.goals.pause(agent, goalRef(goal))
+    })
     ctx.on('agent/session-start', ({ agent }) => {
       const state = stateFor(agent)
       state.attempt = undefined
@@ -277,6 +343,7 @@ export function apply(ctx: Context): void {
     })
     ctx.on('goal/changed', ({ agent }) => {
       const state = stateFor(agent)
+      state.admission?.abort('goal-changed')
       state.needsCheckpoint = true
       requestDrive(state)
     })
@@ -287,6 +354,7 @@ export function apply(ctx: Context): void {
       const attempt = state.attempt
       if (attempt !== undefined && sameQueued(message.content, message.source, attempt)) return
       state.competingQueued = true
+      state.admission?.abort('competing-input')
       if (attempt?.phase === 'queued') attempt.stale = true
     })
     ctx.on('agent/inbox/claimed', ({ agent, message }) => {
@@ -426,6 +494,7 @@ export function apply(ctx: Context): void {
       const waits: Promise<void>[] = []
       for (const state of states.values()) {
         state.stopping = true
+        state.admission?.abort('unloaded')
         disarm(state)
         const attempt = state.attempt
         if (attempt !== undefined) {

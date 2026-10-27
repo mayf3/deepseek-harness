@@ -78,7 +78,8 @@ export interface Agent {
   /**
    * Clear queued and steering work — unless `keepInbox` — and abort the active
    * turn or between-turn task. The first cause wins for that activity. With no
-   * active activity, cancellation is a no-op and does not arm later work.
+   * active activity, cancellation does not arm later work. A read-only
+   * `agent/cancel-requested` notification also reaches pending admission owners.
    * @param cause - the stable caller intent carried by the active operation signal.
    * @param options - cancellation options; `keepInbox` preserves pending work.
    */
@@ -176,6 +177,17 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'agent/status'(this: Scoped<Agent>, payload: { agent: Agent; status: AgentStatus }): void
+    /**
+     * Cancellation was requested, including while idle with an empty inbox.
+     * Notification follows the existing inbox/active-signal cancellation; it is
+     * not a veto and does not create activity or change the first abort cause.
+     * @param payload.agent - the exact agent receiving cancellation.
+     * @param payload.cause - the requested caller intent.
+     * @param payload.keepInbox - whether pending inbox work was preserved.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode emit
+     */
+    'agent/cancel-requested'(this: Scoped<Agent>, payload: { agent: Agent; cause: AgentCancelCause; keepInbox: boolean }): void
     /**
      * One message entered the live inbox.
      * @param payload.agent - the agent whose inbox changed.
