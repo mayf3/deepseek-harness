@@ -54,6 +54,36 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('DeepSeekHarness', () => {
+  it('requires an exact native policy acknowledgement from opted-in runtimes', async () => {
+    const policy = {
+      version: 1 as const,
+      agentId: 'agt_example',
+      mode: 'native-allowlist' as const,
+      allowedCalls: [{ toolName: 'read' }],
+      policyDigest: 'a'.repeat(64),
+    }
+    const client = new HarnessClient(fakeLaunch())
+    cleanups.push(() => client.close())
+    await client.start()
+    await expect(client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm', nativeToolPolicy: policy }))
+      .resolves.toMatchObject({ nativeToolPolicy: { version: 1, agentId: policy.agentId, policyDigest: policy.policyDigest } })
+    await client.close()
+
+    const missing = new HarnessClient(fakeLaunch({ FAKE_POLICY_ACK: 'missing' }))
+    cleanups.push(() => missing.close())
+    await missing.start()
+    await expect(missing.initialize({ cwd: process.cwd(), provider: 'p', model: 'm', nativeToolPolicy: policy }))
+      .rejects.toBeInstanceOf(SdkProtocolError)
+    await missing.close()
+
+    const mismatch = new HarnessClient(fakeLaunch({ FAKE_POLICY_ACK: 'mismatch' }))
+    cleanups.push(() => mismatch.close())
+    await mismatch.start()
+    await expect(mismatch.initialize({ cwd: process.cwd(), provider: 'p', model: 'm', nativeToolPolicy: policy }))
+      .rejects.toBeInstanceOf(SdkProtocolError)
+    await mismatch.close()
+  })
+
   it('ignores notifications that precede the submitted message receipt', async () => {
     const notifications = [
       { method: 'session.status', params: { sessionId: 'owned', status: 'running' } },

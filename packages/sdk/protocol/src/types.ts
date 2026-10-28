@@ -22,12 +22,35 @@ export interface InitializeParams {
   model: string
   /** Optional positive output-token cap inherited by SDK-created agents and their in-process descendants. */
   maxTokens?: number
+  /** Trusted per-process native dispatch allowlist; omitted for legacy behavior. */
+  nativeToolPolicy?: NativeToolPolicy
+}
+
+/** Versioned trusted native-call allowlist from the process-composition resolver. */
+export interface NativeToolPolicy {
+  readonly version: 1
+  readonly agentId: string
+  readonly mode: 'native-allowlist'
+  readonly allowedCalls: readonly {
+    readonly toolName: string
+    readonly argumentEquals?: Readonly<Record<string, import('@deepseek-ai/dsh-session').JsonValue>>
+  }[]
+  readonly policyDigest: string
+}
+
+/** Exact identity and policy digest DSH accepted before model work. */
+export interface NativeToolPolicyAcknowledgement {
+  readonly version: 1
+  readonly agentId: string
+  readonly policyDigest: string
 }
 
 /** Wire-stable server identity returned by initialization. */
 export interface InitializeResult {
   /** Wire-stable server identity (`deepseek-harness-sdk-runtime`) and version. */
   serverInfo: { name: string; version: string }
+  /** Present only when the initialize request carried a trusted policy. */
+  nativeToolPolicy?: NativeToolPolicyAcknowledgement
 }
 
 /** One user turn on one SDK session. */
