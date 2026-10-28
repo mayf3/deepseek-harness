@@ -1,4 +1,5 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -13,6 +14,7 @@ import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import SubagentRuntime, { type SubagentResult, type SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
 import { HarnessSdkJsonRpcServer } from '../src/index.ts'
 
@@ -68,6 +70,18 @@ async function makeHarness(storageDir: string) {
   return ctx
 }
 
+function policyDigest(policy: Record<string, unknown>): string {
+  const canonical = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>
+      return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonical(record[key])}`).join(',')}}`
+    }
+    return JSON.stringify(value)
+  }
+  return createHash('sha256').update(canonical(policy)).digest('hex')
+}
+
 /** Drive the owning service so test lifecycle events carry the real parent scope. */
 async function settleSubagent(
   ctx: Context,
@@ -109,6 +123,99 @@ async function settleSubagent(
 }
 
 describe('HarnessSdkJsonRpcServer', () => {
+  it('validates and acknowledges the trusted native policy during initialize', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-native-policy-'))
+    vi.stubEnv('DSH_AGENT_ID', 'agt_example')
+    const ctx = await makeHarness(storageDir)
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    ctx.tools.register(defineTool({
+      name: 'read',
+      description: 'read',
+      parameters: {},
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text' as const, text: 'ok' }] },
+      async execute() { return 'ok' },
+    }))
+    const unsigned = {
+      version: 1 as const,
+      agentId: 'agt_example',
+      mode: 'native-allowlist' as const,
+      allowedCalls: [{ toolName: 'read' }],
+    }
+    const policy = { ...unsigned, policyDigest: policyDigest(unsigned) }
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await expect(server.initialize({
+        cwd: storageDir,
+        provider: 'deepseek-official',
+        model: 'policy-test',
+        nativeToolPolicy: policy,
+      })).resolves.toMatchObject({
+        nativeToolPolicy: { version: 1, agentId: 'agt_example', policyDigest: policy.policyDigest },
+      })
+      await expect(server.initialize({
+        cwd: storageDir,
+        provider: 'deepseek-official',
+        model: 'policy-test',
+      })).rejects.toThrow(/nativeToolPolicy cannot change/)
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not add a native policy to an already initialized legacy process', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-legacy-policy-'))
+    const ctx = await makeHarness(storageDir)
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+    ctx.tools.register(defineTool({
+      name: 'read',
+      description: 'read',
+      parameters: {},
+      output: { schema: { type: 'string' }, render: () => [{ type: 'text' as const, text: 'ok' }] },
+      async execute() { return 'ok' },
+    }))
+    const unsigned = { version: 1 as const, agentId: 'agt_example', mode: 'native-allowlist' as const, allowedCalls: [{ toolName: 'read' }] }
+    const policy = { ...unsigned, policyDigest: policyDigest(unsigned) }
+    try {
+      const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+      await server.initialize({ cwd: storageDir, provider: 'deepseek-official', model: 'legacy-first' })
+      await expect(server.initialize({
+        cwd: storageDir,
+        provider: 'deepseek-official',
+        model: 'legacy-first',
+        nativeToolPolicy: policy,
+      })).rejects.toThrow(/nativeToolPolicy cannot change/)
+      await server.shutdown()
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(storageDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects missing or mismatched trusted process identity before initialization can acknowledge policy', async () => {
+    const unsigned = { version: 1 as const, agentId: 'agt_example', mode: 'native-allowlist' as const, allowedCalls: [] }
+    const policy = { ...unsigned, policyDigest: policyDigest(unsigned) }
+    for (const [runtimeAgentId, expected] of [['', /requires authenticated DSH_AGENT_ID/], ['agt_other', /does not match authenticated DSH_AGENT_ID/]] as const) {
+      const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-native-identity-'))
+      vi.stubEnv('DSH_AGENT_ID', runtimeAgentId)
+      const ctx = await makeHarness(storageDir)
+      try {
+        const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
+        await expect(server.initialize({
+          cwd: storageDir,
+          provider: 'deepseek-official',
+          model: 'identity-must-fail-before-model',
+          nativeToolPolicy: policy,
+        })).rejects.toThrow(expected)
+        await server.shutdown()
+      } finally {
+        await ctx.fiber.dispose()
+        await rm(storageDir, { recursive: true, force: true })
+      }
+    }
+  })
+
   it('creates a harness agent and calls the configured OpenAI-compatible endpoint', { timeout: 15_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-'))
     const llmServer = await mockCompletionServer()

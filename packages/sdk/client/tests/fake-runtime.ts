@@ -191,7 +191,20 @@ reader.on('line', (line) => {
         respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: process.cwd() } })
         return
       }
-      respond({ serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } })
+      respond({
+        serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+        ...(frame.params?.nativeToolPolicy === undefined ? {} : {
+          nativeToolPolicy: env.FAKE_POLICY_ACK === 'mismatch'
+            ? { version: 1, agentId: 'wrong', policyDigest: '0'.repeat(64) }
+            : env.FAKE_POLICY_ACK === 'missing'
+              ? undefined
+              : {
+                version: 1,
+                agentId: (frame.params.nativeToolPolicy as { agentId: string }).agentId,
+                policyDigest: (frame.params.nativeToolPolicy as { policyDigest: string }).policyDigest,
+              },
+        }),
+      })
       return
     case 'session/prompt': {
       const sessionId = sessionIdOf(frame.params)

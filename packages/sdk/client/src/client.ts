@@ -271,6 +271,23 @@ export class HarnessClient {
       || typeof result.serverInfo.name !== 'string' || typeof result.serverInfo.version !== 'string') {
       throw new SdkProtocolError(`initialize returned no server identity: ${JSON.stringify(result)}`)
     }
+    if (params.nativeToolPolicy !== undefined) {
+      const acknowledgement = isRecord(result.nativeToolPolicy) ? result.nativeToolPolicy : undefined
+      if (acknowledgement === undefined
+        || acknowledgement.version !== params.nativeToolPolicy.version
+        || acknowledgement.agentId !== params.nativeToolPolicy.agentId
+        || acknowledgement.policyDigest !== params.nativeToolPolicy.policyDigest) {
+        throw new SdkProtocolError('initialize did not acknowledge the requested nativeToolPolicy identity and digest')
+      }
+      return {
+        serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version },
+        nativeToolPolicy: {
+          version: 1,
+          agentId: acknowledgement.agentId as string,
+          policyDigest: acknowledgement.policyDigest as string,
+        },
+      }
+    }
     return { serverInfo: { name: result.serverInfo.name, version: result.serverInfo.version } }
   }
 

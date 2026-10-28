@@ -26,6 +26,8 @@ import type { CodeSdkLanguage } from './code-mode.ts'
 import { renderToolsSdk } from './ts-types.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 import { renderToolsSdkPy } from './py-types.ts'
+import { nativeToolPolicyAllows, validateNativeToolPolicy } from './trusted-native-policy.ts'
+import type { NativeToolPolicy, NativeToolPolicyAcknowledgement } from './trusted-native-policy.ts'
 
 /**
  * Language → SDK-section renderer. The registry looks up the loaded
@@ -100,6 +102,7 @@ export {
 
 export type { JsonValue } from '@deepseek-ai/dsh-session'
 export type { CodeDispatchEventData, CodeDispatchStartEventData } from './types.ts'
+export type { NativeToolAllowedCall, NativeToolPolicy, NativeToolPolicyAcknowledgement } from './trusted-native-policy.ts'
 
 export { CodeRunFailedError, RUN_CODE_NAME } from './code-mode.ts'
 export { jsonSchemaToTs, renderToolsSdk } from './ts-types.ts'
@@ -253,6 +256,8 @@ export interface ToolDefinition extends ToolSchema {
    * cooperative implementation that can reach quiescence when the signal aborts.
    */
   timeoutMs?: number
+  /** Argument keys declared to fully determine a native authorization selector. */
+  nativePolicyDiscriminators?: readonly string[]
   /**
    * Pure synchronous classifier for overlap with sibling tool calls. Only
    * `true` opts in; omission, exceptions, non-`true` returns, and invalid
@@ -815,6 +820,14 @@ export class ToolRuntime extends Service {
   /** Presentation for scopes that declare none; {@link presentAs} shadows it per scope. */
   private readonly defaultMode: ToolPresentationMode
   private readonly maxParallelSubCalls: number
+  /** Process-wide policy received only from the trusted SDK initialize request. */
+  private nativePolicy: NativeToolPolicy | undefined
+  /** Independent host identity captured from the trusted process environment. */
+  private readonly trustedProcessAgentId = process.env.DSH_AGENT_ID
+  /** Authenticated process identity bound to exact live Agent objects. */
+  private readonly nativePolicyAgentBindings = new WeakMap<Agent, string>()
+  /** Global tool definitions whose exact registrations were authorized at initialize. */
+  private nativePolicyDefinitions = new Map<string, ToolDefinition>()
   /**
    * Reserved presentation transport, kept outside the filterable registration
    * layers. Built on first need rather than at construction: which agents run
@@ -825,6 +838,14 @@ export class ToolRuntime extends Service {
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'tools')
+    const bindAgent = ({ agent }: { agent: Agent }): void => {
+      if (this.trustedProcessAgentId !== undefined && this.trustedProcessAgentId !== '') {
+        this.nativePolicyAgentBindings.set(agent, this.trustedProcessAgentId)
+      }
+    }
+    for (const agent of ctx.get('agents')?.list() ?? []) bindAgent({ agent })
+    ctx.on('agent/created', bindAgent)
+    ctx.on('agent/disposed', ({ agent }) => { this.nativePolicyAgentBindings.delete(agent) })
     // The schema already defaulted an omitted mode; the ?? narrows the
     // optional-input type for direct (non-Loader) construction in tests.
     this.defaultMode = config.mode ?? 'native'
@@ -858,7 +879,7 @@ export class ToolRuntime extends Service {
       order: COLLAPSE_SECTION_ORDER,
       // The SAME predicate the executor denies by, so the prompt cannot state
       // a rule the registry does not enforce (see `collapses`).
-      text: context => this.modeFor(context.scope) === 'code' ? CODE_ONLY_INSTRUCTION : '',
+      text: context => this.effectiveModeFor(context.scope) === 'code' ? CODE_ONLY_INSTRUCTION : '',
     }
   }
 
@@ -878,7 +899,7 @@ export class ToolRuntime extends Service {
       order: SDK_SECTION_ORDER,
       // Regenerate from the calling scope's visible tools in stable order.
       text: (context) => {
-        const mode = this.modeFor(context.scope)
+        const mode = this.effectiveModeFor(context.scope)
         if (mode === 'native') return ''
         const runtime = this.requireCodeRuntime(mode)
         // Own-property read: a language like `toString`/`constructor` would
@@ -908,6 +929,56 @@ export class ToolRuntime extends Service {
       if (mode !== undefined) return mode
     }
     return this.defaultMode
+  }
+
+  /** Validate and bind the process policy once before any SDK session is created. */
+  configureTrustedNativeToolPolicy(input: unknown): NativeToolPolicyAcknowledgement {
+    const knownNames = new Set(this.layers.global.tools.keys())
+    // The transport may be introduced by a scope-specific Code Mode preset,
+    // so validate its reserved identity independently of the deployment default.
+    knownNames.add(RUN_CODE_NAME)
+    const policy = validateNativeToolPolicy(input, knownNames)
+    if (this.trustedProcessAgentId === undefined || this.trustedProcessAgentId.length === 0) {
+      throw new Error('initialize nativeToolPolicy requires authenticated DSH_AGENT_ID process identity')
+    }
+    if (policy.agentId !== this.trustedProcessAgentId) {
+      throw new Error('initialize nativeToolPolicy agentId does not match authenticated DSH_AGENT_ID process identity')
+    }
+    if (this.nativePolicy !== undefined && this.nativePolicy.policyDigest !== policy.policyDigest) {
+      throw new Error('initialize nativeToolPolicy cannot change within a process generation')
+    }
+    this.nativePolicy ??= policy
+    if (this.nativePolicyDefinitions.size === 0) {
+      const definitions = policy.allowedCalls.flatMap((call) => {
+        if (call.toolName === RUN_CODE_NAME) return []
+        const definition = this.layers.global.tools.get(call.toolName)
+        if (definition === undefined) throw new Error(`initialize nativeToolPolicy tool "${call.toolName}" is no longer registered`)
+        return [[call.toolName, definition] as const]
+      })
+      this.nativePolicyDefinitions = new Map(definitions)
+    }
+    return Object.freeze({ version: 1, agentId: policy.agentId, policyDigest: policy.policyDigest })
+  }
+
+  /** Whether a tool name has at least one explicit process-policy selector. */
+  private policyAllowsName(name: string): boolean {
+    return this.nativePolicy === undefined || this.nativePolicy.allowedCalls.some(call => call.toolName === name)
+  }
+
+  /** A scoped same-name shadow cannot replace the global registration authorized at initialize. */
+  private policyAllowsDefinition(name: string, definition: ToolDefinition): boolean {
+    if (!this.policyAllowsName(name)) return false
+    return this.nativePolicy === undefined
+      || (name === RUN_CODE_NAME
+        ? definition === this.requireCodeTransport()
+        : definition === this.nativePolicyDefinitions.get(name))
+  }
+
+  /** A policy without run_code presents allowed tools as native calls. */
+  private effectiveModeFor(scope?: ScopeKey): ToolPresentationMode {
+    return this.nativePolicy !== undefined && !this.policyAllowsName(RUN_CODE_NAME)
+      ? 'native'
+      : this.modeFor(scope)
   }
 
   /**
@@ -979,7 +1050,7 @@ export class ToolRuntime extends Service {
    */
   private wireSchemas(scope?: ScopeKey): ToolProviderResult {
     const view = this.view(scope)
-    const mode = this.modeFor(scope)
+    const mode = this.effectiveModeFor(scope)
     if (mode === 'native') {
       const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
       return { schemas, knownNames: [...view.knownNames] }
@@ -1117,6 +1188,19 @@ export class ToolRuntime extends Service {
 
   /** First monotonic denial from the global then the scope chain's guard layers, farthest first. */
   private guardReason(exec: ToolExecution): string | undefined {
+    if (this.nativePolicy !== undefined) {
+      if (exec.agent === undefined
+        || this.nativePolicyAgentBindings.get(exec.agent) !== this.nativePolicy.agentId) {
+        return 'trusted native tool policy requires an authenticated runtime Agent matching its process identity'
+      }
+      const definition = this.get(exec.name, exec.agent)
+      if (definition === undefined || !this.policyAllowsDefinition(exec.name, definition) || !nativeToolPolicyAllows(
+        this.nativePolicy,
+        exec.name,
+        exec.arguments,
+        definition.nativePolicyDiscriminators,
+      )) return `trusted native tool policy denied "${exec.name}"`
+    }
     const globalReason = this.layers.global.guardReason(exec)
     if (globalReason !== undefined) return globalReason
     if (exec.agent === undefined) return undefined
@@ -1186,8 +1270,19 @@ export class ToolRuntime extends Service {
     // an invariant assertion as well as protection against future layer
     // changes. Per scope: a native agent must not find `run_code` in its
     // dispatch table because some other agent in the process presents it.
-    if (this.modeFor(scope) !== 'native') {
+    if (this.effectiveModeFor(scope) !== 'native') {
       visible.set(RUN_CODE_NAME, this.requireCodeTransport())
+    }
+    if (this.nativePolicy !== undefined) {
+      const resolvedDefinitions = new Map(visible)
+      for (const [name, definition] of visible) {
+        if (!this.policyAllowsDefinition(name, definition)) visible.delete(name)
+      }
+      for (const name of knownNames) {
+        const definition = scope === undefined ? undefined : resolvedDefinitions.get(name)
+        if (!this.policyAllowsName(name)
+          || (definition !== undefined && !this.policyAllowsDefinition(name, definition))) knownNames.delete(name)
+      }
     }
     return { visible, knownNames, restrictableNames }
   }
@@ -1322,7 +1417,7 @@ export class ToolRuntime extends Service {
    * @param nested - whether the call is a transport sub-dispatch, not a model-direct call.
    */
   private collapses(name: string, scope: ScopeKey | undefined, nested: boolean): boolean {
-    return !nested && this.modeFor(scope) === 'code' && name !== RUN_CODE_NAME
+    return !nested && this.effectiveModeFor(scope) === 'code' && name !== RUN_CODE_NAME
   }
 
   /**
@@ -1414,6 +1509,15 @@ export class ToolRuntime extends Service {
         throw new TypeError('tool execution arguments must be losslessly JSON-serializable')
       }
       const execution: MutableToolRunContext = { ...base, arguments: deepFreeze(detached) }
+      if (this.nativePolicy !== undefined) {
+        // Policy authorization is over the effective call admitted by the
+        // initialize-time trust decision. A cooperative pre-execute listener
+        // may deny or observe that call, but cannot rewrite its operation or
+        // scope after the dispatcher has materialized it.
+        for (const key of ['name', 'arguments', 'agent', 'parent'] as const) {
+          Object.defineProperty(execution, key, { writable: false, configurable: false })
+        }
+      }
       this.deferredContexts.set(execution, deferredContexts)
       this.contentFinalizers.set(execution, finalizerFor())
       this.cancellationStates.set(execution, {
