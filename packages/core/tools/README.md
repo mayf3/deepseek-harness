@@ -189,6 +189,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 ## Known Limitations and Deferred Work
 
+- **Trusted native policy is a ToolRuntime dispatch boundary, not process isolation** — when the SDK initialize request opts in, the exact allowlist filters schemas and refuses direct, scoped, and nested tool calls before handlers; it does not isolate trusted plugins, direct service access, or operating-system processes ([decision](../../../.agents/notes/implemented/feature/2026-10-28-trusted-native-tool-policy.md)).
 - **Concurrency policy is not an event gate** — `executionMode()` reads the resolved tool definition directly; plugins can only declare a classifier on definitions they own.
 - **`tools/pre-execute` deliberately cannot rewrite `exec.arguments`** — logged and rendered args would desync from what ran; the rewrite design is [a proposed Agent Note](../../../.agents/notes/proposed/feature/2026-06-30-pre-tool-input-rewrite.md).
 - **Caller-defined subagent and workflow structured outputs remain object-rooted** — this is a consumer-level guard; the shared schema vocabulary and tool outputs support every JSON root.
