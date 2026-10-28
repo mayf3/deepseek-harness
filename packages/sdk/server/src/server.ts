@@ -6,6 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-tools'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -55,6 +56,8 @@ export class HarnessSdkJsonRpcServer {
   private provider = 'deepseek-official'
   private model = 'deepseek-official'
   private maxTokens: number | undefined
+  private initialized = false
+  private nativeToolPolicyAck: InitializeResult['nativeToolPolicy'] | undefined
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly sessionCreations = new Map<string, Promise<SessionRecord>>()
@@ -117,11 +120,30 @@ export class HarnessSdkJsonRpcServer {
     this.provider = params.provider
     this.model = params.model
     this.maxTokens = params.maxTokens
+    if (this.initialized) {
+      const policy = params.nativeToolPolicy
+      if (this.nativeToolPolicyAck === undefined
+        ? policy !== undefined
+        : policy === undefined
+          || policy.agentId !== this.nativeToolPolicyAck.agentId
+          || policy.policyDigest !== this.nativeToolPolicyAck.policyDigest
+          || policy.version !== this.nativeToolPolicyAck.version) {
+        throw new Error('initialize nativeToolPolicy cannot change within a process generation')
+      }
+    } else if (params.nativeToolPolicy !== undefined) {
+      const tools = this.ctx.get('tools')
+      if (tools === undefined) throw new Error('initialize nativeToolPolicy requires the DSH ToolRuntime service')
+      this.nativeToolPolicyAck = tools.configureTrustedNativeToolPolicy(params.nativeToolPolicy)
+    }
     if (!this.hasAdapterFor(this.provider)) {
       if (this.provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${this.provider}"`)
       this.llmFiber = await this.ctx.plugin(LlmDeepSeek, {})
     }
-    return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
+    this.initialized = true
+    return {
+      serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' },
+      ...(this.nativeToolPolicyAck === undefined ? {} : { nativeToolPolicy: this.nativeToolPolicyAck }),
+    }
   }
 
   /**
