@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-23-codex-websearch-event-registration.md
-2026-10-23-codex-websearch-event-registration.md: fef0e8114c7a043b5fcc5e07c08badcfd0de2412
-2026-10-23-codex-websearch-event-registration.zh.md: 6f1998a354588de5c876919e82b55ec04b5f25ab
+2026-10-23-codex-websearch-event-registration.md: 25ad685996dc3b4663612244142bacacbb1403c7
+2026-10-23-codex-websearch-event-registration.zh.md: 9e39886a6d0a32218807d75863081a211bbc6be9
