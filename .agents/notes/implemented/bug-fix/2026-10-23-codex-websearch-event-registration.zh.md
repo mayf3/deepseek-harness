@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-该事件现在是本构建持久化词汇表的永久成员。core session 声明了精确的事件类型与精确的、不含密钥的 payload record（`OpenAICodexSearchLlmRequest`，镜像自插件的写入方），生成的 catalog 通过正常的 `gen-persistence-catalog` 运行把该类型加入 `KNOWN_SESSION_EVENT_TYPES`。因此本仓库的每一个构建都能读取携带该事件的日志，与挂载了哪些插件无关，且已写入的无标记日志无需任何数据改写即变为可读。
+该事件现在是本构建持久化词汇表的永久成员。core session 声明了精确的事件类型与精确的、不含密钥的 payload record（`OpenAICodexSearchLlmRequest`，镜像自插件的写入方），生成的 catalog 通过正常的 `gen-persistence-catalog` 运行把该类型加入 `KNOWN_SESSION_EVENT_TYPES`。因此本仓库的每一个构建都能读取携带该事件的日志，与挂载了哪些插件无关，且已写入的无标记日志无需任何数据改写即变为可读。[Session log 版本机制](../architecture/2026-08-10-session-log-version-mechanism.zh.md) 保证生成的已知集合与挂载的插件无关；该事件使用精确的 core 声明而非运行时注册。
 
 注册是精确匹配，不是命名空间规则：`web/openai-codex-search-llm-request` 是唯一新增成员，其它所有未知类型——包括未知的 `web/*` 名字——仍然拒绝日志；required-on-read 默认值与 `ignorable` envelope 契约均不变。读取行为在其他方面不受影响：事件保持原有顺序与序列号，业务消息既不重放也不去重。
 

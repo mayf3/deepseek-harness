@@ -392,8 +392,8 @@ export function render(events: AnnotatedLogEventEntry[], envelopeTypes: EventEnv
 }
 
 /**
- * Render the runtime known-vocabulary module: every event type the packages in
- * this repo can write, as a generated `ReadonlySet` the read path checks
+ * Render the runtime known-vocabulary module: every event type declared in
+ * this repo, as a generated `ReadonlySet` the read path checks
  * unknown-type refusal against (`SessionEvent.ignorable` contract).
  */
 export function renderKnownEventTypes(events: AnnotatedLogEventEntry[]): string {
@@ -411,11 +411,12 @@ export function renderKnownEventTypes(events: AnnotatedLogEventEntry[]): string 
     ' * vocabulary this build understands. The persistence read path refuses to',
     ' * interpret a log containing a type outside this set unless the event',
     ' * carries the envelope\'s `ignorable` marker (see `SessionEvent.ignorable`',
-    ' * in `./types.ts`): such a log was likely written by a newer harness, and',
-    ' * silently skipping a required event would reconstruct a wrong session.',
-    ' * Downstream (out-of-repo) plugin events are outside this list by',
-    ' * construction; a registration surface for them is deferred until such a',
-    ' * consumer exists.',
+    ' * in `./types.ts`): a newer or differently extended build may have written',
+    ' * the log, and silently skipping a required event would reconstruct a',
+    ' * wrong session. Downstream (out-of-repo) plugin events are included only',
+    ' * when their exact types are declared here, as with',
+    ' * `web/openai-codex-search-llm-request`. Runtime plugin registration alone',
+    ' * cannot cover readers that do not mount the plugin.',
     ' */',
     'export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([',
     ...names.map(name => `  '${name}',`),
