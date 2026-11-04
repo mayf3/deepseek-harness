@@ -1385,6 +1385,63 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
       }
     })
 
+    it.each([false, true])('preserves a Codex search request across cold reads (ignorable=%s)', async (ignorable) => {
+      const fix = await makeFixture()
+      const header = meta('codex-search-request', WORK)
+      const history = oneTurnLog()
+      // `web/openai-codex-search-llm-request` is appended by the out-of-repo
+      // dsh-codex producer and deliberately has no `SessionEventMap` member in
+      // this repository, so the compiler cannot name the event; the cast
+      // exercises exactly the runtime tolerance path under test
+      // (dsh-agent-core#548).
+      const codexSearchRequest = {
+        type: 'web/openai-codex-search-llm-request',
+        seq: history.length,
+        time: 99,
+        data: { fixture: true },
+        ...ignorable ? { ignorable: true as const } : {},
+      } as unknown as SessionEvent
+      const events: SessionEvent[] = [
+        ...history,
+        codexSearchRequest,
+        { type: 'session/end-seed', seq: history.length + 1, time: 100, data: {} },
+      ]
+      try {
+        const writer = await freshCtx(fix)
+        try {
+          await writer.ctx.sessionPersistence.create(header)
+          await writer.ctx.sessionPersistence.append(header.id, events)
+        } finally {
+          await writer.fiber.dispose()
+        }
+
+        for (const route of ['load', 'prepare'] as const) {
+          const { ctx, fiber } = await freshCtx(fix)
+          try {
+            if (route === 'load') {
+              expect((await ctx.sessionPersistence.load(header.id)).events).toEqual(events)
+            } else {
+              const prepared = await ctx.sessionPersistence.prepare(header.id)
+              try {
+                expect(prepared.session.events).toEqual(events)
+                expect(prepared.session.deriveMessages()).toEqual(
+                  Session.create(SessionId('expected-history'), history).deriveMessages(),
+                )
+              } finally {
+                prepared[Symbol.dispose]()
+              }
+            }
+            expect((await ctx.sessionPersistence.inspect(header.id)).events).toEqual(events)
+            expect(ctx.sessions.get(header.id)).toBeUndefined()
+          } finally {
+            await fiber.dispose()
+          }
+        }
+      } finally {
+        await fix.cleanup()
+      }
+    })
+
     it('round-trips a header with parentSession (fork lineage)', async () => {
       const fix = await makeFixture()
       const { ctx, fiber } = await freshCtx(fix)
