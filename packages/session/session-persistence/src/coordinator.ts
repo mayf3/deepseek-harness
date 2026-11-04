@@ -20,6 +20,24 @@ import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SessionInspection, SessionLocation } from './index.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
+
+/**
+ * Event types written by out-of-repo producers that are auxiliary request
+ * diagnostics: they carry no interpretation-relevant content, so a build that
+ * does not know them may skip them without reconstructing a wrong session.
+ * Membership here applies the same tolerance as an envelope `ignorable: true`
+ * marker (the event is still preserved verbatim); it is deliberately a named
+ * list, not a blanket ignore — every other unknown type keeps failing closed.
+ * `web/openai-codex-search-llm-request` is appended by the dsh-codex side of
+ * the Codex web-search flow, which has no `SessionEventMap` declaration in
+ * this repository (the generated {@link KNOWN_SESSION_EVENT_TYPES} therefore
+ * cannot list it); sessions written by a generation that logged it unmarked
+ * previously failed cold load and restart prepare outright
+ * (dsh-agent-core#548, the 023rb release-boundary class).
+ */
+const OUT_OF_REPO_IGNORABLE_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'web/openai-codex-search-llm-request',
+])
 import type { SessionPreparationReservation } from './preparations.ts'
 import { SessionWriteBehind } from './write-behind.ts'
 
@@ -1061,6 +1079,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   private assertEventsSupported(meta: SessionHeader, events: readonly SessionEvent[]): void {
     for (const event of events) {
       if (KNOWN_SESSION_EVENT_TYPES.has(event.type) || event.ignorable === true) continue
+      if (OUT_OF_REPO_IGNORABLE_SESSION_EVENT_TYPES.has(event.type)) continue
       throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) unknown to this harness and not marked ignorable; refusing to interpret the log — it was likely written by a newer harness`)
     }
   }
