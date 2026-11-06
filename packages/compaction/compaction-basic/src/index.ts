@@ -12,7 +12,7 @@ import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE, assertNever } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Type-only: makes the optional sibling service available to `ctx.get()`.
 import type {} from '@deepseek-ai/dsh-compaction-tool-result-pruner'
@@ -113,7 +113,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     compactionRetries: compactionRetriesSchema,
     maxOverflowRetries: maxOverflowRetriesSchema,
     modelPolicies: z.array(modelPolicy),
-    auto: z.boolean(),
+    auto: z.union([z.boolean(), z.const('pre-request')]),
   })
 
   /** Resolved and validated compaction configuration. */
@@ -130,7 +130,7 @@ export class BasicCompactionEngine extends CompactionEngine {
   }
 
   /**
-   * Register automatic between-step pressure and model-request overflow
+   * Register the configured pressure listener and model-request overflow
    * recovery. `compactIfNeeded` stays dynamically dispatched so subclass
    * overrides are honored at event time.
    */
@@ -144,25 +144,31 @@ export class BasicCompactionEngine extends CompactionEngine {
       )
     }
 
-    ctx.on('agent/pre-step', async (
-      { agent, signal },
-      next,
-    ): Promise<PreStepDecision> => {
+    const pressureTiming = this.config.auto === 'pre-request' ? 'request' : 'step'
+    const checkPressure = async ({ agent, signal }: { agent: Agent; signal: AbortSignal }): Promise<void> => {
       if (!signal.aborted) {
         try {
           const result = await this.compactIfNeeded(agent, 'pressure', signal)
-          if (result !== null) logResult(result, 'step pressure')
+          if (result !== null) logResult(result, `${pressureTiming} pressure`)
         } catch (error: unknown) {
           if (error instanceof TargetPressureConfigError) {
-            if (this.warnedPressureConfigTargets.has(error.targetKey)) return next()
+            if (this.warnedPressureConfigTargets.has(error.targetKey)) return
             this.warnedPressureConfigTargets.add(error.targetKey)
           }
           const message = error instanceof Error ? error.message : String(error)
-          ctx.logger.warn(`step compaction failed: ${message}; continuing the turn`)
+          ctx.logger.warn(`${pressureTiming} compaction failed: ${message}; continuing the turn`)
         }
       }
-      return next()
-    })
+    }
+
+    if (this.config.auto === 'pre-request') {
+      ctx.on('agent/pre-request', checkPressure)
+    } else {
+      ctx.on('agent/pre-step', async (payload, next) => {
+        await checkPressure(payload)
+        return next()
+      })
+    }
 
     ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'idle') this.overflowRetries.delete(agent)
@@ -246,12 +252,12 @@ export class BasicCompactionEngine extends CompactionEngine {
   }
 
   /**
-   * Compact for replayed step-boundary pressure or one provider-confirmed context
+   * Compact for replayed request pressure or one provider-confirmed context
    * overflow. Both triggers price the latest durable routed request envelope;
    * overflow bypasses the normal threshold and retained-tail policy so it can
    * force one useful balanced reduction.
    * @param agent - agent whose latest durable routed request is measured.
-   * @param trigger - normal step-boundary pressure or context-overflow recovery.
+   * @param trigger - normal request pressure or context-overflow recovery.
    * @param signal - live turn cancellation signal forwarded to summarization.
    * @returns the latest summary compaction result, or `null` when no summary ran.
    */

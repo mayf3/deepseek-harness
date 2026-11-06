@@ -54,6 +54,8 @@ Most interception points are cooperative waterfalls. `agent/pre-step` receives a
 
 `PreStepDecision` is either `{ kind: 'reject' }` or `{ kind: 'enter', messages }`. The enter branch is the complete identified, frozen batch for the proposed step. A listener that wraps downstream entry preserves that batch unless it intentionally replaces it; additions follow the waterfall's natural return order. Claiming already removed the offered messages from the inbox, so rejection does not retain them. Messages inserted after the claim remain pending for a later boundary.
 
+`agent/pre-request` is a serial checkpoint after the effective route, header, and context are logged and before model history is derived. It runs for every attempt, including retries within the same step, so listeners can replace durable history using the current route. The loop rechecks cancellation after the listeners settle; listener failures terminate the turn directly rather than entering provider-error recovery.
+
 Inbox live notifications are deliberately per-message and minimal: `agent/inbox/inserted { message }`, `agent/inbox/claimed { message, turn }`, and `agent/inbox/discarded { message }`. They complement the durable `agent/inbox/spliced` projection without adding another lifecycle envelope.
 
 Turn and step boundaries and the model token stream are durable `session/event` facts rather than mirrored `agent/*` notifications. Consumers read `turn/*`, `step/*`, and `assistant/chunk` from the session feed; tool policy and outcome observation belong to the complete pipeline documented by [`dsh-tools`](../tools/README.md).

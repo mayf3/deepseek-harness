@@ -243,6 +243,20 @@ declare module '@deepseek-ai/cordis' {
     */
     'agent/request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig>
     /**
+     * Prepare durable context after the resolved request header and capacity
+     * are logged, before messages are derived for each attempt, including
+     * retries. Listeners may replace the logged surface; failures end the turn
+     * without entering model-request recovery. Cancellation is rechecked after
+     * the serial chain settles.
+     * @param payload.agent - the agent about to dispatch the request.
+     * @param payload.turn - the open turn number.
+     * @param payload.step - the step containing this request attempt.
+     * @param payload.signal - the current turn's cancellation signal.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode serial
+     */
+    'agent/pre-request'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; signal: AbortSignal }): Promise<void> | void
+    /**
      * Handle one failed model-request attempt before the loop retries or closes
      * its step. A listener returns `{ kind: 'retry' }` without calling `next()`
      * when it owns recovery, or calls `next()` to delegate. The default

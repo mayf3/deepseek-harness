@@ -66,7 +66,7 @@ dsh --profile web --dump-config
 
 ## 轮次流程
 
-一个**步骤**是一次模型请求加上它调用的工具。一个**轮次**包含零个或多个步骤：它在领取首条输入之前打开，并在不再欠下任何工作时关闭。
+一个**步骤**包含模型请求尝试以及成功响应调用的工具。一个**轮次**包含零个或多个步骤：它在领取首条输入之前打开，并在不再欠下任何工作时关闭。
 
 ```text
 turn/start
@@ -76,8 +76,10 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      append entered messages as user/message
+     agent/request -> log effective request/header + request/context
+     agent/pre-request
      derive model history from the log
-     agent/request -> llm/stream -> assistant/chunk* -> assistant/message
+     llm/stream -> assistant/chunk* -> assistant/message
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
      step/end
      tools owe another request, or next-step input arrived -> claim -> next step
@@ -85,11 +87,13 @@ turn/start
 turn/end
 ```
 
-`turn/*`、`step/*`、`user/message`、`assistant/*` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
+`turn/*`、`step/*`、`user/message`、`assistant/*` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/pre-request` 和 `agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
 输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
 
 `agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。每个步骤读取插件注册的提示词片段和工具 schema。
+
+每次请求尝试都会在路由及请求元数据记录后运行 `agent/pre-request`，包括同一步骤内的重试。插件可以在消息派生前替换持久历史；分发前会重新检查取消状态。监听器失败会直接结束轮次，提供方失败则通过 `agent/request-error` 恢复。
 
 详情见[时序图](agent-lifecycle.md)、[工具流水线](tool-execution-pipeline.md)和[取消与错误恢复](subsystems/core.md#the-agent-handle)。
 
