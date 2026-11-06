@@ -225,14 +225,16 @@ type PreStepDecision =
   | { kind: 'enter'; messages: UserMessage[] }
 ```
 
-`agent/request-error` runs after a failed model step closes and before its turn closes. Listeners can repair durable state or await policy work while the failed turn's signal is still live. A handling listener returns `{ kind: 'retry' }` without calling `next()`; the default `undefined` leaves the failure terminal.
+`agent/pre-request` is a serial checkpoint for every request attempt, including retries. It receives the agent, turn and step coordinates, and turn cancellation signal after the effective route, request header, and request context are logged, before `deriveMessages()` and provider dispatch. Listeners may replace durable history; the loop awaits them in order and rechecks cancellation before deriving the request. Listener failures end the turn directly without entering `agent/request-error`.
+
+`agent/request-error` runs after a failed provider attempt while its step and turn remain open. Listeners can repair durable state or await policy work under the live turn signal. A handling listener returns `{ kind: 'retry' }` without calling `next()` to rebuild the request within the same step; the default `undefined` leaves the failure terminal.
 
 ```ts type-equiv
 /** Action returned by a listener that owns model-request recovery. */
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` is the only serial listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
+`agent/pre-step` decides step admission before routing; `agent/pre-request` observes the resolved request before history derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.
 
 `agent/session-start` carries a `SessionStartSource` (why the session lifecycle began; a bridge keys its SessionStart matcher on it):
 

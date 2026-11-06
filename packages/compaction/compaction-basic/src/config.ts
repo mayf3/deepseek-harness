@@ -67,8 +67,8 @@ export class TargetPressureConfigError extends Error {
 export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfig {
   validateKeys(config, BASIC_COMPACT_CONFIG_KEYS, 'BasicCompactionConfig')
   validatePolicy(config, 'BasicCompactionConfig')
-  if (config.auto !== undefined && typeof config.auto !== 'boolean') {
-    throw new Error('BasicCompactionConfig: auto must be a boolean')
+  if (config.auto !== undefined && typeof config.auto !== 'boolean' && config.auto !== 'pre-request') {
+    throw new Error('BasicCompactionConfig: auto must be a boolean or "pre-request"')
   }
 
   const thresholdRatio = config.thresholdRatio ?? DEFAULT_THRESHOLD_RATIO

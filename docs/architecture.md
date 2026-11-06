@@ -62,7 +62,7 @@ The [event map](event-producer-consumer.md) lists every event's producers and co
 
 ## Turn flow
 
-A **step** is one model request plus the tools it calls. A **turn** is zero or more steps: it opens before its first input is claimed and closes once nothing is owed.
+A **step** contains model-request attempts and the tools called by its successful response. A **turn** is zero or more steps: it opens before its first input is claimed and closes once nothing is owed.
 
 ```text
 turn/start
@@ -72,8 +72,10 @@ turn/start
      reject, or a first enter rewritten empty -> close the turn with no step
      step/start
      append entered messages as user/message
+     agent/request -> log effective request/header + request/context
+     agent/pre-request
      derive model history from the log
-     agent/request -> llm/stream -> assistant/chunk* -> assistant/message
+     llm/stream -> assistant/chunk* -> assistant/message
      tool/call* -> tools/pre-execute -> tools/execute -> tools/post-execute -> tool/result*
      step/end
      tools owe another request, or next-step input arrived -> claim -> next step
@@ -81,11 +83,13 @@ turn/start
 turn/end
 ```
 
-`turn/*`, `step/*`, `user/message`, `assistant/*`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/turn-stopping` is serial and has no `next()`.
+`turn/*`, `step/*`, `user/message`, `assistant/*`, and `tool/*` are durable session events; the rest are live extension points across three domains. `agent/pre-step`, `agent/request`, `llm/stream`, and the three `tools/*` events are waterfalls, whose listeners must call `next()` to delegate; `agent/pre-request` and `agent/turn-stopping` are serial and have no `next()`.
 
 Input reaches the driver through one inbox. Some messages wake it immediately; injected context waits in the inbox until another message does.
 
 `agent/pre-step` decides what the model sees. Listeners may rewrite the claimed messages or reject them outright; a rejected or empty first claim still closes a durable turn that spent no step, so the log records the attempt. Each step reads the prompt sections and tool schemas that plugins registered.
+
+Every request attempt, including a retry within the same step, runs `agent/pre-request` after routing and request metadata are logged. Plugins can replace durable history before message derivation; cancellation is rechecked before dispatch. A listener failure ends the turn directly, while provider failures use `agent/request-error` recovery.
 
 Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
 

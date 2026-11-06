@@ -38,8 +38,8 @@ export interface ModelCompactPolicyConfig extends CompactionPolicyConfig {
 export interface BasicCompactionConfig extends CompactionPolicyConfig {
   /** Exact provider/model overrides; duplicate targets fail plugin load. */
   modelPolicies?: ModelCompactPolicyConfig[]
-  /** Enable automatic step-boundary pressure and overflow-recovery listeners. Defaults to `true`. */
-  auto?: boolean
+  /** Enable step-boundary pressure and overflow recovery; `pre-request` selects routed-request pressure. Defaults to `true`. */
+  auto?: boolean | 'pre-request'
 }
 
 /** Exactly one validated retention form. */
@@ -60,7 +60,7 @@ interface ResolvedPolicyFields {
 /** Validated immutable config whose target-specific defaults remain unresolved. */
 export type ResolvedConfig = ResolvedPolicyFields & ResolvedRetention & {
   readonly modelPolicies: readonly Readonly<ModelCompactPolicyConfig>[]
-  readonly auto: boolean
+  readonly auto: boolean | 'pre-request'
 }
 
 /** Fully merged policy for one routed conversation target, before capacity scaling. */

@@ -231,14 +231,16 @@ type PreStepDecision =
   | { kind: 'enter'; messages: UserMessage[] }
 ```
 
-`agent/request-error` 在失败的模型步骤关闭之后、其轮次关闭之前运行。listener 可以在失败轮次的 signal 仍然存活时修复持久状态或 await 策略工作。处理该错误的 listener 返回 `{ kind: 'retry' }` 且不调用 `next()`；默认的 `undefined` 会让失败保持终态。
+`agent/pre-request` 是每次请求尝试的串行检查点，包括重试。它在生效路由、请求 header 和请求上下文记录后、`deriveMessages()` 及提供方分发前接收 agent、轮次与步骤坐标，以及轮次取消信号。监听器可以替换持久历史；循环会按顺序等待监听器，并在派生请求前重新检查取消状态。监听器失败会直接结束轮次，不会进入 `agent/request-error`。
+
+`agent/request-error` 在提供方尝试失败后运行，此时步骤和轮次仍然打开。监听器可以在活跃轮次信号控制下修复持久状态或等待策略工作。处理该错误的监听器返回 `{ kind: 'retry' }` 且不调用 `next()`，在同一步骤内重建请求；默认的 `undefined` 会让失败保持终态。
 
 ```ts type-equiv
 /** Action returned by a listener that owns model-request recovery. */
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` 是请求推导前唯一的串行监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
+`agent/pre-step` 在路由前决定步骤准入；`agent/pre-request` 在历史派生前观测已解析的请求。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
 
 `agent/session-start` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
 
