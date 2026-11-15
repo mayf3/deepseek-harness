@@ -25,6 +25,8 @@ packages:
 linkWorkspacePackages: true
 
 overrides:
+  dompurify: 3.4.17
+  proxy-addr: 2.0.8
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
 
